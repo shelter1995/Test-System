@@ -96,6 +96,16 @@ ENABLE_TABLE_PROCESSING = _safe_bool(os.getenv("ENABLE_TABLE_PROCESSING"), True)
 ENABLE_EQUATION_PROCESSING = _safe_bool(os.getenv("ENABLE_EQUATION_PROCESSING"), True)
 DEFAULT_QUERY_MODE = os.getenv("DEFAULT_QUERY_MODE", "naive").strip().lower() or "naive"
 
+# 多库并发查询超时（秒）
+QUERY_ALL_TIMEOUT = _safe_int(os.getenv("QUERY_ALL_TIMEOUT", "60"), 60)
+
+# 轻量上下文检索
+CONTEXT_QUERY_MODE = os.getenv("CONTEXT_QUERY_MODE", "naive").strip().lower() or "naive"
+CONTEXT_MAX_CHARS = _safe_int(os.getenv("CONTEXT_MAX_CHARS", "3000"), 3000)
+
+# RAG 实例缓存上限
+MAX_RAG_INSTANCES = _safe_int(os.getenv("MAX_RAG_INSTANCES", "3"), 3)
+
 
 # 初始数据库 ID（仅用于第一次无 registry 文件时兼容）
 DEFAULT_DATABASE_IDS = [

@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -41,6 +42,35 @@ class UTF8JSONResponse(JSONResponse):
         ).encode("utf-8")
 
 
+rag_service: Optional[RAGAnythingService] = None
+registry: Optional[DatabaseRegistry] = None
+startup_error: Optional[str] = None
+
+
+async def initialize_service() -> None:
+    global rag_service, registry, startup_error
+    try:
+        registry = DatabaseRegistry(config.DATABASE_REGISTRY_FILE)
+        _ensure_registry_seeded()
+        rag_service = RAGAnythingService(
+            storage_root=config.RAGANYTHING_STORAGE_ROOT,
+            output_root=config.RAGANYTHING_OUTPUT_ROOT,
+            registry=registry,
+        )
+        startup_error = None
+        logger.info("RAG-Anything 服务初始化完成")
+    except Exception as e:
+        rag_service = None
+        startup_error = str(e)
+        logger.error(f"RAG-Anything 服务初始化失败: {e}")
+
+
+@asynccontextmanager
+async def lifespan(app_: FastAPI):
+    await initialize_service()
+    yield
+
+
 app = FastAPI(
     title="RAG-Anything 智能检索系统",
     description="基于 HKUDS/RAG-Anything 的增强检索服务",
@@ -48,6 +78,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
     default_response_class=UTF8JSONResponse,
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -57,11 +88,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-rag_service: Optional[RAGAnythingService] = None
-registry: Optional[DatabaseRegistry] = None
-startup_error: Optional[str] = None
 
 
 def _normalize_database_id(text: Optional[str]) -> str:
@@ -103,25 +129,6 @@ def _ensure_registry_seeded() -> None:
             working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
             output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
         )
-
-
-@app.on_event("startup")
-async def startup_event():
-    global rag_service, registry, startup_error
-    try:
-        registry = DatabaseRegistry(config.DATABASE_REGISTRY_FILE)
-        _ensure_registry_seeded()
-        rag_service = RAGAnythingService(
-            storage_root=config.RAGANYTHING_STORAGE_ROOT,
-            output_root=config.RAGANYTHING_OUTPUT_ROOT,
-            registry=registry,
-        )
-        startup_error = None
-        logger.info("RAG-Anything 服务初始化完成")
-    except Exception as e:
-        rag_service = None
-        startup_error = str(e)
-        logger.error(f"RAG-Anything 服务初始化失败: {e}")
 
 
 class SearchRequest(BaseModel):
@@ -230,6 +237,28 @@ async def ai_enhanced_search(request: SearchRequest):
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
     except Exception as e:
         logger.error(f"AI增强搜索失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/context")
+async def context(request: SearchRequest):
+    service = _require_service()
+    try:
+        db_id = _normalize_database_id(request.database)
+        if not db_id:
+            raise HTTPException(status_code=400, detail="database 不能为空")
+        return await service.query_context(
+            db_id,
+            request.query,
+            mode=config.CONTEXT_QUERY_MODE,
+            max_chars=config.CONTEXT_MAX_CHARS,
+        )
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"上下文检索失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

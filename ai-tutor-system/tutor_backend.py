@@ -172,15 +172,23 @@ def search_rag_knowledge(query: str, top_k: int = config.RAG_TOP_K, database: st
         params = {"query": query, "n_results": top_k}
         if database:
             params["database"] = database
-        
+
+        endpoint = "context" if database else "ai_enhanced_search"
         response = requests.post(
-            f"{config.RAG_SERVICE_URL}/ai_enhanced_search",
+            f"{config.RAG_SERVICE_URL}/{endpoint}",
             json=params,
             timeout=config.RAG_REQUEST_TIMEOUT
         )
+        if response.status_code == 404 and endpoint == "context":
+            response = requests.post(
+                f"{config.RAG_SERVICE_URL}/ai_enhanced_search",
+                json=params,
+                timeout=config.RAG_REQUEST_TIMEOUT
+            )
+
         if response.status_code == 200:
             data = response.json()
-            results = data.get("results", [])
+            results = data.get("contexts", data.get("results", []))
             logger.info(f"📚 RAG检索: '{query}' -> 数据库: {database or '默认'} -> 找到{len(results)}条结果")
             return results
         else:
