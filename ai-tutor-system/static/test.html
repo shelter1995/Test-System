@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API连接测试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-item {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔧 AI陪练系统 - API连接测试</h1>
+
+    <div id="ragTest" class="test-item">
+        <h3>测试1: RAG知识库服务 (8003端口)</h3>
+        <button onclick="testRAG()">测试连接</button>
+        <div id="ragResult"></div>
+    </div>
+
+    <div id="tutorTest" class="test-item">
+        <h3>测试2: AI陪练服务 (8002端口)</h3>
+        <button onclick="testTutor()">测试连接</button>
+        <div id="tutorResult"></div>
+    </div>
+
+    <div id="scenarioTest" class="test-item">
+        <h3>测试3: 获取场景列表</h3>
+        <button onclick="testScenarios()">测试场景</button>
+        <div id="scenarioResult"></div>
+    </div>
+
+    <div id="sessionTest" class="test-item">
+        <h3>测试4: 启动会话</h3>
+        <button onclick="testSession()">启动测试会话</button>
+        <div id="sessionResult"></div>
+    </div>
+
+    <script>
+        const TUTOR_API = 'http://localhost:8002';
+        const RAG_API = 'http://localhost:8003';
+
+        async function testRAG() {
+            const resultDiv = document.getElementById('ragResult');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+
+            try {
+                const response = await fetch(RAG_API + '/');
+                const data = await response.json();
+
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ RAG服务连接成功</h4>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ RAG服务连接失败</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testTutor() {
+            const resultDiv = document.getElementById('tutorResult');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+
+            try {
+                const response = await fetch(TUTOR_API + '/');
+                const data = await response.json();
+
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ AI陪练服务连接成功</h4>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ AI陪练服务连接失败</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testScenarios() {
+            const resultDiv = document.getElementById('scenarioResult');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+
+            try {
+                const response = await fetch(TUTOR_API + '/scenarios');
+                const data = await response.json();
+
+                resultDiv.innerHTML = `
+                    <div class="success">
+                        <h4>✅ 场景列表获取成功</h4>
+                        <p>共有 ${data.preset ? data.preset.length : 0} 个预设场景</p>
+                        <pre>${JSON.stringify(data, null, 2)}</pre>
+                    </div>
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ 场景列表获取失败</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        async function testSession() {
+            const resultDiv = document.getElementById('sessionResult');
+            resultDiv.innerHTML = '<p>测试中...</p>';
+
+            try {
+                const response = await fetch(TUTOR_API + '/session/start', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        scenario_id: 'price_sensitive',
+                        client_unit: '测试公司',
+                        product: '商务视频彩铃',
+                        scenario_type: '初次沟通'
+                    })
+                });
+                const data = await response.json();
+
+                if (response.ok) {
+                    resultDiv.innerHTML = `
+                        <div class="success">
+                            <h4>✅ 会话启动成功</h4>
+                            <p>会话ID: ${data.session_id}</p>
+                            <p>AI开场白: ${data.opening_message}</p>
+                            <pre>${JSON.stringify(data, null, 2)}</pre>
+                        </div>
+                    `;
+                } else {
+                    throw new Error(data.detail || '启动会话失败');
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+                    <div class="error">
+                        <h4>❌ 会话启动失败</h4>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        // 页面加载时自动测试
+        window.onload = function() {
+            console.log('测试页面已加载');
+            console.log('RAG API:', RAG_API);
+            console.log('Tutor API:', TUTOR_API);
+        };
+    </script>
+</body>
+</html>

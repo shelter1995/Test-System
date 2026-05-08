@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI话术陪练系统</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- 服务状态警告横幅 -->
+    <div id="serviceAlert" class="service-alert">
+        <div class="alert-loading">正在检查服务状态...</div>
+    </div>
+
+    <!-- 顶部导航栏 -->
+    <div class="navbar">
+        <div class="nav-content">
+            <div class="logo">
+                <span class="logo-icon">🎯</span>
+                <span class="logo-text">AI话术陪练系统</span>
+            </div>
+            <div class="nav-controls">
+                <select id="scenarioSelect" class="scenario-select">
+                    <option value="">客户角色设定...</option>
+                    <option value="price_sensitive">价格敏感型客户</option>
+                    <option value="tech_focused">技术挑剔型客户</option>
+                    <option value="decision_caution">决策谨慎型客户</option>
+                    <option value="competitor_compare">竞品对比型客户</option>
+                    <option value="custom">+ 自定义场景</option>
+                </select>
+                <button id="historyBtn" class="nav-btn">📚 历史记录</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 开始页面 -->
+    <div id="startPage" class="page active">
+        <div class="start-container">
+            <div class="welcome-card">
+                <div class="welcome-icon">🎓</div>
+                <h1>欢迎来到AI话术陪练系统</h1>
+                <p>基于AI和RAG知识库的智能销售培训平台</p>
+
+                <div class="feature-grid">
+                    <div class="feature-item">
+                        <div class="feature-icon">🎭</div>
+                        <h3>多场景陪练</h3>
+                        <p>价格敏感、技术挑剔、决策谨慎等多种客户类型</p>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📊</div>
+                        <h3>实时评估</h3>
+                        <p>对话中实时给出话术建议和评分反馈</p>
+                    </div>
+                    <div class="feature-item">
+                        <div class="feature-icon">📚</div>
+                        <h3>知识库驱动</h3>
+                        <p>基于企业知识库的智能对话生成</p>
+                    </div>
+                </div>
+
+                <div class="start-form">
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>客户单位</label>
+                            <input type="text" id="clientUnit" placeholder="例如：某某科技有限公司"
+                                   value="某某科技有限公司">
+                        </div>
+                        <div class="form-group">
+                            <label>产品名称</label>
+                            <input type="text" id="productName" placeholder="例如：商务视频彩铃"
+                                   value="商务视频彩铃">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label>对话背景</label>
+                        <input type="text" id="scenarioType" placeholder="例如：初次沟通，建立联系"
+                               value="初次沟通，建立联系">
+                    </div>
+                    <button id="startBtn" class="start-btn">开始陪练 🚀</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 对话页面 -->
+    <div id="chatPage" class="page">
+        <div class="chat-container">
+            <!-- 左侧对话区域 -->
+            <div class="chat-main">
+                <div class="chat-header">
+                    <div class="chat-info">
+                        <span class="chat-icon">💬</span>
+                        <span class="chat-title">对话进行中</span>
+                        <span class="chat-round" id="roundIndicator">第 1 轮</span>
+                    </div>
+                    <div class="chat-actions">
+                        <button id="pauseBtn" class="action-btn" title="暂停获取反馈">⏸️</button>
+                        <button id="endBtn" class="action-btn danger" title="结束会话">🏁</button>
+                    </div>
+                </div>
+
+                <div class="chat-messages" id="chatMessages">
+                    <!-- 对话消息将动态插入这里 -->
+                </div>
+
+                <div class="chat-input-area">
+                    <div class="input-wrapper">
+                        <textarea id="messageInput"
+                                  class="message-input"
+                                  placeholder="请输入您的话术..."
+                                  rows="6"></textarea>
+                        <div class="input-actions">
+                            <span class="input-hint">💡 提示：可以按 Ctrl+Enter 快速发送</span>
+                            <button id="sendBtn" class="send-btn">发送 🚀</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧背景看板 -->
+            <div class="info-panel">
+                <div class="panel-section">
+                    <h3 class="panel-title">👤 客户信息</h3>
+                    <div class="panel-content">
+                        <div class="info-item">
+                            <span class="info-label">单位：</span>
+                            <span class="info-value" id="infoClientUnit">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">角色：</span>
+                            <span class="info-value" id="infoAiRole">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">特点：</span>
+                            <span class="info-value" id="infoCustomerTraits">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3 class="panel-title">📦 产品信息</h3>
+                    <div class="panel-content">
+                        <div class="info-item">
+                            <span class="info-label">产品：</span>
+                            <span class="info-value" id="infoProduct">-</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">场景：</span>
+                            <span class="info-value" id="infoScenarioType">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3 class="panel-title">🎯 场景目标</h3>
+                    <div class="panel-content">
+                        <ul class="target-list" id="infoSuccessCriteria">
+                            <!-- 成功标准将动态插入 -->
+                        </ul>
+                    </div>
+                </div>
+
+                <div class="panel-section highlight">
+                    <h3 class="panel-title">💡 实时建议</h3>
+                    <div class="panel-content">
+                        <div class="suggestion-box">
+                            <div class="suggestion-score" id="liveScore">
+                                <span class="score-label">当前评分</span>
+                                <span class="score-value" id="scoreValue">-</span>
+                            </div>
+                            <div class="suggestion-list" id="liveSuggestions">
+                                <p class="suggestion-text">开始对话后将显示实时建议</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="panel-section">
+                    <h3 class="panel-title">📚 知识库参考</h3>
+                    <div class="panel-content">
+                        <div class="knowledge-box" id="knowledgeBox">
+                            <p class="knowledge-text">相关知识将在对话中自动加载</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 报告页面 -->
+    <div id="reportPage" class="page">
+        <div class="report-container">
+            <div class="report-header">
+                <div class="report-icon">📊</div>
+                <h1>陪练总结报告</h1>
+                <div class="report-score">
+                    <div class="score-circle">
+                        <span class="score-number" id="reportScore">85</span>
+                        <span class="score-label">分</span>
+                    </div>
+                    <div class="score-rating" id="reportRating">良好</div>
+                </div>
+            </div>
+
+            <div class="report-content">
+                <div class="report-section">
+                    <h2>⭐ 亮点表现</h2>
+                    <ul class="report-list" id="reportHighlights">
+                        <!-- 动态插入 -->
+                    </ul>
+                </div>
+
+                <div class="report-section">
+                    <h2>💪 待改进项</h2>
+                    <ul class="report-list warning" id="reportImprovements">
+                        <!-- 动态插入 -->
+                    </ul>
+                </div>
+
+                <div class="report-section">
+                    <h2>💡 改进建议</h2>
+                    <ul class="report-list info" id="reportSuggestions">
+                        <!-- 动态插入 -->
+                    </ul>
+                </div>
+
+                <div class="report-actions">
+                    <button id="backToStartBtn" class="action-btn">返回首页</button>
+                    <button id="viewHistoryBtn" class="action-btn">查看历史</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史记录页面 -->
+    <div id="historyPage" class="page">
+        <div class="history-container">
+            <div class="history-header">
+                <h1>📚 历史记录</h1>
+                <button id="closeHistoryBtn" class="close-btn">✕</button>
+            </div>
+            <div class="history-list" id="historyList">
+                <!-- 动态插入历史记录 -->
+            </div>
+        </div>
+    </div>
+
+    <!-- 自定义场景模态框 -->
+    <div id="customScenarioModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>创建自定义场景</h2>
+                <button class="modal-close" id="closeModalBtn">✕</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>场景名称</label>
+                    <input type="text" id="customScenarioName" placeholder="例如：VIP大客户">
+                </div>
+                <div class="form-group">
+                    <label>AI角色（客户）</label>
+                    <input type="text" id="customAiRole" placeholder="例如：集团采购总监">
+                </div>
+                <div class="form-group">
+                    <label>用户角色</label>
+                    <input type="text" id="customUserRole" placeholder="例如：大客户经理" value="销售代表">
+                </div>
+                <div class="form-group">
+                    <label>场景描述</label>
+                    <textarea id="customScenarioDesc" rows="3"
+                              placeholder="描述这个场景的特点和挑战"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>客户特点（每行一个）</label>
+                    <textarea id="customCustomerTraits" rows="3"
+                              placeholder="例如：&#10;决策周期长&#10;关注服务质量&#10;需要定制方案"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>AI策略（每行一个）</label>
+                    <textarea id="customAiStrategy" rows="3"
+                              placeholder="例如：&#10;提出质疑&#10;要求更高权限&#10;表示需要汇报"></textarea>
+                </div>
+                <div class="form-group">
+                    <label>成功标准（每行一个）</label>
+                    <textarea id="customSuccessCriteria" rows="3"
+                              placeholder="例如：&#10;建立信任关系&#10;获得内部推荐&#10;预约下次沟通"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="createScenarioBtn" class="action-btn primary">创建场景</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app_with_health_check.js"></script>
+</body>
+</html>

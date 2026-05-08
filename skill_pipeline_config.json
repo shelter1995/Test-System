@@ -1,0 +1,12 @@
+{
+  "rag_url": "http://localhost:8003",
+  "database": "商务彩铃",
+  "client_unit": "联调测试公司",
+  "listener_role": "市场总监",
+  "relation": "良好关系",
+  "audience": "政企客户",
+  "training_duration": "半天（3-4小时）",
+  "question_count": 20,
+  "timeout": 120,
+  "max_attempts": 3
+}

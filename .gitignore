@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Project specific
+rag-anything-api/storage/
+rag-anything-api/output/
+ai-tutor-system/tutor_data/sessions/
+training_output/
+solution_output/
+
+# Large binary files
+*.pkl
+*.bin
+*.pt
+*.onnx
+*.zip
+*.tar.gz
+*.whl
+
+# Temp / migration data
+temp_fastmcp/
+rag-anything-api/migration_data/
+minimax_response.json
+temp.json
+
+# Session data
+ai-tutor-system/tutor_data/
