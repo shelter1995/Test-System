@@ -86,9 +86,15 @@ class TestGetJob:
     @patch("generation_runner.get_job", return_value=None)
     def test_returns_404_for_missing_job(self, mock_get):
         """查询不存在的作业应返回 404。"""
-        resp = client.get("/generation/jobs/nonexistent")
+        resp = client.get("/generation/jobs/000000000000")
         assert resp.status_code == 404
         assert "not found" in resp.json()["detail"].lower()
+
+    def test_returns_400_for_invalid_job_id(self):
+        """格式非法的 job_id 应返回 400。"""
+        resp = client.get("/generation/jobs/nonexistent")
+        assert resp.status_code == 400
+        assert "invalid" in resp.json()["detail"].lower()
 
 
 # ==================== GET /generation/artifacts ====================

@@ -8,6 +8,8 @@
 - GET    /generation/artifacts/download 下载产物文件
 """
 
+import asyncio
+import re
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -39,7 +41,7 @@ async def create_generation_job(request: GenerationRequest):
     """
     from generation_runner import create_job
 
-    job_id = create_job(request.model_dump())
+    job_id = await asyncio.to_thread(create_job, request.model_dump())
     return {"job_id": job_id, "status": "running"}
 
 
@@ -50,6 +52,8 @@ async def get_generation_job(job_id: str):
 
     返回作业的完整信息，包括 status、result 或 error。
     """
+    if not re.match(r'^[0-9a-f]{12}$', job_id):
+        raise HTTPException(status_code=400, detail="Invalid job_id format")
     from generation_runner import get_job
 
     job = get_job(job_id)

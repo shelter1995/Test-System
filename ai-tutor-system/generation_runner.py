@@ -9,10 +9,14 @@
 """
 
 import json
+import logging
+import re
 import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 JOBS_DIR = Path(__file__).parent / "tutor_data" / "generation_jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
@@ -56,6 +60,8 @@ def create_job(request: dict) -> str:
 
 def get_job(job_id: str) -> dict | None:
     """根据 job_id 查询作业状态，不存在则返回 None。"""
+    if not re.match(r'^[0-9a-f]{12}$', job_id):
+        return None
     path = JOBS_DIR / f"{job_id}.json"
     if not path.exists():
         return None
@@ -68,8 +74,8 @@ def list_jobs() -> list[dict]:
     for f in sorted(JOBS_DIR.glob("*.json"), reverse=True):
         try:
             jobs.append(json.loads(f.read_text(encoding="utf-8")))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to read job file %s: %s", f, e)
     return jobs
 
 
