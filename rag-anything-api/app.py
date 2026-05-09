@@ -526,10 +526,16 @@ async def ingest_upload(database: str = Form(...), file: UploadFile = File(...))
     if not db_id:
         raise HTTPException(status_code=400, detail="database 不能为空")
 
-    filename = file.filename or "uploaded_file"
+    filename = Path(file.filename or "uploaded_file").name
     target_dir = Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / filename
+
+    # Verify resolved path is within target_dir to prevent path traversal
+    try:
+        target_path.resolve().relative_to(target_dir.resolve())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="非法文件名")
 
     try:
         with open(target_path, "wb") as f:
