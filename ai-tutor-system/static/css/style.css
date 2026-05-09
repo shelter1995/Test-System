@@ -1771,3 +1771,82 @@ body.has-alert .page {
     margin: 0.5rem 0;
     font-size: 0.95rem;
 }
+
+/* ==================== 内容生成 & 历史产物页面 ==================== */
+
+/* 表单控件（select / input 通用） */
+.form-control {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    background: white;
+    color: var(--text-primary);
+    transition: border-color 0.3s;
+    cursor: pointer;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+}
+
+/* 下载链接 */
+.download-link {
+    display: inline-block;
+    padding: 0.3rem 0.75rem;
+    background: var(--secondary-color);
+    color: white;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: background 0.2s, transform 0.2s;
+    white-space: nowrap;
+}
+
+.download-link:hover {
+    background: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+/* 产物列表 */
+.artifact-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.artifact-row {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-primary);
+    border-radius: var(--radius-md);
+    border-left: 3px solid var(--secondary-color);
+    transition: background 0.2s;
+}
+
+.artifact-row:hover {
+    background: #f0f7ff;
+}
+
+.artifact-name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.95rem;
+}
+
+.artifact-meta {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    min-width: 60px;
+    text-align: right;
+}
