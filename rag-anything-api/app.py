@@ -3,6 +3,7 @@ RAG-Anything REST API 服务
 保留既有接口合同，内部引擎使用 HKUDS/RAG-Anything
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -547,7 +548,8 @@ async def ingest_upload(database: str = Form(...), file: UploadFile = File(...))
         file.file.close()
 
     try:
-        result = await service.ingest_file(db_id, target_path)
+        # 使用后台线程执行 ingest_file，避免阻塞事件循环和 health check
+        result = await asyncio.to_thread(service.ingest_file_sync, db_id, target_path)
         return {
             "status": "success",
             "database": db_id,

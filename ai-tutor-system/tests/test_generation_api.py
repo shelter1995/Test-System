@@ -40,7 +40,12 @@ class TestCreateJob:
         """创建作业应返回 job_id 和 status=running。"""
         resp = client.post(
             "/generation/jobs",
-            json={"database": "test_db", "client_unit": "TestCo", "product": "TestProduct"},
+            json={
+                "type": "solution",
+                "database": "test_db",
+                "client_unit": "TestCo",
+                "product": "TestProduct",
+            },
         )
         assert resp.status_code == 200
         data = resp.json()
@@ -49,13 +54,18 @@ class TestCreateJob:
         mock_create.assert_called_once()
 
     @patch("generation_runner.create_job", return_value="job001")
-    def test_accepts_empty_body(self, mock_create):
-        """请求体为空时应使用默认值。"""
-        resp = client.post("/generation/jobs", json={})
+    def test_accepts_minimal_body(self, mock_create):
+        """请求体仅包含必需字段 type 时应成功。"""
+        resp = client.post("/generation/jobs", json={"type": "readme"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["job_id"] == "job001"
         assert data["status"] == "running"
+
+    def test_rejects_invalid_type(self):
+        """无效的 type 应返回 400。"""
+        resp = client.post("/generation/jobs", json={"type": "invalid_type"})
+        assert resp.status_code == 400
 
 
 # ==================== GET /generation/jobs/{job_id} ====================

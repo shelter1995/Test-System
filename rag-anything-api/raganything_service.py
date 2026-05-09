@@ -311,6 +311,10 @@ class RAGAnythingService:
             "message": "文档已通过 RAG-Anything 导入知识库",
         }
 
+    def ingest_file_sync(self, database_id: str, file_path: str | Path, source: str | None = None) -> dict[str, Any]:
+        """同步包装 ingest_file，供 asyncio.to_thread 后台调用。"""
+        return asyncio.run(self.ingest_file(database_id, file_path, source))
+
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:
         content = str(text or "").strip()
         if not content:

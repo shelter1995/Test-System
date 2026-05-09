@@ -79,6 +79,9 @@ class FakeService:
     async def ingest_file(self, database_id, file_path, source=None):
         return {"status": "success", "database": database_id, "file": str(file_path)}
 
+    def ingest_file_sync(self, database_id, file_path, source=None):
+        return {"status": "success", "database": database_id, "file": str(file_path)}
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -256,11 +259,11 @@ class TestIngestUpload:
         service.registry.register_database("fail-db")
         monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
 
-        # make ingest_file raise
-        async def _fail(*args, **kwargs):
+        # make ingest_file_sync raise
+        def _fail(*args, **kwargs):
             raise RuntimeError("ingest boom")
 
-        service.ingest_file = _fail
+        service.ingest_file_sync = _fail
 
         response = client.post(
             "/ingest/upload",

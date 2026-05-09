@@ -804,13 +804,14 @@ async def chat(chat_message: ChatMessage):
         if session_data["messages"]:
             last_user_msg = [m for m in session_data["messages"] if m["role"] == "user"][-1]
             last_ai_msg = [m for m in session_data["messages"] if m["role"] == "ai"][-1]
-            
+
             # 根据产品名称选择对应的数据库（优先使用用户显式选择的）
             product = session_data.get("product", "")
             database = session_data.get("database") or resolve_product_database(product)
 
-            # 使用AI评估
-            evaluation = call_ai_for_evaluation(
+            # 使用AI评估（后台线程执行，避免阻塞 health check）
+            evaluation = await asyncio.to_thread(
+                call_ai_for_evaluation,
                 last_user_msg["content"],
                 last_ai_msg["content"],
                 session_data["round"],
@@ -841,22 +842,11 @@ async def chat(chat_message: ChatMessage):
     product = session_data.get("product", "")
     database = session_data.get("database") or resolve_product_database(product)
 
-    # 1. 从RAG知识库检索相关信息（这是最重要的！）
-    # 检索产品信息、应对话术、成功案例等
-    product_knowledge = search_rag_knowledge(
-        f"{product} 产品介绍 功能 价格",
-        top_k=3,
-        database=database
-    )
-    sales_knowledge = search_rag_knowledge(
-        f"{session_data['scenario'].get('name', '')} 应对话术 销售技巧",
-        top_k=3,
-        database=database
-    )
-    objection_knowledge = search_rag_knowledge(
-        f"常见异议处理 价格异议 技术异议",
-        top_k=2,
-        database=database
+    # 1. 从RAG知识库检索相关信息（后台线程执行，避免阻塞 health check）
+    product_knowledge, sales_knowledge, objection_knowledge = await asyncio.gather(
+        asyncio.to_thread(search_rag_knowledge, f"{product} 产品介绍 功能 价格", top_k=3, database=database),
+        asyncio.to_thread(search_rag_knowledge, f"{session_data['scenario'].get('name', '')} 应对话术 销售技巧", top_k=3, database=database),
+        asyncio.to_thread(search_rag_knowledge, f"常见异议处理 价格异议 技术异议", top_k=2, database=database),
     )
 
     # 2. 构建知识库上下文
@@ -972,15 +962,17 @@ async def chat(chat_message: ChatMessage):
 
 现在请作为{scenario['ai_role']}，用自然的客户语言回复销售代表。记住：你是真实的客户，不是机器人！"""
 
-    # 5. 调用AI生成回复
-    ai_response = call_ai_for_response(
+    # 5. 调用AI生成回复（后台线程执行，避免阻塞 health check）
+    ai_response = await asyncio.to_thread(
+        call_ai_for_response,
         system_prompt,
         conversation_history,
         chat_message.message
     )
 
-    # 6. 使用AI评估用户话术
-    evaluation = call_ai_for_evaluation(
+    # 6. 使用AI评估用户话术（后台线程执行）
+    evaluation = await asyncio.to_thread(
+        call_ai_for_evaluation,
         chat_message.message,
         ai_response,
         session_data["round"],
