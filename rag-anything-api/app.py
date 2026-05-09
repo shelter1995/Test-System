@@ -6,12 +6,13 @@ RAG-Anything REST API 服务
 import json
 import logging
 import os
+import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -153,6 +154,32 @@ class FileIngestRequest(BaseModel):
     path: str
     database: str
     recursive: bool = False
+
+
+class DatabaseRegisterRequest(BaseModel):
+    id: str
+    name: Optional[str] = None
+    description: Optional[str] = ""
+
+
+class DatabaseUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+
+
+def _database_payload(item: dict) -> dict:
+    return {
+        "id": item.get("id"),
+        "name": item.get("name"),
+        "description": item.get("description", ""),
+        "status": item.get("status"),
+        "engine": item.get("engine"),
+        "documents": item.get("documents", []),
+        "working_dir": item.get("working_dir", ""),
+        "output_dir": item.get("output_dir", ""),
+        "updated_at": item.get("updated_at"),
+    }
 
 
 def _require_service() -> RAGAnythingService:
@@ -318,7 +345,9 @@ async def list_databases():
         {
             "id": item.get("id"),
             "name": item.get("name", item.get("id")),
+            "description": item.get("description", ""),
             "status": item.get("status", "active"),
+            "documents_count": len(item.get("documents", [])),
         }
         for item in data
         if item.get("id")
@@ -366,6 +395,42 @@ async def get_database_stats(db_id: str):
             "updated_at": item.get("updated_at"),
         },
     }
+
+
+@app.post("/db/register")
+async def register_database(request: DatabaseRegisterRequest):
+    service = _require_service()
+    try:
+        item = service.registry.register_database(
+            request.id, name=request.name, description=request.description or ""
+        )
+        return {"status": "success", "database": _database_payload(item)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.put("/db/{db_id}")
+async def update_database(db_id: str, request: DatabaseUpdateRequest):
+    service = _require_service()
+    try:
+        item = service.registry.update_database(
+            db_id, name=request.name, description=request.description, status=request.status
+        )
+        return {"status": "success", "database": _database_payload(item)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/db/{db_id}/documents")
+async def list_documents(db_id: str):
+    service = _require_service()
+    try:
+        documents = service.registry.list_documents(db_id)
+        return {"status": "success", "database": db_id, "documents": documents}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
 
 
 @app.post("/db/search")
@@ -452,6 +517,40 @@ async def ingest_path(request: FileIngestRequest):
         }
 
     raise HTTPException(status_code=404, detail=f"路径不存在: {request.path}")
+
+
+@app.post("/ingest/upload")
+async def ingest_upload(database: str = Form(...), file: UploadFile = File(...)):
+    service = _require_service()
+    db_id = _normalize_database_id(database)
+    if not db_id:
+        raise HTTPException(status_code=400, detail="database 不能为空")
+
+    filename = file.filename or "uploaded_file"
+    target_dir = Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target_path = target_dir / filename
+
+    try:
+        with open(target_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+    except Exception as e:
+        logger.error(f"文件保存失败: {e}")
+        raise HTTPException(status_code=500, detail=f"文件保存失败: {e}")
+    finally:
+        file.file.close()
+
+    try:
+        result = await service.ingest_file(db_id, target_path)
+        return {
+            "status": "success",
+            "database": db_id,
+            "filename": filename,
+            "message": "文件已上传并导入知识库",
+        }
+    except Exception as e:
+        logger.error(f"文件导入失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 def check_port_available(port: int) -> bool:

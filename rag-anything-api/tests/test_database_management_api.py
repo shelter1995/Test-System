@@ -1,151 +1,294 @@
 """
-扩展 RAG 知识库注册表的测试：
-- register_database 保存 description/working_dir/output_dir
-- update_database 更新 name/description/status
-- list_documents 返回指定知识库的文件列表
+知识库管理 API 测试：
+- POST /db/register  创建知识库
+- PUT  /db/{db_id}   更新知识库
+- GET  /db/{db_id}/documents  列出文档
+- POST /ingest/upload  上传文件并导入
 """
 
+import io
 from pathlib import Path
 
-import pytest
+from fastapi.testclient import TestClient
 
-from database_registry import DatabaseRegistry
-
-
-# ── register_database: description, working_dir, output_dir ──────────────
+import app as rag_api
 
 
-class TestRegisterDatabaseMetadata:
-    """register_database 应保存 description、working_dir、output_dir。"""
+# ── Fake registry / service ──────────────────────────────────────────────
 
-    def test_register_with_description(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        result = registry.register_database(
-            "test-db", description="A test knowledge base"
+
+class FakeRegistry:
+    """可变的内存注册表，支持 register / update / list_documents。"""
+
+    def __init__(self):
+        self._databases: dict[str, dict] = {}
+
+    def list_databases(self):
+        return list(self._databases.values())
+
+    def get_database(self, db_id: str):
+        return self._databases.get(db_id)
+
+    def register_database(self, database_id, name=None, description="", **kwargs):
+        database_id = str(database_id).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+        if database_id in self._databases:
+            db = self._databases[database_id]
+            if name:
+                db["name"] = name
+            if description is not None:
+                db["description"] = description
+            return db
+        db = {
+            "id": database_id,
+            "name": name or database_id,
+            "description": description or "",
+            "status": "active",
+            "engine": "raganything",
+            "documents": [],
+            "working_dir": "",
+            "output_dir": "",
+            "updated_at": "2026-01-01T00:00:00Z",
+        }
+        self._databases[database_id] = db
+        return db
+
+    def update_database(self, database_id, name=None, description=None, status=None):
+        if database_id not in self._databases:
+            raise KeyError(f"Database '{database_id}' not found")
+        db = self._databases[database_id]
+        if name is not None:
+            db["name"] = name
+        if description is not None:
+            db["description"] = description
+        if status is not None:
+            db["status"] = status
+        return db
+
+    def list_documents(self, database_id):
+        if database_id not in self._databases:
+            raise KeyError(f"Database '{database_id}' not found")
+        return self._databases[database_id].get("documents", [])
+
+
+class FakeService:
+    def __init__(self):
+        self.registry = FakeRegistry()
+
+    async def ingest_file(self, database_id, file_path, source=None):
+        return {"status": "success", "database": database_id, "file": str(file_path)}
+
+
+# ── Helpers ──────────────────────────────────────────────────────────────
+
+
+def _make_client(monkeypatch):
+    service = FakeService()
+    monkeypatch.setattr(rag_api, "rag_service", service)
+    monkeypatch.setattr(rag_api, "startup_error", None)
+    return TestClient(rag_api.app), service
+
+
+# ── POST /db/register ────────────────────────────────────────────────────
+
+
+class TestRegisterDatabase:
+    def test_register_new_database(self, monkeypatch):
+        client, _ = _make_client(monkeypatch)
+        response = client.post(
+            "/db/register",
+            json={"id": "test-db", "name": "Test DB", "description": "A test KB"},
         )
-        assert result["description"] == "A test knowledge base"
-        # 持久化后也能读到
-        loaded = registry.get_database("test-db")
-        assert loaded is not None
-        assert loaded["description"] == "A test knowledge base"
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["database"]["id"] == "test-db"
+        assert data["database"]["name"] == "Test DB"
+        assert data["database"]["description"] == "A test KB"
 
-    def test_register_with_working_dir_and_output_dir(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        result = registry.register_database(
-            "test-db",
-            working_dir="/data/work",
-            output_dir="/data/output",
+    def test_register_minimal(self, monkeypatch):
+        """只传 id，其他字段用默认值。"""
+        client, _ = _make_client(monkeypatch)
+        response = client.post("/db/register", json={"id": "minimal-db"})
+        assert response.status_code == 200
+        data = response.json()
+        assert data["database"]["id"] == "minimal-db"
+        assert data["database"]["name"] == "minimal-db"
+        assert data["database"]["description"] == ""
+
+    def test_register_existing_updates(self, monkeypatch):
+        """对已存在的 id 再次 register 应更新而非报错。"""
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("dup-db", description="old")
+        response = client.post(
+            "/db/register",
+            json={"id": "dup-db", "description": "new"},
         )
-        assert result["working_dir"] == "/data/work"
-        assert result["output_dir"] == "/data/output"
-        loaded = registry.get_database("test-db")
-        assert loaded is not None
-        assert loaded["working_dir"] == "/data/work"
-        assert loaded["output_dir"] == "/data/output"
+        assert response.status_code == 200
+        assert response.json()["database"]["description"] == "new"
 
-    def test_update_existing_preserves_description(self, tmp_path: Path):
-        """对已有库再次 register，description 应保留（如果未传新值）。"""
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db", description="Original")
-        result = registry.register_database("test-db")
-        assert result["description"] == "Original"
-
-    def test_update_existing_overwrites_description(self, tmp_path: Path):
-        """对已有库再次 register，传新 description 应覆盖。"""
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db", description="Original")
-        result = registry.register_database("test-db", description="Updated")
-        assert result["description"] == "Updated"
+    def test_register_empty_id_returns_400(self, monkeypatch):
+        client, _ = _make_client(monkeypatch)
+        response = client.post("/db/register", json={"id": ""})
+        assert response.status_code == 400
 
 
-# ── update_database ──────────────────────────────────────────────────────
+# ── PUT /db/{db_id} ──────────────────────────────────────────────────────
 
 
 class TestUpdateDatabase:
-    """update_database 应能更新 name、description、status。"""
+    def test_update_name(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("my-db", name="Old Name")
+        response = client.put("/db/my-db", json={"name": "New Name"})
+        assert response.status_code == 200
+        assert response.json()["database"]["name"] == "New Name"
 
-    def test_update_name(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db", name="Original")
-        result = registry.update_database("test-db", name="Renamed")
-        assert result["name"] == "Renamed"
-        loaded = registry.get_database("test-db")
-        assert loaded is not None
-        assert loaded["name"] == "Renamed"
+    def test_update_description(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("my-db")
+        response = client.put("/db/my-db", json={"description": "Updated desc"})
+        assert response.status_code == 200
+        assert response.json()["database"]["description"] == "Updated desc"
 
-    def test_update_description(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db", description="Old desc")
-        result = registry.update_database("test-db", description="New desc")
-        assert result["description"] == "New desc"
+    def test_update_status(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("my-db")
+        response = client.put("/db/my-db", json={"status": "archived"})
+        assert response.status_code == 200
+        assert response.json()["database"]["status"] == "archived"
 
-    def test_update_status(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db")
-        result = registry.update_database("test-db", status="archived")
-        assert result["status"] == "archived"
-
-    def test_update_multiple_fields(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db")
-        result = registry.update_database(
-            "test-db", name="New Name", description="New Desc", status="paused"
+    def test_update_multiple_fields(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("my-db")
+        response = client.put(
+            "/db/my-db",
+            json={"name": "X", "description": "Y", "status": "paused"},
         )
-        assert result["name"] == "New Name"
-        assert result["description"] == "New Desc"
-        assert result["status"] == "paused"
+        assert response.status_code == 200
+        db = response.json()["database"]
+        assert db["name"] == "X"
+        assert db["description"] == "Y"
+        assert db["status"] == "paused"
 
-    def test_update_nonexistent_raises_key_error(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        with pytest.raises(KeyError):
-            registry.update_database("nonexistent", name="X")
-
-    def test_update_persists_changes(self, tmp_path: Path):
-        """更新后重新加载也能读到。"""
-        path = tmp_path / "databases.json"
-        registry = DatabaseRegistry(path)
-        registry.register_database("test-db")
-        registry.update_database("test-db", name="Persisted")
-
-        registry2 = DatabaseRegistry(path)
-        loaded = registry2.get_database("test-db")
-        assert loaded is not None
-        assert loaded["name"] == "Persisted"
+    def test_update_nonexistent_returns_404(self, monkeypatch):
+        client, _ = _make_client(monkeypatch)
+        response = client.put("/db/no-such-db", json={"name": "X"})
+        assert response.status_code == 404
 
 
-# ── list_documents ───────────────────────────────────────────────────────
+# ── GET /db/{db_id}/documents ────────────────────────────────────────────
 
 
 class TestListDocuments:
-    """list_documents 应返回指定知识库的文件列表。"""
+    def test_list_documents_empty(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("doc-db")
+        response = client.get("/db/doc-db/documents")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["database"] == "doc-db"
+        assert data["documents"] == []
 
-    def test_list_documents_empty(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db")
-        docs = registry.list_documents("test-db")
-        assert docs == []
-
-    def test_list_documents_with_registered_docs(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        registry.register_database("test-db")
-        registry.register_document(
-            "test-db",
-            file_name="a.pdf",
-            file_path="/data/a.pdf",
-            sha256="aaa",
-        )
-        registry.register_document(
-            "test-db",
-            file_name="b.png",
-            file_path="/data/b.png",
-            sha256="bbb",
-        )
-        docs = registry.list_documents("test-db")
+    def test_list_documents_with_data(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("doc-db")
+        # 直接注入文档数据
+        service.registry._databases["doc-db"]["documents"] = [
+            {"file_name": "a.pdf", "sha256": "aaa"},
+            {"file_name": "b.png", "sha256": "bbb"},
+        ]
+        response = client.get("/db/doc-db/documents")
+        assert response.status_code == 200
+        docs = response.json()["documents"]
         assert len(docs) == 2
         names = {d["file_name"] for d in docs}
         assert names == {"a.pdf", "b.png"}
 
-    def test_list_documents_nonexistent_raises_key_error(self, tmp_path: Path):
-        registry = DatabaseRegistry(tmp_path / "databases.json")
-        with pytest.raises(KeyError):
-            registry.list_documents("nonexistent")
+    def test_list_documents_nonexistent_returns_404(self, monkeypatch):
+        client, _ = _make_client(monkeypatch)
+        response = client.get("/db/no-such-db/documents")
+        assert response.status_code == 404
+
+
+# ── POST /ingest/upload ──────────────────────────────────────────────────
+
+
+class TestIngestUpload:
+    def test_upload_file(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("upload-db")
+
+        # monkeypatch storage root so files land in tmp_path
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        file_content = b"hello world"
+        response = client.post(
+            "/ingest/upload",
+            data={"database": "upload-db"},
+            files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["database"] == "upload-db"
+        assert data["filename"] == "test.txt"
+
+        # verify file was saved
+        saved = tmp_path / "files" / "upload-db" / "test.txt"
+        assert saved.exists()
+        assert saved.read_bytes() == file_content
+
+    def test_upload_empty_database_returns_422(self, monkeypatch):
+        """FastAPI Form 验证拒绝空 database 字段。"""
+        client, _ = _make_client(monkeypatch)
+        response = client.post(
+            "/ingest/upload",
+            data={"database": ""},
+            files={"file": ("test.txt", io.BytesIO(b"data"), "text/plain")},
+        )
+        assert response.status_code == 422
+
+    def test_upload_ingest_failure_returns_500(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("fail-db")
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        # make ingest_file raise
+        async def _fail(*args, **kwargs):
+            raise RuntimeError("ingest boom")
+
+        service.ingest_file = _fail
+
+        response = client.post(
+            "/ingest/upload",
+            data={"database": "fail-db"},
+            files={"file": ("bad.txt", io.BytesIO(b"data"), "text/plain")},
+        )
+        assert response.status_code == 500
+        assert "ingest boom" in response.json()["detail"]
+
+
+# ── /db/list includes description and documents_count ────────────────────
+
+
+class TestDbListUpdatedFields:
+    def test_list_includes_description_and_documents_count(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("alpha", description="Alpha KB")
+        service.registry._databases["alpha"]["documents"] = [
+            {"file_name": "x.pdf", "sha256": "x"},
+            {"file_name": "y.pdf", "sha256": "y"},
+        ]
+        service.registry.register_database("beta")
+
+        response = client.get("/db/list")
+        assert response.status_code == 200
+        data = response.json()
+        by_id = {d["id"]: d for d in data["databases"]}
+        assert by_id["alpha"]["description"] == "Alpha KB"
+        assert by_id["alpha"]["documents_count"] == 2
+        assert by_id["beta"]["description"] == ""
+        assert by_id["beta"]["documents_count"] == 0
