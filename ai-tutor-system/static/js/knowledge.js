@@ -2,6 +2,15 @@
  * 知识库管理模块
  * 管理知识库的创建、选择、文件上传和文档列表
  */
+/**
+ * 转义 HTML 特殊字符，防止 XSS
+ */
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 const knowledgeState = {
     databases: [],
     activeDatabase: '',
@@ -86,7 +95,7 @@ function renderKnowledgePage() {
         <div class="panel-card panel-pad" style="margin-top: 1.25rem;">
             <h3 class="panel-card-title">
                 文件管理
-                ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${knowledgeState.activeDatabase}</span>` : ''}
+                ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
             </h3>
             ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
             <div id="fileListContainer" style="margin-top: 1rem;">
@@ -109,11 +118,11 @@ function renderDatabaseList() {
         const name = typeof db === 'string' ? db : (db.name || db.id);
         const isActive = id === knowledgeState.activeDatabase;
         return `
-            <div class="db-item ${isActive ? 'active' : ''}" onclick="selectDatabase('${id}')">
+            <div class="db-item ${isActive ? 'active' : ''}" data-db-id="${escapeHtml(id)}" onclick="selectDatabase(this.dataset.dbId)">
                 <span class="db-item-icon">📚</span>
                 <div class="db-item-info">
-                    <div class="db-item-name">${name}</div>
-                    <div class="db-item-id">${id}</div>
+                    <div class="db-item-name">${escapeHtml(name)}</div>
+                    <div class="db-item-id">${escapeHtml(id)}</div>
                 </div>
                 ${isActive ? '<span class="db-item-check">✓</span>' : ''}
             </div>
@@ -157,6 +166,10 @@ async function createKnowledgeBase() {
 
     if (!id) {
         alert('请输入知识库 ID');
+        return;
+    }
+    if (!/^[a-zA-Z0-9_\-一-龥]+$/.test(id)) {
+        alert('知识库ID只能包含字母、数字、下划线、短横线和中文');
         return;
     }
     if (!name) {
@@ -271,19 +284,24 @@ async function loadKnowledgeDocuments() {
                 <span class="file-col-status">状态</span>
                 <span class="file-col-source">来源</span>
             </div>
-            ${documents.map(doc => `
+            ${documents.map(doc => {
+                const fileName = escapeHtml(doc.file_name || doc.name || '-');
+                const status = escapeHtml(doc.status || '已导入');
+                const source = escapeHtml(doc.source || doc.file_path || '-');
+                const statusClass = (doc.status === 'completed' || doc.status === 'ready') ? 'status-success' : 'status-pending';
+                return `
                 <div class="file-row">
-                    <span class="file-col-name" title="${doc.file_name || doc.name || '-'}">
-                        📄 ${doc.file_name || doc.name || '-'}
+                    <span class="file-col-name" title="${fileName}">
+                        📄 ${fileName}
                     </span>
                     <span class="file-col-status">
-                        <span class="status-text ${doc.status === 'completed' || doc.status === 'ready' ? 'status-success' : 'status-pending'}">
-                            ${doc.status || '已导入'}
+                        <span class="status-text ${statusClass}">
+                            ${status}
                         </span>
                     </span>
-                    <span class="file-col-source">${doc.source || doc.file_path || '-'}</span>
+                    <span class="file-col-source">${source}</span>
                 </div>
-            `).join('')}
+            `}).join('')}
         `;
 
         // 更新总览计数
