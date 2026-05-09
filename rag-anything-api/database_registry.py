@@ -23,6 +23,7 @@ class DatabaseRegistry:
                     {
                         "id": str(item),
                         "name": str(item),
+                        "description": "",
                         "status": "active",
                         "engine": "raganything",
                         "created_at": self._now(),
@@ -38,6 +39,7 @@ class DatabaseRegistry:
         data.setdefault("databases", [])
         for item in data["databases"]:
             item.setdefault("name", item.get("id", ""))
+            item.setdefault("description", "")
             item.setdefault("status", "active")
             item.setdefault("engine", "raganything")
             item.setdefault("documents", [])
@@ -76,6 +78,7 @@ class DatabaseRegistry:
         self,
         database_id: str,
         name: str | None = None,
+        description: str | None = None,
         working_dir: str | None = None,
         output_dir: str | None = None,
     ) -> dict[str, Any]:
@@ -87,6 +90,8 @@ class DatabaseRegistry:
         for item in data["databases"]:
             if str(item.get("id", "")).strip() == database_id:
                 item["name"] = name or item.get("name") or database_id
+                if description is not None:
+                    item["description"] = description
                 if working_dir:
                     item["working_dir"] = working_dir
                 if output_dir:
@@ -99,6 +104,7 @@ class DatabaseRegistry:
         item = {
             "id": database_id,
             "name": name or database_id,
+            "description": description or "",
             "status": "active",
             "engine": "raganything",
             "created_at": now,
@@ -110,6 +116,52 @@ class DatabaseRegistry:
         data["databases"].append(item)
         self._save(data)
         return item
+
+    def update_database(
+        self,
+        database_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """更新已有知识库的 name、description、status 字段。
+
+        Raises:
+            KeyError: 当 database_id 不存在时。
+        """
+        database_id = str(database_id).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+
+        data = self._load()
+        for item in data["databases"]:
+            if str(item.get("id", "")).strip() == database_id:
+                if name is not None:
+                    item["name"] = name
+                if description is not None:
+                    item["description"] = description
+                if status is not None:
+                    item["status"] = status
+                item["updated_at"] = self._now()
+                self._save(data)
+                return item
+
+        raise KeyError(f"Database '{database_id}' not found")
+
+    def list_documents(self, database_id: str) -> list[dict[str, Any]]:
+        """返回指定知识库的文档列表。
+
+        Raises:
+            KeyError: 当 database_id 不存在时。
+        """
+        database_id = str(database_id).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+
+        db = self.get_database(database_id)
+        if db is None:
+            raise KeyError(f"Database '{database_id}' not found")
+        return db.get("documents", [])
 
     def register_document(
         self,
