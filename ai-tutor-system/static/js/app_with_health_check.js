@@ -42,6 +42,7 @@ const elements = {
     productName: document.getElementById('productName'),
     scenarioType: document.getElementById('scenarioType'),
     scenarioSelect: document.getElementById('scenarioSelect'),
+    tutorDatabase: document.getElementById('tutorDatabase'),
     startBtn: document.getElementById('startBtn'),
 
     // 对话页面
@@ -282,7 +283,7 @@ async function healthCheckLoop() {
 /**
  * 开始陪练会话
  */
-async function startSession(scenarioId, clientUnit, product, scenarioType) {
+async function startSession(scenarioId, clientUnit, product, scenarioType, database) {
     try {
         const response = await fetch(`${CONFIG.TUTOR_API}/session/start`, {
             method: 'POST',
@@ -291,7 +292,8 @@ async function startSession(scenarioId, clientUnit, product, scenarioType) {
                 scenario_id: scenarioId,
                 client_unit: clientUnit,
                 product: product,
-                scenario_type: scenarioType
+                scenario_type: scenarioType,
+                database: database || undefined
             })
         });
 
@@ -705,6 +707,7 @@ async function handleStart() {
     const clientUnit = elements.clientUnit.value.trim();
     const product = elements.productName.value.trim();
     const scenarioType = elements.scenarioType.value.trim();
+    const database = elements.tutorDatabase?.value || '';
 
     if (!scenarioId) {
         alert('请选择一个场景');
@@ -720,7 +723,7 @@ async function handleStart() {
         elements.startBtn.disabled = true;
         elements.startBtn.textContent = '启动中...';
 
-        const data = await startSession(scenarioId, clientUnit, product, scenarioType);
+        const data = await startSession(scenarioId, clientUnit, product, scenarioType, database);
 
         // 更新信息看板
         updateInfoPanel(data.session_info, data.scenario);
@@ -985,6 +988,42 @@ elements.customScenarioModal.addEventListener('click', (e) => {
     }
 });
 
+// ==================== 知识库下拉 ====================
+
+/**
+ * 从 RAG API 获取知识库列表并填充 tutorDatabase 下拉框
+ */
+async function populateTutorDatabaseDropdown() {
+    const select = elements.tutorDatabase;
+    if (!select) return;
+
+    try {
+        const resp = await fetch(`${CONFIG.RAG_API}/db/list`, {
+            signal: AbortSignal.timeout(CONFIG.HEALTH_CHECK_TIMEOUT)
+        });
+        if (!resp.ok) return;
+
+        const data = await resp.json();
+        const databases = Array.isArray(data) ? data : (data.databases || []);
+
+        // 保留第一个 "自动选择" 选项，清空其余
+        while (select.options.length > 1) {
+            select.remove(1);
+        }
+
+        databases.forEach(db => {
+            const id = typeof db === 'string' ? db : db.id;
+            const name = typeof db === 'string' ? db : (db.name || db.id);
+            const opt = document.createElement('option');
+            opt.value = id;
+            opt.textContent = name;
+            select.appendChild(opt);
+        });
+    } catch (err) {
+        console.warn('加载知识库列表失败（陪练下拉）:', err.message);
+    }
+}
+
 // ==================== 初始化 ====================
 
 console.log('AI话术陪练系统已加载（带服务健康检查）');
@@ -993,3 +1032,6 @@ console.log('陪练服务:', CONFIG.TUTOR_API);
 
 // 启动健康检查循环
 healthCheckLoop();
+
+// 填充知识库下拉
+populateTutorDatabaseDropdown();

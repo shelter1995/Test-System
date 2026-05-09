@@ -84,6 +84,7 @@ class SessionStart(BaseModel):
     client_unit: Optional[str] = "某公司"
     product: Optional[str] = "商务视频彩铃"
     scenario_type: Optional[str] = "初次沟通"
+    database: Optional[str] = None  # 用户显式选择的知识库
     custom_scenario: Optional[ScenarioCreate] = None
 
 class ChatMessage(BaseModel):
@@ -460,9 +461,9 @@ def call_ai_for_final_report(
     scenario = session_data.get("scenario", {})
     rounds = session_data.get("round", 0)
 
-    # 根据产品名称选择对应的数据库
+    # 根据产品名称选择对应的数据库（优先使用用户显式选择的）
     product = session_data.get("product", "")
-    database = resolve_product_database(product)
+    database = session_data.get("database") or resolve_product_database(product)
 
     # 检索销售培训标准和方法论
     training_standards = search_rag_knowledge(
@@ -746,6 +747,7 @@ async def start_session(session_start: SessionStart):
         "client_unit": session_start.client_unit,
         "product": session_start.product,
         "scenario_type": session_start.scenario_type,
+        "database": session_start.database,  # 用户显式选择的知识库
         "round": 0,
         "messages": [],
         "evaluations": [],
@@ -803,9 +805,9 @@ async def chat(chat_message: ChatMessage):
             last_user_msg = [m for m in session_data["messages"] if m["role"] == "user"][-1]
             last_ai_msg = [m for m in session_data["messages"] if m["role"] == "ai"][-1]
             
-            # 根据产品名称选择对应的数据库
+            # 根据产品名称选择对应的数据库（优先使用用户显式选择的）
             product = session_data.get("product", "")
-            database = resolve_product_database(product)
+            database = session_data.get("database") or resolve_product_database(product)
 
             # 使用AI评估
             evaluation = call_ai_for_evaluation(
@@ -834,10 +836,10 @@ async def chat(chat_message: ChatMessage):
     session_data["round"] += 1
 
     # ========== 核心逻辑开始 ==========
-    
-    # 根据产品名称选择对应的数据库
+
+    # 根据产品名称选择对应的数据库（优先使用用户显式选择的）
     product = session_data.get("product", "")
-    database = resolve_product_database(product)
+    database = session_data.get("database") or resolve_product_database(product)
 
     # 1. 从RAG知识库检索相关信息（这是最重要的！）
     # 检索产品信息、应对话术、成功案例等
