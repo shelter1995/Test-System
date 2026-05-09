@@ -62,6 +62,10 @@ STATIC_DIR = Path(__file__).parent / "static"
 if STATIC_DIR.exists():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
+# 挂载内容生成 API 路由
+from generation_api import router as generation_router
+app.include_router(generation_router)
+
 # ==================== 数据模型 ====================
 
 class ScenarioCreate(BaseModel):
