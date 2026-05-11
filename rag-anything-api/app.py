@@ -11,11 +11,11 @@ import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 # 设置编码。不要 detach 标准流，uvicorn/logging 可能已经持有这些 stream。
@@ -26,6 +26,7 @@ for stream in (sys.stdout, sys.stderr):
 sys.path.insert(0, os.path.dirname(__file__))
 import config
 from database_registry import DatabaseRegistry
+from progress import progress_tracker
 from raganything_service import RAGAnythingService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -521,44 +522,74 @@ async def ingest_path(request: FileIngestRequest):
 
 
 @app.post("/ingest/upload")
-async def ingest_upload(database: str = Form(...), file: UploadFile = File(...)):
+async def ingest_upload(database: str = Form(...), files: List[UploadFile] = File(...)):
     service = _require_service()
     db_id = _normalize_database_id(database)
     if not db_id:
         raise HTTPException(status_code=400, detail="database 不能为空")
 
-    filename = Path(file.filename or "uploaded_file").name
     target_dir = Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id
     target_dir.mkdir(parents=True, exist_ok=True)
-    target_path = target_dir / filename
 
-    # Verify resolved path is within target_dir to prevent path traversal
-    try:
-        target_path.resolve().relative_to(target_dir.resolve())
-    except ValueError:
-        raise HTTPException(status_code=400, detail="非法文件名")
+    saved_files = []
+    for file in files:
+        filename = Path(file.filename or "uploaded_file").name
+        target_path = target_dir / filename
 
-    try:
-        with open(target_path, "wb") as f:
-            shutil.copyfileobj(file.file, f)
-    except Exception as e:
-        logger.error(f"文件保存失败: {e}")
-        raise HTTPException(status_code=500, detail=f"文件保存失败: {e}")
-    finally:
-        file.file.close()
+        try:
+            target_path.resolve().relative_to(target_dir.resolve())
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"非法文件名: {filename}")
 
-    try:
-        # 使用后台线程执行 ingest_file，避免阻塞事件循环和 health check
-        result = await asyncio.to_thread(service.ingest_file_sync, db_id, target_path)
-        return {
-            "status": "success",
-            "database": db_id,
-            "filename": filename,
-            "message": "文件已上传并导入知识库",
-        }
-    except Exception as e:
-        logger.error(f"文件导入失败: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        try:
+            with open(target_path, "wb") as f:
+                shutil.copyfileobj(file.file, f)
+        except Exception as e:
+            logger.error(f"文件保存失败: {e}")
+            raise HTTPException(status_code=500, detail=f"文件保存失败: {filename}")
+        finally:
+            file.file.close()
+
+        saved_files.append((filename, str(target_path)))
+
+    task_id = progress_tracker.create_task(len(saved_files))
+    asyncio.create_task(_process_uploaded_files(db_id, saved_files, task_id))
+
+    return {
+        "status": "success",
+        "database": db_id,
+        "task_id": task_id,
+        "total": len(saved_files),
+        "message": f"{len(saved_files)} 个文件已保存，后台处理中",
+    }
+
+
+async def _process_uploaded_files(db_id: str, files: list, task_id: str):
+    service = _require_service()
+    for filename, filepath in files:
+        try:
+            progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
+            await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
+            progress_tracker.emit(task_id, "done", filename, f"{filename} 导入完成")
+        except Exception as e:
+            logger.error(f"文件导入失败 [{filename}]: {e}")
+            progress_tracker.emit(task_id, "error", filename, f"{filename} 导入失败", error=str(e))
+    progress_tracker.finalize(task_id)
+
+
+@app.get("/ingest/progress/{task_id}")
+async def ingest_progress(task_id: str):
+    async def event_stream():
+        index = 0
+        while True:
+            events, index, finished = progress_tracker.get_events_since(task_id, index)
+            for evt in events:
+                yield f"data: {json.dumps(evt, ensure_ascii=False)}\n\n"
+            if finished:
+                yield "data: {\"type\": \"finished\"}\n\n"
+                break
+            await asyncio.sleep(0.5)
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
 
 
 def check_port_available(port: int) -> bool:

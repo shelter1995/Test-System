@@ -224,25 +224,47 @@ class TestIngestUpload:
         client, service = _make_client(monkeypatch)
         service.registry.register_database("upload-db")
 
-        # monkeypatch storage root so files land in tmp_path
         monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
 
         file_content = b"hello world"
         response = client.post(
             "/ingest/upload",
             data={"database": "upload-db"},
-            files={"file": ("test.txt", io.BytesIO(file_content), "text/plain")},
+            files={"files": ("test.txt", io.BytesIO(file_content), "text/plain")},
         )
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "success"
         assert data["database"] == "upload-db"
-        assert data["filename"] == "test.txt"
+        assert data["total"] == 1
+        assert "task_id" in data
 
         # verify file was saved
         saved = tmp_path / "files" / "upload-db" / "test.txt"
         assert saved.exists()
         assert saved.read_bytes() == file_content
+
+    def test_upload_multiple_files(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("multi-db")
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        response = client.post(
+            "/ingest/upload",
+            data={"database": "multi-db"},
+            files=[
+                ("files", ("a.txt", io.BytesIO(b"aaa"), "text/plain")),
+                ("files", ("b.txt", io.BytesIO(b"bbb"), "text/plain")),
+            ],
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total"] == 2
+
+        saved_a = tmp_path / "files" / "multi-db" / "a.txt"
+        saved_b = tmp_path / "files" / "multi-db" / "b.txt"
+        assert saved_a.exists()
+        assert saved_b.exists()
 
     def test_upload_empty_database_returns_422(self, monkeypatch):
         """FastAPI Form 验证拒绝空 database 字段。"""
@@ -250,16 +272,15 @@ class TestIngestUpload:
         response = client.post(
             "/ingest/upload",
             data={"database": ""},
-            files={"file": ("test.txt", io.BytesIO(b"data"), "text/plain")},
+            files={"files": ("test.txt", io.BytesIO(b"data"), "text/plain")},
         )
         assert response.status_code == 422
 
-    def test_upload_ingest_failure_returns_500(self, monkeypatch, tmp_path):
+    def test_upload_ingest_failure_reported_via_sse(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)
         service.registry.register_database("fail-db")
         monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
 
-        # make ingest_file_sync raise
         def _fail(*args, **kwargs):
             raise RuntimeError("ingest boom")
 
@@ -268,10 +289,21 @@ class TestIngestUpload:
         response = client.post(
             "/ingest/upload",
             data={"database": "fail-db"},
-            files={"file": ("bad.txt", io.BytesIO(b"data"), "text/plain")},
+            files={"files": ("bad.txt", io.BytesIO(b"data"), "text/plain")},
         )
-        assert response.status_code == 500
-        assert "ingest boom" in response.json()["detail"]
+        assert response.status_code == 200
+        task_id = response.json()["task_id"]
+
+        # 等待后台处理完成，SSE 应报告错误
+        import time
+        time.sleep(1.5)
+
+        from progress import progress_tracker
+        events, _, finished = progress_tracker.get_events_since(task_id, 0)
+        assert finished
+        error_events = [e for e in events if e["type"] == "error"]
+        assert len(error_events) == 1
+        assert "ingest boom" in error_events[0]["error"]
 
 
 # ── /db/list includes description and documents_count ────────────────────

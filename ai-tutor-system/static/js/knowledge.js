@@ -2,9 +2,7 @@
  * 知识库管理模块
  * 管理知识库的创建、选择、文件上传和文档列表
  */
-/**
- * 转义 HTML 特殊字符，防止 XSS
- */
+
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -14,6 +12,7 @@ function escapeHtml(str) {
 const knowledgeState = {
     databases: [],
     activeDatabase: '',
+    uploadEventSource: null,
 };
 
 /**
@@ -26,7 +25,6 @@ async function loadKnowledgeBases() {
         );
         knowledgeState.databases = Array.isArray(data) ? data : (data.databases || []);
 
-        // 默认选中第一个
         if (knowledgeState.databases.length > 0 && !knowledgeState.activeDatabase) {
             knowledgeState.activeDatabase = knowledgeState.databases[0].id || knowledgeState.databases[0];
         }
@@ -37,7 +35,6 @@ async function loadKnowledgeBases() {
             loadKnowledgeDocuments();
         }
 
-        // 同步总览计数
         updateOverviewCounts();
     } catch (err) {
         console.error('加载知识库列表失败:', err);
@@ -56,7 +53,7 @@ async function loadKnowledgeBases() {
 }
 
 /**
- * 渲染知识库页面
+ * 渲染知识库页面 — 左栏：创建知识库，右栏：知识库列表 + 文件管理
  */
 function renderKnowledgePage() {
     const container = document.getElementById('knowledgeApp');
@@ -82,24 +79,22 @@ function renderKnowledgePage() {
                 <button class="btn-primary" onclick="createKnowledgeBase()">创建</button>
             </div>
 
-            <!-- 右侧：知识库列表 -->
+            <!-- 右侧：知识库列表 + 文件管理 -->
             <div class="panel-card panel-pad">
                 <h3 class="panel-card-title">知识库列表 <span class="badge">${knowledgeState.databases.length}</span></h3>
                 <div id="dbListContainer">
                     ${renderDatabaseList()}
                 </div>
-            </div>
-        </div>
 
-        <!-- 下方：文件上传 + 文件列表 -->
-        <div class="panel-card panel-pad" style="margin-top: 1.25rem;">
-            <h3 class="panel-card-title">
-                文件管理
-                ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
-            </h3>
-            ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
-            <div id="fileListContainer" style="margin-top: 1rem;">
-                <div class="empty-state"><p>加载中...</p></div>
+                <h3 class="panel-card-title" style="margin-top: 1.5rem;">
+                    文件管理
+                    ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
+                </h3>
+                ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
+                <div id="uploadLogContainer"></div>
+                <div id="fileListContainer" style="margin-top: 0.75rem;">
+                    <div class="empty-state"><p>加载中...</p></div>
+                </div>
             </div>
         </div>
     `;
@@ -131,15 +126,16 @@ function renderDatabaseList() {
 }
 
 /**
- * 渲染上传区域
+ * 渲染上传区域（支持多文件选择）
  */
 function renderUploadSection() {
     return `
         <div class="upload-row">
-            <input type="file" id="uploadFileInput" accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json" />
-            <button class="btn-primary" onclick="uploadKnowledgeFile()">上传并导入</button>
+            <input type="file" id="uploadFileInput" multiple
+                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json" />
+            <button class="btn-primary" id="uploadBtn" onclick="uploadKnowledgeFiles()">上传并导入</button>
         </div>
-        <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON</p>
+        <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON（可多选）</p>
     `;
 }
 
@@ -147,6 +143,7 @@ function renderUploadSection() {
  * 选择知识库
  */
 function selectDatabase(dbId) {
+    closeUploadSSE();
     knowledgeState.activeDatabase = dbId;
     renderKnowledgePage();
     loadKnowledgeDocuments();
@@ -183,11 +180,9 @@ async function createKnowledgeBase() {
             { id, name, description }
         );
         alert('知识库创建成功！');
-        // 清空表单
         if (idInput) idInput.value = '';
         if (nameInput) nameInput.value = '';
         if (descInput) descInput.value = '';
-        // 刷新列表
         knowledgeState.activeDatabase = id;
         loadKnowledgeBases();
     } catch (err) {
@@ -197,9 +192,9 @@ async function createKnowledgeBase() {
 }
 
 /**
- * 上传文件到知识库
+ * 批量上传文件到知识库
  */
-async function uploadKnowledgeFile() {
+async function uploadKnowledgeFiles() {
     const fileInput = document.getElementById('uploadFileInput');
     if (!fileInput || !fileInput.files.length) {
         alert('请选择要上传的文件');
@@ -211,21 +206,18 @@ async function uploadKnowledgeFile() {
         return;
     }
 
-    const file = fileInput.files[0];
+    const files = Array.from(fileInput.files);
     const formData = new FormData();
     formData.append('database', knowledgeState.activeDatabase);
-    formData.append('file', file);
+    files.forEach(f => formData.append('files', f));
 
-    // 显示上传中状态
-    const fileListContainer = document.getElementById('fileListContainer');
-    if (fileListContainer) {
-        fileListContainer.innerHTML = `
-            <div class="empty-state">
-                <div class="placeholder-icon">⏳</div>
-                <p>正在上传并导入，RAG-Anything 解析可能需要较长时间...</p>
-            </div>
-        `;
-    }
+    // 显示日志窗口
+    showUploadLog(files);
+
+    // 禁用上传按钮
+    const uploadBtn = document.getElementById('uploadBtn');
+    if (uploadBtn) uploadBtn.disabled = true;
+    fileInput.value = '';
 
     try {
         const resp = await fetch(
@@ -233,24 +225,168 @@ async function uploadKnowledgeFile() {
             { method: 'POST', body: formData }
         );
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
-        alert('文件上传成功！');
-        // 清空文件选择
-        fileInput.value = '';
-        // 刷新文件列表
-        loadKnowledgeDocuments();
-        // 更新总览计数
-        updateOverviewCounts();
+
+        const result = await resp.json();
+        const taskId = result.task_id;
+        const totalFiles = files.length;
+
+        // 连接 SSE 获取实时进度
+        connectUploadSSE(taskId, totalFiles);
     } catch (err) {
         console.error('上传文件失败:', err);
-        alert('上传失败: ' + err.message);
-        if (fileListContainer) {
-            fileListContainer.innerHTML = `
-                <div class="empty-state">
-                    <p>上传失败，请重试</p>
-                </div>
-            `;
-        }
+        appendLogEntry({ type: 'error', file: '请求失败', message: err.message, error: err.message });
+        finishUpload(false);
     }
+}
+
+/**
+ * 显示上传日志窗口
+ */
+function showUploadLog(files) {
+    const logContainer = document.getElementById('uploadLogContainer');
+    if (!logContainer) return;
+
+    logContainer.innerHTML = `
+        <div class="upload-log" id="uploadLog">
+            <div class="upload-log-header">
+                <span>上传日志</span>
+                <span id="uploadLogSummary">0 / ${files.length} 完成</span>
+                <button class="btn-log-clear" onclick="clearUploadLog()">关闭</button>
+            </div>
+            <div class="upload-log-body" id="uploadLogBody">
+                <div class="log-entry log-info">
+                    <span class="log-msg">已提交 ${files.length} 个文件，后台处理中...</span>
+                </div>
+            </div>
+        </div>
+    `;
+
+    // 确保日志容器可见
+    document.getElementById('uploadLog').style.display = 'block';
+}
+
+/**
+ * 连接 SSE 进度推送
+ */
+function connectUploadSSE(taskId, total) {
+    closeUploadSSE();
+
+    const url = `${WorkbenchAPI.BASE_URLS.RAG_API}/ingest/progress/${taskId}`;
+    const es = new EventSource(url);
+    knowledgeState.uploadEventSource = es;
+
+    let completed = 0;
+
+    es.onmessage = function (event) {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'finished') {
+                es.close();
+                finishUpload(true);
+                return;
+            }
+
+            appendLogEntry(data);
+
+            if (data.type === 'done') {
+                completed++;
+            } else if (data.type === 'error') {
+                completed++;
+            }
+
+            const summaryEl = document.getElementById('uploadLogSummary');
+            if (summaryEl) {
+                summaryEl.textContent = `${completed} / ${total} 完成`;
+            }
+        } catch (e) {
+            console.error('解析 SSE 事件失败:', e);
+        }
+    };
+
+    es.onerror = function () {
+        finishUpload(true);
+    };
+}
+
+/**
+ * 关闭 SSE 连接
+ */
+function closeUploadSSE() {
+    if (knowledgeState.uploadEventSource) {
+        knowledgeState.uploadEventSource.close();
+        knowledgeState.uploadEventSource = null;
+    }
+}
+
+/**
+ * 追加日志条目
+ */
+function appendLogEntry(data) {
+    const logBody = document.getElementById('uploadLogBody');
+    if (!logBody) return;
+
+    let icon, cssClass;
+    switch (data.type) {
+        case 'parsing':
+            icon = '⏳';
+            cssClass = 'log-parsing';
+            break;
+        case 'done':
+            icon = '✅';
+            cssClass = 'log-done';
+            break;
+        case 'error':
+            icon = '❌';
+            cssClass = 'log-error';
+            break;
+        default:
+            icon = 'ℹ️';
+            cssClass = 'log-info';
+            break;
+    }
+
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${cssClass}`;
+    entry.innerHTML = `
+        <span class="log-icon">${icon}</span>
+        <span class="log-file">${escapeHtml(data.file || '')}</span>
+        <span class="log-msg">${escapeHtml(data.error || data.message || '')}</span>
+    `;
+    logBody.appendChild(entry);
+
+    // 自动滚动到底部
+    logBody.scrollTop = logBody.scrollHeight;
+}
+
+/**
+ * 上传结束处理
+ */
+function finishUpload(success) {
+    const uploadBtn = document.getElementById('uploadBtn');
+    if (uploadBtn) uploadBtn.disabled = false;
+
+    // 更新日志汇总
+    const summaryEl = document.getElementById('uploadLogSummary');
+    if (summaryEl && success) {
+        summaryEl.textContent = '全部完成';
+    }
+
+    // 刷新文件列表
+    loadKnowledgeDocuments();
+    updateOverviewCounts();
+}
+
+/**
+ * 清除上传日志
+ */
+function clearUploadLog() {
+    closeUploadSSE();
+    const logContainer = document.getElementById('uploadLogContainer');
+    if (logContainer) {
+        logContainer.innerHTML = '';
+    }
+    const uploadBtn = document.getElementById('uploadBtn');
+    if (uploadBtn) uploadBtn.disabled = false;
 }
 
 /**
@@ -286,9 +422,12 @@ async function loadKnowledgeDocuments() {
             </div>
             ${documents.map(doc => {
                 const fileName = escapeHtml(doc.file_name || doc.name || '-');
-                const status = escapeHtml(doc.status || '已导入');
+                const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
+                const rawStatus = doc.status || '已导入';
+                const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
                 const source = escapeHtml(doc.source || doc.file_path || '-');
-                const statusClass = (doc.status === 'completed' || doc.status === 'ready') ? 'status-success' : 'status-pending';
+                const isDone = rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported';
+                const statusClass = isDone ? 'status-success' : 'status-pending';
                 return `
                 <div class="file-row">
                     <span class="file-col-name" title="${fileName}">
@@ -296,7 +435,7 @@ async function loadKnowledgeDocuments() {
                     </span>
                     <span class="file-col-status">
                         <span class="status-text ${statusClass}">
-                            ${status}
+                            ${statusText}
                         </span>
                     </span>
                     <span class="file-col-source">${source}</span>
@@ -304,7 +443,6 @@ async function loadKnowledgeDocuments() {
             `}).join('')}
         `;
 
-        // 更新总览计数
         updateOverviewCounts();
     } catch (err) {
         console.error('加载文档列表失败:', err);
@@ -327,7 +465,6 @@ function updateOverviewCounts() {
         knowledgeCountEl.textContent = knowledgeState.databases.length;
     }
 
-    // 文件计数通过当前文档列表获取
     const fileRows = document.querySelectorAll('#fileListContainer .file-row');
     if (fileCountEl) {
         fileCountEl.textContent = fileRows.length;
@@ -336,7 +473,6 @@ function updateOverviewCounts() {
 
 // 页面加载时自动初始化
 document.addEventListener('DOMContentLoaded', function () {
-    // 当切换到知识库页面时加载数据
     const observer = new MutationObserver(function () {
         const knowledgeSection = document.querySelector('[data-page="knowledge"]');
         if (knowledgeSection && knowledgeSection.classList.contains('active')) {
@@ -344,7 +480,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    // 监听页面切换
     const sections = document.querySelectorAll('.page-section');
     sections.forEach(section => {
         observer.observe(section, { attributes: true, attributeFilter: ['class'] });

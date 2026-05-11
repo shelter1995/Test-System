@@ -198,7 +198,7 @@ class DatabaseRegistry:
                 "file_path": file_path,
                 "sha256": sha256,
                 "source": source or file_name,
-                "status": "imported",
+                "status": "已导入",
                 "imported_at": self._now(),
             }
         )
