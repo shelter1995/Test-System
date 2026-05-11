@@ -13,6 +13,7 @@ const knowledgeState = {
     databases: [],
     activeDatabase: '',
     uploadEventSource: null,
+    uploadLogState: null,  // 切换知识库时保留上传日志
 };
 
 /**
@@ -98,6 +99,11 @@ function renderKnowledgePage() {
             </div>
         </div>
     `;
+
+    // 恢复之前的上传日志
+    if (knowledgeState.uploadLogState) {
+        restoreUploadLog();
+    }
 }
 
 /**
@@ -132,9 +138,11 @@ function renderUploadSection() {
     return `
         <div class="upload-row">
             <input type="file" id="uploadFileInput" multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json" />
+                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json"
+                onchange="updateFileSelection()" />
             <button class="btn-primary" id="uploadBtn" onclick="uploadKnowledgeFiles()">上传并导入</button>
         </div>
+        <div id="selectedFiles" class="selected-files"></div>
         <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON（可多选）</p>
     `;
 }
@@ -143,6 +151,8 @@ function renderUploadSection() {
  * 选择知识库
  */
 function selectDatabase(dbId) {
+    // 保存当前上传日志状态
+    saveUploadLogState();
     closeUploadSSE();
     knowledgeState.activeDatabase = dbId;
     renderKnowledgePage();
@@ -188,6 +198,55 @@ async function createKnowledgeBase() {
     } catch (err) {
         console.error('创建知识库失败:', err);
         alert('创建失败: ' + err.message);
+    }
+}
+
+/**
+ * 显示已选择的文件名
+ */
+function updateFileSelection() {
+    const input = document.getElementById('uploadFileInput');
+    const display = document.getElementById('selectedFiles');
+    if (!input || !display) return;
+
+    if (!input.files.length) {
+        display.innerHTML = '';
+        return;
+    }
+
+    const names = Array.from(input.files).map(f => f.name);
+    if (names.length <= 3) {
+        display.innerHTML = '已选择: ' + names.map(n => escapeHtml(n)).join(', ');
+    } else {
+        display.innerHTML = '已选择 ' + names.length + ' 个文件: '
+            + names.slice(0, 3).map(n => escapeHtml(n)).join(', ') + ' ...';
+    }
+}
+
+/**
+ * 保存上传日志状态（切换知识库前调用）
+ */
+function saveUploadLogState() {
+    const logEl = document.getElementById('uploadLog');
+    if (logEl) {
+        knowledgeState.uploadLogState = {
+            html: logEl.parentElement.innerHTML,
+        };
+    }
+}
+
+/**
+ * 恢复上传日志（切换知识库后调用）
+ */
+function restoreUploadLog() {
+    const logContainer = document.getElementById('uploadLogContainer');
+    if (!logContainer || !knowledgeState.uploadLogState) return;
+    logContainer.innerHTML = knowledgeState.uploadLogState.html;
+
+    // 更新关闭按钮事件
+    const closeBtn = logContainer.querySelector('.btn-log-clear');
+    if (closeBtn) {
+        closeBtn.onclick = clearUploadLog;
     }
 }
 
@@ -381,6 +440,7 @@ function finishUpload(success) {
  */
 function clearUploadLog() {
     closeUploadSSE();
+    knowledgeState.uploadLogState = null;
     const logContainer = document.getElementById('uploadLogContainer');
     if (logContainer) {
         logContainer.innerHTML = '';

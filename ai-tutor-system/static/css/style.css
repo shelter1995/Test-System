@@ -1671,12 +1671,26 @@ body.has-alert .page {
 .upload-row input[type="file"] {
     flex: 1;
     font-size: 0.9rem;
+    min-width: 0;
+}
+
+.upload-row .btn-primary {
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .upload-hint {
     font-size: 0.8rem;
     color: var(--text-light);
     margin-top: 0.5rem;
+}
+
+.selected-files {
+    font-size: 0.82rem;
+    color: var(--secondary-color);
+    margin-top: 0.4rem;
+    line-height: 1.4;
+    word-break: break-all;
 }
 
 /* 文件列表 */
@@ -1838,6 +1852,16 @@ body.has-alert .page {
 
 .log-entry.log-parsing .log-file {
     color: #6c757d;
+}
+
+.log-entry.log-parsing .log-icon {
+    animation: icon-pulse 1.2s ease-in-out infinite;
+    display: inline-block;
+}
+
+@keyframes icon-pulse {
+    0%, 100% { transform: scale(1); opacity: 1; }
+    50% { transform: scale(1.25); opacity: 0.6; }
 }
 
 .log-entry.log-done .log-file {
