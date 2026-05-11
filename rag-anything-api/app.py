@@ -138,6 +138,7 @@ class SearchRequest(BaseModel):
     query: str
     n_results: Optional[int] = 10
     database: Optional[str] = None
+    enable_rerank: Optional[bool] = None
 
 
 class MultiSearchRequest(BaseModel):
@@ -240,10 +241,13 @@ async def search(request: SearchRequest):
     service = _require_service()
     try:
         db_id = _normalize_database_id(request.database)
+        kwargs = {"mode": _query_mode(), "n_results": request.n_results or 10}
+        if request.enable_rerank is not None:
+            kwargs["enable_rerank"] = request.enable_rerank
         if db_id:
-            result = await service.query(db_id, request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query(db_id, request.query, **kwargs)
         else:
-            result = await service.query_all(request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
@@ -257,10 +261,13 @@ async def ai_enhanced_search(request: SearchRequest):
     service = _require_service()
     try:
         db_id = _normalize_database_id(request.database)
+        kwargs = {"mode": _query_mode(), "n_results": request.n_results or 10}
+        if request.enable_rerank is not None:
+            kwargs["enable_rerank"] = request.enable_rerank
         if db_id:
-            result = await service.query(db_id, request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query(db_id, request.query, **kwargs)
         else:
-            result = await service.query_all(request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")

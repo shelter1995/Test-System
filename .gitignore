@@ -45,3 +45,4 @@ temp.json
 
 # Session data
 ai-tutor-system/tutor_data/
+generation_output/

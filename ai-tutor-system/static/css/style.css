@@ -1976,31 +1976,7 @@ body.has-alert .page {
 
 /* ==================== 内容生成 v2 四卡片布局 ==================== */
 
-.gen-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1.25rem;
-}
-
-@media (max-width: 900px) {
-    .gen-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-.gen-card {
-    display: flex;
-    flex-direction: column;
-}
-
-.gen-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    margin-bottom: 1rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
-}
+/* ==================== 内容生成 — 卡片共用 ==================== */
 
 .gen-card-icon {
     font-size: 2rem;
@@ -2020,6 +1996,45 @@ body.has-alert .page {
     margin: 0.25rem 0 0;
 }
 
+.gen-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    min-height: 1.2rem;
+}
+
+/* ==================== 内容生成 v3 — 2卡片 + 折叠分区 ==================== */
+
+.gen-type-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    align-items: stretch;
+}
+
+@media (max-width: 900px) {
+    .gen-type-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.gen-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.gen-card-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding-bottom: 0.85rem;
+    margin-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
 .gen-card-body {
     flex: 1;
 }
@@ -2028,20 +2043,10 @@ body.has-alert .page {
     display: flex;
     align-items: center;
     gap: 1rem;
-    margin-top: 1rem;
-    padding-top: 0.75rem;
+    margin-top: auto;
+    padding-top: 0.85rem;
     border-top: 1px solid var(--border-color);
 }
-
-.gen-status {
-    font-size: 0.85rem;
-    color: var(--text-secondary);
-    min-height: 1.2rem;
-}
-
-/* ==================== 内容生成 & 历史产物页面 ==================== */
-
-/* 表单控件（select / input 通用） */
 .form-control {
     width: 100%;
     padding: 0.75rem;
@@ -2116,4 +2121,200 @@ body.has-alert .page {
     white-space: nowrap;
     min-width: 60px;
     text-align: right;
+}
+
+/* ==================== 内容生成 v3 — 2卡片 + 折叠分区 ==================== */
+
+.gen-type-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem;
+    align-items: stretch;
+}
+
+@media (max-width: 900px) {
+    .gen-type-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* 让卡片内部 footer 推到底部，卡片等宽等高 */
+.gen-card {
+    display: flex;
+    flex-direction: column;
+    border-radius: var(--radius-lg);
+    background: var(--bg-secondary);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-color);
+}
+
+.gen-card-header {
+    padding-bottom: 0.85rem;
+    margin-bottom: 0.85rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gen-card-body {
+    flex: 1;
+}
+
+.gen-card-footer {
+    margin-top: auto;
+    padding-top: 0.85rem;
+    border-top: 1px solid var(--border-color);
+}
+
+/* 历史产物区域 */
+.gen-history-section {
+    margin-top: 1.5rem;
+}
+
+.gen-history-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    margin-bottom: 1rem;
+    padding-bottom: 0.6rem;
+    border-bottom: 2px solid var(--secondary-color);
+}
+
+.gen-history-header .gen-history-icon {
+    font-size: 1.3rem;
+}
+
+.gen-history-header h3 {
+    margin: 0;
+    font-size: 1.05rem;
+    color: var(--primary-color);
+}
+
+/* 折叠分区 */
+.gen-section {
+    margin-bottom: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: var(--bg-secondary);
+}
+
+.gen-section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.7rem 1rem;
+    background: var(--bg-primary);
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--text-primary);
+    user-select: none;
+    transition: background 0.2s;
+}
+
+.gen-section-header:hover {
+    background: #e2e6ea;
+}
+
+.gen-section-header::after {
+    content: "▾";
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.gen-section.collapsed .gen-section-header::after {
+    transform: rotate(-90deg);
+}
+
+.gen-section-body {
+    padding: 1rem;
+}
+
+.gen-section.collapsed .gen-section-body {
+    display: none;
+}
+
+/* 多行文本输入 */
+.form-textarea {
+    width: 100%;
+    padding: 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 1rem;
+    font-family: inherit;
+    resize: vertical;
+    min-height: 72px;
+    transition: border-color 0.3s;
+    background: white;
+    color: var(--text-primary);
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+}
+
+/* 阶段指示器 */
+.gen-job-stage {
+    font-size: 0.85rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.stage-init { color: var(--text-secondary); }
+.stage-searching { color: var(--info-color); }
+.stage-generating { color: var(--secondary-color); }
+.stage-done { color: var(--success-color); }
+.stage-error { color: var(--accent-color); }
+
+/* 考试配置 */
+.exam-type-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+    padding: 0.4rem 0;
+}
+
+.exam-check {
+    flex: 0 0 140px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.exam-check input[type="checkbox"] {
+    width: 16px; height: 16px;
+    cursor: pointer;
+}
+
+.exam-count-input {
+    width: 70px !important;
+    text-align: center;
+}
+
+.exam-count-label {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+}
+
+.exam-divider {
+    height: 1px;
+    background: var(--border-color);
+    margin: 0.75rem 0;
+}
+
+.form-row-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 0.75rem;
+}
+
+.input-suffix {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin-left: 0.25rem;
 }

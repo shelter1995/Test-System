@@ -23,13 +23,39 @@ router = APIRouter(prefix="/generation", tags=["generation"])
 # ==================== 数据模型 ====================
 
 class GenerationRequest(BaseModel):
-    """内容生成请求（v2：支持4种独立类型）"""
-    type: str  # solution | training | exam | readme
+    """内容生成请求（v3：solution + training 两种类型，支持 RAG 检索）"""
+    type: str  # "solution" | "training"
     database: Optional[str] = None
+
+    # 解决方案字段
     client_unit: Optional[str] = None
+    decision_maker_role: Optional[str] = None
+    relationship_level: Optional[str] = None
+    pain_challenges: Optional[str] = None
+    pain_scenarios: Optional[str] = None
+    pain_dissatisfaction: Optional[str] = None
+    decision_focus: Optional[str] = None
+    decision_process: Optional[str] = None
+    decision_timeline: Optional[str] = None
+
+    # 培训材料字段
+    training_theme: Optional[str] = None
+    target_customer_group: Optional[str] = None
+    trainee_level: Optional[str] = None
+    trainee_base: Optional[str] = None
+    duration: Optional[str] = None
+    training_goals: Optional[str] = None
+    focus_areas: Optional[str] = None
+    exam_question_count: Optional[int] = None
+    exam_question_types: Optional[list[str]] = None
+    exam_question_config: Optional[list[dict]] = None  # [{"type":"选择题","count":5}, ...]
+    exam_difficulty_distribution: Optional[dict[str, int]] = None
+    exam_total_score: Optional[int] = None
+    exam_pass_score: Optional[int] = None
+
+    # 向后兼容：旧字段保留但不再使用
     product: Optional[str] = None
     target_audience: Optional[str] = None
-    duration: Optional[str] = None
     question_count: Optional[int] = None
     question_types: Optional[str] = None
     use_cases: Optional[str] = None
@@ -42,12 +68,12 @@ async def create_generation_job(request: GenerationRequest):
     """
     创建一个内容生成作业（v2 单类型模式）。
 
-    请求体包含 type、database 及对应类型所需的参数。
+    请求体包含 type、database 及对应类型所需的参数（solution 或 training）。
     返回 job_id 和初始状态 "running"。
     """
     from generation_runner import create_job
 
-    valid_types = {"solution", "training", "exam", "readme"}
+    valid_types = {"solution", "training"}
     if request.type not in valid_types:
         raise HTTPException(
             status_code=400,

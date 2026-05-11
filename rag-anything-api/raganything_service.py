@@ -180,13 +180,17 @@ class RAGAnythingService:
         self._instances.pop(database_id, None)
         return True
 
-    async def query(self, database_id: str, query: str, mode: str = "hybrid", n_results: int = 10) -> dict[str, Any]:
+    async def query(self, database_id: str, query: str, mode: str = "hybrid", n_results: int = 10,
+                    enable_rerank: Optional[bool] = None) -> dict[str, Any]:
         rag = self.get_rag(database_id, create_if_missing=False)
         init_result = await rag._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
             raise RuntimeError(f"RAG 引擎初始化失败: {(init_result or {}).get('error', 'unknown')}")
 
-        answer = await rag.aquery(query, mode=mode)
+        aquery_kwargs = {"mode": mode}
+        if enable_rerank is not None:
+            aquery_kwargs["enable_rerank"] = enable_rerank
+        answer = await rag.aquery(query, **aquery_kwargs)
         db = self.registry.get_database(database_id) or {}
         sources = [
             item.get("file_name")
@@ -211,11 +215,12 @@ class RAGAnythingService:
             "total_found": 1,
         }
 
-    async def query_all(self, query: str, mode: str = "hybrid", n_results: int = 10) -> dict[str, Any]:
+    async def query_all(self, query: str, mode: str = "hybrid", n_results: int = 10,
+                        enable_rerank: Optional[bool] = None) -> dict[str, Any]:
         async def query_one(db_id: str):
             try:
                 return await asyncio.wait_for(
-                    self.query(db_id, query, mode=mode, n_results=1),
+                    self.query(db_id, query, mode=mode, n_results=1, enable_rerank=enable_rerank),
                     timeout=self.query_timeout,
                 )
             except asyncio.TimeoutError:

@@ -37,14 +37,21 @@ class TestCreateJob:
 
     @patch("generation_runner.create_job", return_value="abc123def456")
     def test_returns_job_id_and_running_status(self, mock_create):
-        """创建作业应返回 job_id 和 status=running。"""
+        """创建 solution 作业应返回 job_id 和 status=running。"""
         resp = client.post(
             "/generation/jobs",
             json={
                 "type": "solution",
                 "database": "test_db",
                 "client_unit": "TestCo",
-                "product": "TestProduct",
+                "decision_maker_role": "市场总监",
+                "relationship_level": "良好关系",
+                "pain_challenges": "宣传效果不佳",
+                "pain_scenarios": "客户咨询",
+                "pain_dissatisfaction": "传统方式单一",
+                "decision_focus": "效果导向",
+                "decision_process": "部门决策",
+                "decision_timeline": "常规（1-2个月）",
             },
         )
         assert resp.status_code == 200
@@ -55,8 +62,8 @@ class TestCreateJob:
 
     @patch("generation_runner.create_job", return_value="job001")
     def test_accepts_minimal_body(self, mock_create):
-        """请求体仅包含必需字段 type 时应成功。"""
-        resp = client.post("/generation/jobs", json={"type": "readme"})
+        """请求体仅包含必需字段 type 和 database 时应成功。"""
+        resp = client.post("/generation/jobs", json={"type": "training", "database": "test_db"})
         assert resp.status_code == 200
         data = resp.json()
         assert data["job_id"] == "job001"
@@ -65,6 +72,43 @@ class TestCreateJob:
     def test_rejects_invalid_type(self):
         """无效的 type 应返回 400。"""
         resp = client.post("/generation/jobs", json={"type": "invalid_type"})
+        assert resp.status_code == 400
+
+    @patch("generation_runner.create_job", return_value="train001")
+    def test_accepts_training_with_full_config(self, mock_create):
+        """创建 training 作业时接受完整考试配置。"""
+        resp = client.post(
+            "/generation/jobs",
+            json={
+                "type": "training",
+                "database": "test_db",
+                "training_theme": "销售培训",
+                "target_customer_group": "政务客户+教育客户",
+                "trainee_level": "有经验人员",
+                "trainee_base": "1-3年经验",
+                "duration": "半天（3-4小时）",
+                "training_goals": "能够销售产品",
+                "focus_areas": "痛点挖掘+话术技巧",
+                "exam_question_count": 20,
+                "exam_question_types": ["选择题", "填空题", "简答题", "案例分析题"],
+                "exam_difficulty_distribution": {"基础": 50, "进阶": 30, "挑战": 20},
+                "exam_total_score": 100,
+                "exam_pass_score": 80,
+            },
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "train001"
+        assert data["status"] == "running"
+
+    def test_rejects_legacy_exam_type(self):
+        """旧版 'exam' 类型应返回 400。"""
+        resp = client.post("/generation/jobs", json={"type": "exam", "database": "test_db"})
+        assert resp.status_code == 400
+
+    def test_rejects_legacy_readme_type(self):
+        """旧版 'readme' 类型应返回 400。"""
+        resp = client.post("/generation/jobs", json={"type": "readme", "database": "test_db"})
         assert resp.status_code == 400
 
 
