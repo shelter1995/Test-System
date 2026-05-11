@@ -1650,6 +1650,78 @@ body.has-alert .page {
     text-overflow: ellipsis;
 }
 
+.db-item-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.btn-icon-sm {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: var(--radius-sm);
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+}
+
+.btn-icon-sm:hover {
+    background: var(--bg-primary);
+    border-color: var(--border-color);
+}
+
+.btn-icon-sm.btn-edit:hover {
+    background: #e0e7ff;
+    border-color: #818cf8;
+}
+
+.btn-icon-sm.btn-delete:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+/* 文件操作按钮 */
+.file-col-actions {
+    display: flex;
+    justify-content: center;
+}
+
+/* 日志切换按钮 */
+.btn-log-toggle {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.15s;
+    margin-left: auto;
+    line-height: 1;
+}
+
+.btn-log-toggle:hover {
+    background: #e0e7ff;
+    border-color: #818cf8;
+}
+
+.btn-log-toggle.has-log {
+    background: #e0e7ff;
+    border-color: #818cf8;
+}
+
 .db-item-check {
     color: var(--secondary-color);
     font-weight: bold;
@@ -1696,8 +1768,8 @@ body.has-alert .page {
 /* 文件列表 */
 .file-list-header {
     display: grid;
-    grid-template-columns: 2fr 1fr 2fr;
-    gap: 1rem;
+    grid-template-columns: 2fr 1fr 2fr 2.5rem;
+    gap: 0.5rem;
     padding: 0.75rem 1rem;
     background: var(--bg-accent);
     border-radius: var(--radius-md);
@@ -1709,8 +1781,8 @@ body.has-alert .page {
 
 .file-row {
     display: grid;
-    grid-template-columns: 2fr 1fr 2fr;
-    gap: 1rem;
+    grid-template-columns: 2fr 1fr 2fr 2.5rem;
+    gap: 0.5rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color);
     font-size: 0.9rem;

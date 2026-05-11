@@ -204,3 +204,52 @@ class DatabaseRegistry:
         )
         database["updated_at"] = self._now()
         self._save(data)
+
+    def delete_database(self, database_id: str) -> bool:
+        """删除知识库，返回是否成功删除。
+
+        Raises:
+            KeyError: 当 database_id 不存在时。
+        """
+        database_id = str(database_id).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+
+        data = self._load()
+        for i, item in enumerate(data["databases"]):
+            if str(item.get("id", "")).strip() == database_id:
+                data["databases"].pop(i)
+                self._save(data)
+                return True
+
+        raise KeyError(f"Database '{database_id}' not found")
+
+    def delete_document(self, database_id: str, sha256: str) -> bool:
+        """删除知识库中的文档，返回是否成功删除。
+
+        Raises:
+            KeyError: 当 database_id 不存在时。
+        """
+        database_id = str(database_id).strip()
+        sha256 = str(sha256).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+        if not sha256:
+            raise ValueError("sha256 must not be empty")
+
+        data = self._load()
+        db = None
+        for item in data["databases"]:
+            if str(item.get("id", "")).strip() == database_id:
+                db = item
+                break
+
+        if db is None:
+            raise KeyError(f"Database '{database_id}' not found")
+
+        documents = db.get("documents", [])
+        before = len(documents)
+        db["documents"] = [d for d in documents if d.get("sha256", "") != sha256]
+        db["updated_at"] = self._now()
+        self._save(data)
+        return len(db["documents"]) < before

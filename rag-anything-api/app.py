@@ -425,6 +425,23 @@ async def update_database(db_id: str, request: DatabaseUpdateRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.delete("/db/{db_id}")
+async def delete_database(db_id: str):
+    service = _require_service()
+    try:
+        service.registry.delete_database(db_id)
+        service.unload_rag(db_id)
+        # 清理已上传的文件目录
+        files_dir = Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id
+        if files_dir.exists():
+            shutil.rmtree(files_dir, ignore_errors=True)
+        return {"status": "success", "message": f"知识库 '{db_id}' 已删除"}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @app.get("/db/{db_id}/documents")
 async def list_documents(db_id: str):
     service = _require_service()
@@ -433,6 +450,30 @@ async def list_documents(db_id: str):
         return {"status": "success", "database": db_id, "documents": documents}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+
+
+@app.delete("/db/{db_id}/documents/{sha256}")
+async def delete_document(db_id: str, sha256: str):
+    service = _require_service()
+    try:
+        # 先获取文件路径用于删除物理文件
+        docs = service.registry.list_documents(db_id)
+        target = next((d for d in docs if d.get("sha256") == sha256), None)
+        deleted = service.registry.delete_document(db_id, sha256)
+        if not deleted:
+            raise HTTPException(status_code=404, detail="文档不存在")
+        if target and target.get("file_path"):
+            try:
+                Path(target["file_path"]).unlink(missing_ok=True)
+            except OSError:
+                pass
+        return {"status": "success", "message": "文档已删除"}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @app.post("/db/search")

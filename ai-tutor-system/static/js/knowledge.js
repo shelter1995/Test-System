@@ -90,6 +90,7 @@ function renderKnowledgePage() {
                 <h3 class="panel-card-title" style="margin-top: 1.5rem;">
                     文件管理
                     ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
+                    <button class="btn-log-toggle" id="logToggleBtn" onclick="toggleUploadLog()" title="上传日志">📋</button>
                 </h3>
                 ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
                 <div id="uploadLogContainer"></div>
@@ -125,6 +126,10 @@ function renderDatabaseList() {
                     <div class="db-item-name">${escapeHtml(name)}</div>
                     <div class="db-item-id">${escapeHtml(id)}</div>
                 </div>
+                <div class="db-item-actions">
+                    <button class="btn-icon-sm btn-edit" onclick="event.stopPropagation();editDatabase('${escapeHtml(id)}')" title="编辑">✏️</button>
+                    <button class="btn-icon-sm btn-delete" onclick="event.stopPropagation();deleteDatabase('${escapeHtml(id)}')" title="删除">🗑️</button>
+                </div>
                 ${isActive ? '<span class="db-item-check">✓</span>' : ''}
             </div>
         `;
@@ -157,6 +162,58 @@ function selectDatabase(dbId) {
     knowledgeState.activeDatabase = dbId;
     renderKnowledgePage();
     loadKnowledgeDocuments();
+}
+
+/**
+ * 编辑知识库信息
+ */
+async function editDatabase(dbId) {
+    const db = knowledgeState.databases.find(d => (typeof d === 'string' ? d : d.id) === dbId);
+    const currentName = typeof db === 'string' ? db : (db?.name || dbId);
+    const currentDesc = typeof db === 'string' ? '' : (db?.description || '');
+
+    const name = prompt('知识库名称:', currentName);
+    if (name === null) return;
+    const description = prompt('知识库描述:', currentDesc);
+    if (description === null) return;
+
+    try {
+        await fetch(
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(dbId)}`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description }),
+            }
+        );
+        loadKnowledgeBases();
+    } catch (err) {
+        console.error('修改知识库失败:', err);
+        alert('修改失败: ' + err.message);
+    }
+}
+
+/**
+ * 删除知识库
+ */
+async function deleteDatabase(dbId) {
+    if (!confirm(`确定要删除知识库 "${dbId}" 吗？\n\n此操作将删除该知识库及其所有文件，且无法恢复。`)) return;
+
+    try {
+        const resp = await fetch(
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(dbId)}`,
+            { method: 'DELETE' }
+        );
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        if (knowledgeState.activeDatabase === dbId) {
+            knowledgeState.activeDatabase = '';
+        }
+        knowledgeState.uploadLogState = null;
+        loadKnowledgeBases();
+    } catch (err) {
+        console.error('删除知识库失败:', err);
+        alert('删除失败: ' + err.message);
+    }
 }
 
 /**
@@ -248,6 +305,10 @@ function restoreUploadLog() {
     if (closeBtn) {
         closeBtn.onclick = clearUploadLog;
     }
+    updateLogToggleBadge();
+    // 恢复后默认显示
+    const logEl = document.getElementById('uploadLog');
+    if (logEl) logEl.style.display = 'block';
 }
 
 /**
@@ -322,6 +383,7 @@ function showUploadLog(files) {
 
     // 确保日志容器可见
     document.getElementById('uploadLog').style.display = 'block';
+    updateLogToggleBadge();
 }
 
 /**
@@ -447,6 +509,56 @@ function clearUploadLog() {
     }
     const uploadBtn = document.getElementById('uploadBtn');
     if (uploadBtn) uploadBtn.disabled = false;
+    updateLogToggleBadge();
+}
+
+/**
+ * 切换上传日志窗口显示/隐藏
+ */
+function toggleUploadLog() {
+    const logEl = document.getElementById('uploadLog');
+    if (!logEl) return;
+
+    if (logEl.style.display === 'none') {
+        logEl.style.display = 'block';
+    } else {
+        logEl.style.display = 'none';
+    }
+}
+
+/**
+ * 更新日志切换按钮状态
+ */
+function updateLogToggleBadge() {
+    const toggle = document.getElementById('logToggleBtn');
+    if (!toggle) return;
+    const logEl = document.getElementById('uploadLog');
+    if (logEl) {
+        toggle.classList.add('has-log');
+    } else {
+        toggle.classList.remove('has-log');
+    }
+}
+
+/**
+ * 删除文件
+ */
+async function deleteDocument(sha256) {
+    if (!confirm('确定要删除此文件吗？')) return;
+    if (!knowledgeState.activeDatabase) return;
+
+    try {
+        const resp = await fetch(
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(knowledgeState.activeDatabase)}/documents/${sha256}`,
+            { method: 'DELETE' }
+        );
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        loadKnowledgeDocuments();
+        updateOverviewCounts();
+    } catch (err) {
+        console.error('删除文件失败:', err);
+        alert('删除失败: ' + err.message);
+    }
 }
 
 /**
@@ -479,9 +591,11 @@ async function loadKnowledgeDocuments() {
                 <span class="file-col-name">文件名</span>
                 <span class="file-col-status">状态</span>
                 <span class="file-col-source">来源</span>
+                <span class="file-col-actions"></span>
             </div>
             ${documents.map(doc => {
                 const fileName = escapeHtml(doc.file_name || doc.name || '-');
+                const sha256 = escapeHtml(doc.sha256 || '');
                 const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
                 const rawStatus = doc.status || '已导入';
                 const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
@@ -499,6 +613,9 @@ async function loadKnowledgeDocuments() {
                         </span>
                     </span>
                     <span class="file-col-source">${source}</span>
+                    <span class="file-col-actions">
+                        <button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>
+                    </span>
                 </div>
             `}).join('')}
         `;
