@@ -397,15 +397,24 @@ function connectUploadSSE(taskId, total) {
     knowledgeState.uploadEventSource = es;
 
     let completed = 0;
+    let lastEventKey = '';
+    let finished = false;
 
     es.onmessage = function (event) {
+        if (finished) return;
         try {
             const data = JSON.parse(event.data);
             if (data.type === 'finished') {
+                finished = true;
                 es.close();
                 finishUpload(true);
                 return;
             }
+
+            // 去重：跳过 SSE 重连导致的重复事件
+            const eventKey = data.type + '|' + data.file + '|' + data.message;
+            if (eventKey === lastEventKey) return;
+            lastEventKey = eventKey;
 
             appendLogEntry(data);
 
@@ -425,7 +434,11 @@ function connectUploadSSE(taskId, total) {
     };
 
     es.onerror = function () {
-        finishUpload(true);
+        if (!finished) {
+            finished = true;
+            es.close();
+            finishUpload(true);
+        }
     };
 }
 
