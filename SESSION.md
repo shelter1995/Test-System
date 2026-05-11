@@ -6,40 +6,31 @@
 ## 当前进度
 - [x] 实施计划文档已完成
 - [x] 新分支 `feature/unified-workbench` 已创建
-- [x] 任务 1：扩展 RAG 知识库注册表
-- [x] 任务 2：增加 RAG 知识库管理 API
-- [x] 任务 3：建立统一工作台壳
-- [x] 任务 4：实现知识库管理页面
-- [x] 任务 5：增加内容生成 API
-- [x] 任务 6：实现内容生成页面和历史产物
-- [x] 任务 7：改造陪练系统界面并支持选择知识库
-- [x] 任务 8：文档和最终验证
+- [x] 任务 1-8 全部完成（11 个提交）
+- [x] 验收问题修复（5 个 bugfix，1 个提交 `237e5f2`）
+- [ ] 第二轮验收修复（4 个问题）：布局宽度、批量上传、SSE 日志窗口、中文状态
 
 ## 关键文件
 - 计划文档：`docs/superpowers/plans/2026-05-08-unified-workbench.md`
-- RAG 服务：`rag-anything-api/app.py`、`rag-anything-api/database_registry.py`
+- RAG 服务：`rag-anything-api/app.py`、`rag-anything-api/database_registry.py`、`rag-anything-api/raganything_service.py`
 - 陪练服务：`ai-tutor-system/tutor_backend.py`
-- 前端：`ai-tutor-system/static/index.html`
-- 生成服务：`ai-tutor-system/generation_api.py`、`ai-tutor-system/generation_runner.py`
+- 前端 JS：`ai-tutor-system/static/js/knowledge.js`
+- 前端 CSS：`ai-tutor-system/static/css/style.css`
+- 前端 HTML：`ai-tutor-system/static/index.html`
 
-## 已做改动（11 个提交）
-- `cbff28b` feat: extend rag database registry metadata (Task 1)
-- `8aff78d` feat: add rag knowledge management api (Task 2)
-- `cd56a32` fix: sanitize upload filename to prevent path traversal (Task 2 fix)
-- `4db6d10` feat: add unified workbench shell (Task 3)
-- `4a73364` feat: add knowledge management page (Task 4)
-- `07a76e2` fix: escape html in knowledge page and validate database id (Task 4 fix)
-- `8002682` feat: add generation api (Task 5)
-- `ea20132` fix: async generation job creation and job_id validation (Task 5 fix)
-- `124d203` feat: add content generation page (Task 6)
-- `a69601a` feat: support explicit database selection in tutor (Task 7)
-- `cfd1b68` docs: document unified workbench (Task 8)
+## 已做改动
+- 2026-05-09：创建实施计划文档，创建 feature/unified-workbench 分支
+- 2026-05-09：完成8个任务（cbff28b~cfd1b68）
+- 2026-05-09：修复5个验收问题（237e5f2）
 
 ## 测试结果
 - rag-anything-api: 34 passed
-- ai-tutor-system: 11 passed
-- 总计: 45 passed, 0 failed
+- ai-tutor-system: 12 passed
+- 总计: 46 passed, 0 failed
 
 ## 下一步
-- 创建 PR 合并到 master
-- 手工端到端验收（启动两个服务，在浏览器中验证全部功能）
+- 实施第二轮验收修复：
+  1. 文件管理面板宽度与知识库列表对齐
+  2. 支持多文件批量上传
+  3. SSE 实时日志窗口
+  4. 中文状态显示
