@@ -14,6 +14,7 @@ const knowledgeState = {
     activeDatabase: '',
     uploadEventSource: null,
     uploadLogState: null,  // 切换知识库时保留上传日志
+    uploadingFiles: [],    // 正在上传处理中的文件名列表
 };
 
 /**
@@ -197,6 +198,11 @@ async function editDatabase(dbId) {
  * 删除知识库
  */
 async function deleteDatabase(dbId) {
+    if (knowledgeState.uploadEventSource && knowledgeState.activeDatabase === dbId) {
+        alert('该知识库有文件正在上传处理中，请等待完成后再删除。');
+        return;
+    }
+
     if (!confirm(`确定要删除知识库 "${dbId}" 吗？\n\n此操作将删除该知识库及其所有文件，且无法恢复。`)) return;
 
     try {
@@ -381,6 +387,12 @@ function showUploadLog(files) {
         </div>
     `;
 
+    // 记录正在上传的文件名
+    knowledgeState.uploadingFiles = Array.from(files).map(f => f.name);
+
+    // 刷新文件列表，让"处理中"状态显示出来
+    refreshFileListWithProgress();
+
     // 确保日志容器可见
     document.getElementById('uploadLog').style.display = 'block';
     updateLogToggleBadge();
@@ -418,10 +430,12 @@ function connectUploadSSE(taskId, total) {
 
             appendLogEntry(data);
 
-            if (data.type === 'done') {
-                completed++;
-            } else if (data.type === 'error') {
-                completed++;
+            if (data.type === 'done' || data.type === 'error') {
+                // 从处理中列表移除，刷新文件列表
+                knowledgeState.uploadingFiles = knowledgeState.uploadingFiles.filter(f => f !== data.file);
+                loadKnowledgeDocuments();
+                if (data.type === 'done') completed++;
+                else if (data.type === 'error') completed++;
             }
 
             const summaryEl = document.getElementById('uploadLogSummary');
@@ -505,7 +519,8 @@ function finishUpload(success) {
         summaryEl.textContent = '全部完成';
     }
 
-    // 刷新文件列表
+    // 清理处理中状态并刷新
+    knowledgeState.uploadingFiles = [];
     loadKnowledgeDocuments();
     updateOverviewCounts();
 }
@@ -516,12 +531,14 @@ function finishUpload(success) {
 function clearUploadLog() {
     closeUploadSSE();
     knowledgeState.uploadLogState = null;
+    knowledgeState.uploadingFiles = [];
     const logContainer = document.getElementById('uploadLogContainer');
     if (logContainer) {
         logContainer.innerHTML = '';
     }
     const uploadBtn = document.getElementById('uploadBtn');
     if (uploadBtn) uploadBtn.disabled = false;
+    loadKnowledgeDocuments();
     updateLogToggleBadge();
 }
 
@@ -577,6 +594,34 @@ async function deleteDocument(sha256) {
 /**
  * 加载知识库文档列表
  */
+/**
+ * 渲染一个文件行（已导入 or 处理中）
+ */
+function _renderFileRow(item, isUploading) {
+    const fileName = escapeHtml(item.file_name || item.name || '-');
+    const sha256 = isUploading ? '' : escapeHtml(item.sha256 || '');
+    const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
+    const rawStatus = isUploading ? 'processing' : (item.status || '已导入');
+    const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
+    const source = isUploading ? '—' : escapeHtml(item.source || item.file_path || '-');
+    const isDone = !isUploading && (rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported');
+    const statusClass = isDone ? 'status-success' : 'status-pending';
+    const deleteBtn = isUploading ? '' : `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`;
+    return `
+    <div class="file-row">
+        <span class="file-col-name" title="${fileName}">
+            ${isUploading ? '⏳' : '📄'} ${fileName}
+        </span>
+        <span class="file-col-status">
+            <span class="status-text ${statusClass}">
+                ${statusText}
+            </span>
+        </span>
+        <span class="file-col-source">${source}</span>
+        <span class="file-col-actions">${deleteBtn}</span>
+    </div>`;
+}
+
 async function loadKnowledgeDocuments() {
     const fileListContainer = document.getElementById('fileListContainer');
     if (!fileListContainer) return;
@@ -586,14 +631,24 @@ async function loadKnowledgeDocuments() {
         return;
     }
 
+    const uploading = knowledgeState.uploadingFiles.filter(f => f);
+
     try {
         const data = await WorkbenchAPI.requestJson(
             `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${knowledgeState.activeDatabase}/documents`
         );
-
         const documents = Array.isArray(data) ? data : (data.documents || []);
 
-        if (documents.length === 0) {
+        // 过滤掉正在上传的（避免已注册的与 processing 行重复）
+        const uploadingSet = new Set(uploading);
+        const filteredDocs = documents.filter(d => !uploadingSet.has(d.file_name || d.name || ''));
+
+        // 构建行：先显示处理中的，再显示已导入的
+        const processingRows = uploading.map(fn => _renderFileRow({ file_name: fn }, true));
+        const docRows = filteredDocs.map(d => _renderFileRow(d, false));
+        const allRows = [...processingRows, ...docRows];
+
+        if (allRows.length === 0) {
             fileListContainer.innerHTML = '<div class="empty-state"><p>暂无文件，请上传文档</p></div>';
             updateOverviewCounts();
             return;
@@ -606,31 +661,7 @@ async function loadKnowledgeDocuments() {
                 <span class="file-col-source">来源</span>
                 <span class="file-col-actions"></span>
             </div>
-            ${documents.map(doc => {
-                const fileName = escapeHtml(doc.file_name || doc.name || '-');
-                const sha256 = escapeHtml(doc.sha256 || '');
-                const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
-                const rawStatus = doc.status || '已导入';
-                const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
-                const source = escapeHtml(doc.source || doc.file_path || '-');
-                const isDone = rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported';
-                const statusClass = isDone ? 'status-success' : 'status-pending';
-                return `
-                <div class="file-row">
-                    <span class="file-col-name" title="${fileName}">
-                        📄 ${fileName}
-                    </span>
-                    <span class="file-col-status">
-                        <span class="status-text ${statusClass}">
-                            ${statusText}
-                        </span>
-                    </span>
-                    <span class="file-col-source">${source}</span>
-                    <span class="file-col-actions">
-                        <button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>
-                    </span>
-                </div>
-            `}).join('')}
+            ${allRows.join('')}
         `;
 
         updateOverviewCounts();
@@ -642,6 +673,13 @@ async function loadKnowledgeDocuments() {
             </div>
         `;
     }
+}
+
+/**
+ * 合并处理中文件的列表刷新（上传时调用）
+ */
+function refreshFileListWithProgress() {
+    loadKnowledgeDocuments();
 }
 
 /**
