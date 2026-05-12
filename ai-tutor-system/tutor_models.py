@@ -1,8 +1,10 @@
 """
 AI话术陪练系统 — 数据模型
 """
-from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+import json
+
+from pydantic import BaseModel
+from typing import List, Optional
 
 
 # ==================== 请求模型 ====================
@@ -45,11 +47,10 @@ class SSEEvent:
     @staticmethod
     def format(event: str, data: dict) -> str:
         """格式化为 SSE 标准字符串。"""
-        import json
         return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
     @staticmethod
-    def status(stage: str, message: str = "", extra: dict = None) -> str:
+    def status(stage: str, message: str = "", extra: Optional[dict] = None) -> str:
         """阶段状态事件 (rag_searching / ai_generating / rag_complete)"""
         payload = {"stage": stage, "message": message}
         if extra:
@@ -72,7 +73,7 @@ class SSEEvent:
         return SSEEvent.format("evaluation", data)
 
     @staticmethod
-    def done(round_num: int, extra: dict = None) -> str:
+    def done(round_num: int, extra: Optional[dict] = None) -> str:
         """回合完成，释放输入框"""
         payload = {"round": round_num}
         if extra:
