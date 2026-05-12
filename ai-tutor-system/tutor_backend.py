@@ -12,7 +12,6 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
@@ -66,37 +65,7 @@ if STATIC_DIR.exists():
 from generation_api import router as generation_router
 app.include_router(generation_router)
 
-# ==================== 数据模型 ====================
-
-class ScenarioCreate(BaseModel):
-    """创建自定义场景"""
-    name: str
-    ai_role: str
-    user_role: str
-    description: str
-    customer_traits: List[str]
-    ai_strategy: List[str]
-    success_criteria: List[str]
-
-class SessionStart(BaseModel):
-    """开始会话"""
-    scenario_id: str
-    client_unit: Optional[str] = "某公司"
-    product: Optional[str] = "商务视频彩铃"
-    scenario_type: Optional[str] = "初次沟通"
-    database: Optional[str] = None  # 用户显式选择的知识库
-    custom_scenario: Optional[ScenarioCreate] = None
-
-class ChatMessage(BaseModel):
-    """发送消息"""
-    session_id: str
-    message: str
-    is_pause: bool = False  # 是否暂停获取反馈
-
-class SessionEnd(BaseModel):
-    """结束会话"""
-    session_id: str
-    detail_level: str = "simple"
+from tutor_models import ScenarioCreate, SessionStart, ChatMessage, SessionEnd
 
 # ==================== 全局变量 ====================
 sessions = {}  # 存储活跃会话
