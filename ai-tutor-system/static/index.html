@@ -330,9 +330,16 @@
                                     <h1>历史记录</h1>
                                     <button id="closeHistoryBtn" class="close-btn">✕</button>
                                 </div>
-                                <div class="history-list" id="historyList">
-                                    <!-- 动态插入历史记录 -->
+                                <div class="history-search-bar">
+                                    <input type="text" id="historySearch" class="history-search-input" placeholder="搜索产品名、场景、客户单位...">
+                                    <select id="historyFilterScenario" class="history-filter-select">
+                                        <option value="">全部场景</option>
+                                    </select>
                                 </div>
+                                <div class="history-list" id="historyList">
+                                    <!-- 动态插入 -->
+                                </div>
+                                <div class="history-count" id="historyCount"></div>
                             </div>
                         </div>
 

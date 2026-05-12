@@ -19,6 +19,7 @@ const state = {
     isChatting: false,
     abortController: null,    // SSE 连接控制
     currentRound: 0,          // 当前轮次
+    lastKnowledgeCount: null, // 最新一轮的知识库检索量
     pendingEval: null,        // 待处理的评分（AbortController）
     serviceStatus: {
         rag: 'unknown',
@@ -322,7 +323,7 @@ function finalizeAIBubble(content) {
 /**
  * 显示评分卡片
  */
-function showEvaluationCard(evaluation, roundNum) {
+function showEvaluationCard(evaluation, roundNum, knowledgeCount) {
     if (!evaluation || !evaluation.overall_score) return;
 
     const existing = document.querySelector('.eval-card');
@@ -332,12 +333,19 @@ function showEvaluationCard(evaluation, roundNum) {
     const dimBars = Object.entries(dims).map(([name, d]) => {
         const score = d.score || 0;
         const cls = score >= 80 ? 'high' : score >= 60 ? 'mid' : 'low';
-        return `<div class="eval-dim">
+        const feedback = d.feedback || '';
+        return `<div class="eval-dim" title="${feedback}">
             <span class="eval-dim-name">${name}</span>
             <span class="eval-dim-bar"><span class="eval-dim-fill ${cls}" style="width:${score}%"></span></span>
             <span class="eval-dim-score">${score}</span>
         </div>`;
     }).join('');
+
+    const kbNote = knowledgeCount != null
+        ? (knowledgeCount > 0
+            ? `<div class="eval-kb-info">📚 基于 ${knowledgeCount} 条知识库内容评估</div>`
+            : '<div class="eval-kb-info eval-kb-empty">⚠️ 知识库为空，使用通用标准评估</div>')
+        : '';
 
     const card = document.createElement('div');
     card.className = 'eval-card';
@@ -345,6 +353,7 @@ function showEvaluationCard(evaluation, roundNum) {
         <span class="eval-card-round">第${roundNum}轮评分</span>
         <span class="eval-card-score">${evaluation.overall_score}分</span>
     </div>
+    ${kbNote}
     <div class="eval-card-dims">${dimBars}</div>
     ${evaluation.feedback ? `<div class="eval-card-feedback">${evaluation.feedback}</div>` : ''}
     ${evaluation.suggestions && evaluation.suggestions.length ?
@@ -449,6 +458,7 @@ async function handleSend() {
 
                         case 'done':
                             state.currentRound = payload.round;
+                            state.lastKnowledgeCount = payload.knowledge_count;
                             // 更新知识库看板
                             if (payload.knowledge_count !== undefined) {
                                 updateKnowledgeBox({ knowledge_found: payload.knowledge_count });
@@ -462,7 +472,7 @@ async function handleSend() {
                             break;
 
                         case 'evaluation':
-                            showEvaluationCard(payload, state.currentRound);
+                            showEvaluationCard(payload, state.currentRound, state.lastKnowledgeCount);
                             break;
 
                         case 'error':
@@ -561,53 +571,226 @@ function showReport(report) {
     showPage(elements.reportPage);
 }
 
+// ==================== 历史记录（增强版） ====================
+
+let _historyCache = null;  // 缓存全量历史数据
+
+function scoreColorClass(score) {
+    if (score == null) return '';
+    if (score >= 80) return 'color-high';
+    if (score >= 60) return 'color-mid';
+    return 'color-low';
+}
+
+function scoreBorderClass(score) {
+    if (score == null) return '';
+    if (score >= 80) return 'score-high';
+    if (score >= 60) return 'score-mid';
+    return 'score-low';
+}
+
+function ratingEmoji(score) {
+    if (score >= 90) return '⭐';
+    if (score >= 80) return '👍';
+    if (score >= 60) return '📋';
+    return '📝';
+}
+
 async function loadHistory() {
     const history = await getHistory();
-    if (history.length === 0) {
-        elements.historyList.innerHTML = '<p class="suggestion-text">暂无历史记录</p>';
+    _historyCache = history;
+    populateHistoryFilters(history);
+    renderHistoryList(history);
+}
+
+function populateHistoryFilters(history) {
+    const select = document.getElementById('historyFilterScenario');
+    if (!select) return;
+    const currentVal = select.value;
+    // 收集已有场景
+    const scenarios = [...new Set(history.map(h => h.scenario))];
+    while (select.options.length > 1) select.remove(1);
+    scenarios.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s;
+        opt.textContent = s;
+        select.appendChild(opt);
+    });
+    select.value = currentVal; // 保留之前的选择
+}
+
+function renderHistoryList(history) {
+    if (!history || history.length === 0) {
+        elements.historyList.innerHTML = '<p class="history-empty">暂无历史记录</p>';
+        const countEl = document.getElementById('historyCount');
+        if (countEl) countEl.textContent = '';
         return;
     }
-    elements.historyList.innerHTML = history.map(item => {
-        const scoreHTML = item.score != null
-            ? `<span class="history-score">${item.score}分${item.rating ? ' · ' + item.rating : ''}</span>`
-            : '';
-        const statusBadge = item.status === 'completed'
-            ? '<span class="history-status completed">已完成</span>'
-            : '<span class="history-status active">进行中</span>';
-        return `<div class="history-item" data-session-id="${item.session_id}" data-status="${item.status}">
-            <div class="history-item-header">
-                <span class="history-scenario">${item.scenario}</span>
-                <span class="history-date">${new Date(item.created_at).toLocaleDateString()}</span>
-            </div>
-            <div class="history-details">${item.client_unit} · ${item.product} · ${item.rounds}轮对话</div>
-            <div class="history-meta">${statusBadge}${scoreHTML}</div>
-        </div>`;
-    }).join('');
 
-    document.querySelectorAll('.history-item').forEach(item => {
-        item.addEventListener('click', async () => {
-            const sessionId = item.dataset.sessionId;
-            const status = item.dataset.status;
-            closeHistoryPanel();
-            if (status === 'completed') {
-                try {
-                    const response = await fetch(`${CONFIG.TUTOR_API}/session/${sessionId}`);
-                    if (response.ok) {
-                        const sessionData = await response.json();
-                        if (sessionData.report) {
-                            showReport(sessionData.report);
-                        } else {
-                            showToast('该会话暂无总结报告', 'info');
-                        }
-                    }
-                } catch (error) {
-                    showToast('加载会话详情失败', 'error');
-                }
-            } else {
-                showToast('该会话未完成', 'info');
+    const searchTerm = (document.getElementById('historySearch')?.value || '').toLowerCase();
+    const filterScenario = document.getElementById('historyFilterScenario')?.value || '';
+
+    let filtered = history;
+    if (searchTerm) {
+        filtered = filtered.filter(h =>
+            (h.client_unit || '').toLowerCase().includes(searchTerm) ||
+            (h.product || '').toLowerCase().includes(searchTerm) ||
+            (h.scenario || '').toLowerCase().includes(searchTerm)
+        );
+    }
+    if (filterScenario) {
+        filtered = filtered.filter(h => h.scenario === filterScenario);
+    }
+
+    const countEl = document.getElementById('historyCount');
+    if (countEl) countEl.textContent = `共 ${filtered.length} 条${filtered.length !== history.length ? ` (筛选自 ${history.length} 条)` : ''}`;
+
+    if (filtered.length === 0) {
+        elements.historyList.innerHTML = '<p class="history-empty">无匹配记录</p>';
+        return;
+    }
+
+    elements.historyList.innerHTML = filtered.map(item => renderHistoryItem(item)).join('');
+
+    // 绑定展开/收起
+    elements.historyList.querySelectorAll('.history-item').forEach(el => {
+        el.addEventListener('click', function(e) {
+            // 如果点击的是内部按钮则不处理
+            if (e.target.closest('.history-view-report')) return;
+            const wasExpanded = this.classList.contains('expanded');
+            // 关闭其他展开项
+            elements.historyList.querySelectorAll('.history-item.expanded').forEach(i => i.classList.remove('expanded'));
+            if (!wasExpanded) {
+                this.classList.add('expanded');
+                loadHistoryDetail(this);
             }
         });
     });
+
+    // 绑定"查看报告"按钮
+    elements.historyList.querySelectorAll('.history-view-report').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            const sessionId = this.dataset.sessionId;
+            closeHistoryPanel();
+            try {
+                const response = await fetch(`${CONFIG.TUTOR_API}/session/${sessionId}`);
+                if (response.ok) {
+                    const sessionData = await response.json();
+                    if (sessionData.report) {
+                        showReport(sessionData.report);
+                    } else {
+                        showToast('该会话暂无总结报告', 'info');
+                    }
+                } else {
+                    showToast('加载会话详情失败', 'error');
+                }
+            } catch (error) {
+                showToast('加载会话详情失败', 'error');
+            }
+        });
+    });
+}
+
+function renderHistoryItem(item) {
+    const score = item.score;
+    const colorClass = scoreColorClass(score);
+    const borderClass = scoreBorderClass(score);
+    const emoji = ratingEmoji(score);
+    const dateStr = item.created_at ? new Date(item.created_at).toLocaleDateString('zh-CN', {
+        year: 'numeric', month: '2-digit', day: '2-digit'
+    }) : '';
+
+    const statusBadge = item.status === 'completed'
+        ? '<span class="history-status completed">已完成</span>'
+        : '<span class="history-status active">进行中</span>';
+
+    const scoreHTML = score != null
+        ? `<span class="history-score ${colorClass}">${emoji} ${score}分${item.rating ? ' · ' + item.rating : ''}</span>`
+        : '<span class="history-score">暂无评分</span>';
+
+    return `<div class="history-item ${borderClass}" data-session-id="${item.session_id}" data-status="${item.status}">
+        <div class="history-item-header">
+            <span class="history-scenario">${item.scenario}</span>
+            <span class="history-date">${dateStr}</span>
+        </div>
+        <div class="history-details">${item.client_unit} · ${item.product} · ${item.rounds}轮对话</div>
+        <div class="history-meta">
+            ${statusBadge}
+            ${scoreHTML}
+            <button class="history-view-report" data-session-id="${item.session_id}" style="margin-left:auto;font-size:0.75rem;padding:0.15rem 0.5rem;border:1px solid var(--border-color);border-radius:4px;background:white;cursor:pointer;">查看完整报告</button>
+        </div>
+        <div class="history-item-detail">
+            <div class="history-detail-section" data-detail-type="loading">
+                <span style="color:var(--text-light);font-size:0.8rem;">加载详情中...</span>
+            </div>
+        </div>
+    </div>`;
+}
+
+async function loadHistoryDetail(itemEl) {
+    const detailSection = itemEl.querySelector('.history-item-detail [data-detail-type]');
+    const sessionId = itemEl.dataset.sessionId;
+
+    // 如果已加载过，跳过
+    if (detailSection.dataset.loaded === 'true') return;
+
+    try {
+        const response = await fetch(`${CONFIG.TUTOR_API}/session/${sessionId}`);
+        if (!response.ok) throw new Error('加载失败');
+        const sessionData = await response.json();
+
+        // 对话摘要
+        const messages = sessionData.messages || [];
+        const convHTML = messages.slice(-6).map(m => {
+            const roleClass = m.role === 'user' ? 'conv-user' : 'conv-ai';
+            const roleName = m.role === 'user' ? '销售代表' : 'AI客户';
+            const text = (m.content || '').substring(0, 150);
+            return `<div><span class="${roleClass}">${roleName}:</span> ${text}${text.length >= 150 ? '...' : ''}</div>`;
+        }).join('');
+
+        // 维度评分
+        const report = sessionData.report || {};
+        const dims = report.dimension_scores || {};
+        const dimBarsHTML = Object.keys(dims).length > 0
+            ? Object.entries(dims).map(([name, d]) => {
+                const s = d.score || 0;
+                const cls = s >= 80 ? 'high' : s >= 60 ? 'mid' : 'low';
+                return `<div class="eval-dim">
+                    <span class="eval-dim-name">${name}</span>
+                    <span class="eval-dim-bar"><span class="eval-dim-fill ${cls}" style="width:${s}%"></span></span>
+                    <span class="eval-dim-score">${s}</span>
+                </div>`;
+            }).join('')
+            : '';
+
+        // 知识库状态
+        const evalCount = sessionData.evaluations ? sessionData.evaluations.length : 0;
+        const kbInfo = sessionData.database
+            ? `知识库: ${sessionData.database}`
+            : '知识库: 默认';
+
+        detailSection.innerHTML = `
+            <div class="history-detail-section">
+                <div class="history-detail-label">最近对话</div>
+                <div class="history-detail-conversation">${convHTML || '暂无对话记录'}</div>
+            </div>
+            ${dimBarsHTML ? `<div class="history-detail-section">
+                <div class="history-detail-label">评分维度</div>
+                ${dimBarsHTML}
+            </div>` : ''}
+            <div class="history-detail-section" style="font-size:0.78rem;color:var(--text-light);">
+                ${kbInfo} · ${evalCount}次评估 · ${messages.length}条消息
+            </div>
+        `;
+        detailSection.dataset.loaded = 'true';
+    } catch (error) {
+        detailSection.innerHTML = `<span style="color:#e74c3c;font-size:0.8rem;">加载详情失败</span>`;
+    }
+}
+
+function filterHistory() {
+    if (_historyCache) renderHistoryList(_historyCache);
 }
 
 function openHistoryPanel() {
@@ -688,7 +871,7 @@ async function handlePause() {
                     if (line.startsWith('data: ')) {
                         const payload = JSON.parse(line.substring(6));
                         if (payload.overall_score) {
-                            showEvaluationCard(payload, state.currentRound);
+                            showEvaluationCard(payload, state.currentRound, state.lastKnowledgeCount);
                             showToast(`当前评分: ${payload.overall_score}分`, 'info');
                         }
                     }
@@ -761,6 +944,12 @@ elements.historyPage.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && elements.historyPage.classList.contains('active')) closeHistoryPanel();
 });
+
+// 历史搜索/筛选
+const historySearch = document.getElementById('historySearch');
+const historyFilterScenario = document.getElementById('historyFilterScenario');
+if (historySearch) historySearch.addEventListener('input', filterHistory);
+if (historyFilterScenario) historyFilterScenario.addEventListener('change', filterHistory);
 
 elements.scenarioSelect.addEventListener('change', (e) => {
     if (e.target.value === 'custom') elements.customScenarioModal.classList.add('active');
