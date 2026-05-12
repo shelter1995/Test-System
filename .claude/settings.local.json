@@ -63,7 +63,18 @@
       "Bash(grep -E '\\\\.\\(pdf|pptx|txt|docx\\)$')",
       "Bash(grep -r \"port\\\\|PORT\" .env* config*.py)",
       "Bash(git add *)",
-      "Bash(git commit *)"
+      "Bash(git commit *)",
+      "Bash(cd /d/WorkSpace/Test-System/rag-anything-api && python app.py &)",
+      "Read(//d/WorkSpace/Test-System/**)",
+      "Bash(git push *)",
+      "Bash(pkill -f \"python app.py\")",
+      "Bash(pkill -f \"python tutor_backend.py\")",
+      "mcp__chrome-devtools__upload_file",
+      "Bash(pkill -f \"rag-anything-api\")",
+      "Bash(pkill -f \"app.py\")",
+      "Bash(pkill -f \"python.*app.py\")",
+      "Bash(pkill -f \"python.*tutor_backend\")",
+      "mcp__chrome-devtools__handle_dialog"
     ]
   }
 }

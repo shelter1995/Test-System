@@ -486,14 +486,23 @@ async function handleSend() {
 
     } catch (error) {
         if (error.name === 'AbortError') {
-            // 用户中断（开始新消息），静默处理
             console.log('SSE 连接已中断（用户开始新轮次）');
-        } else {
-            console.error('SSE 流式错误:', error);
-            showToast('发送失败: ' + error.message, 'error');
+        } else if (error.name === 'TypeError' && error.message.includes('fetch')) {
+            console.error('SSE 网络错误:', error);
+            // 保留已收到的 AI 回复
+            if (aiBubble && fullResponse) finalizeAIBubble(fullResponse);
             hideStageIndicator();
             setInputLocked(false);
             state.isProcessing = false;
+            showToast('陪练服务连接中断，请检查服务是否运行。已收到的回复已保留。', 'error');
+        } else {
+            console.error('SSE 流式错误:', error);
+            // 保留已收到的部分回复
+            if (aiBubble && fullResponse) finalizeAIBubble(fullResponse);
+            hideStageIndicator();
+            setInputLocked(false);
+            state.isProcessing = false;
+            showToast('对话中断: ' + error.message, 'error');
         }
     }
 }

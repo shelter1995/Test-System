@@ -120,7 +120,7 @@ class AIService:
     ) -> str:
         """Non-streaming AI response generation (backward compat for /chat)."""
         if not self.available:
-            return "Sorry, AI service not configured. Set MINIMAX_API_KEY in tutor_config.py."
+            return "抱歉，AI服务未配置。请在tutor_config.py中设置MINIMAX_API_KEY。"
 
         try:
             messages = [
@@ -206,36 +206,37 @@ class AIService:
                 [f"- {item['text']}" for item in eval_knowledge]
             )
 
-        prompt = f"""You are a professional sales trainer. Evaluate the sales rep's pitch.
+        prompt = f"""你是一位专业的销售培训师，请评估销售代表刚才的话术。你必须用中文输出所有文字。
 
-[Important]
-1. Evaluation must be based on knowledge base standards
-2. If no standards in KB, use industry best practices
-3. Be objective, specific, constructive
+【评估原则】
+1. 评估必须基于知识库中的销售方法论和标准
+2. 如果知识库中没有相关标准，基于行业最佳实践
+3. 客观、具体、有建设性
+4. 每个维度的 feedback 字段必须写出具体评分依据，说明为什么给这个分数
 
-[Context]
-- Round: {round_num}
-- Scenario: {scenario.get('name', '')}
-- AI Role: {scenario.get('ai_role', '')}
-- Sales rep said: {user_message}
-- AI customer responded: {ai_response}
+【对话上下文】
+- 轮次：第{round_num}轮
+- 场景：{scenario.get('name', '')}
+- 客户角色：{scenario.get('ai_role', '')}
+- 销售代表说：{user_message}
+- 客户回应：{ai_response}
 {kb_info}
 
-Return JSON:
+返回纯 JSON（不要 markdown 代码块），所有文字用中文：
 {{
-    "overall_score": <0-100>,
+    "overall_score": <总分 0-100>,
     "dimension_scores": {{
-        "开场话术": {{"score": <int>, "feedback": "<text>"}},
-        "需求挖掘": {{"score": <int>, "feedback": "<text>"}},
-        "产品介绍": {{"score": <int>, "feedback": "<text>"}},
-        "异议处理": {{"score": <int>, "feedback": "<text>"}},
-        "促成技巧": {{"score": <int>, "feedback": "<text>"}}
+        "开场话术": {{"score": <0-100>, "feedback": "<评分依据和具体建议>"}},
+        "需求挖掘": {{"score": <0-100>, "feedback": "<评分依据和具体建议>"}},
+        "产品介绍": {{"score": <0-100>, "feedback": "<评分依据和具体建议>"}},
+        "异议处理": {{"score": <0-100>, "feedback": "<评分依据和具体建议>"}},
+        "促成技巧": {{"score": <0-100>, "feedback": "<评分依据和具体建议>"}}
     }},
-    "feedback": "<overall>",
-    "suggestions": ["<tip1>", "<tip2>", "<tip3>"]
+    "feedback": "<整体评价，中文>",
+    "suggestions": ["<改进建议1>", "<改进建议2>", "<改进建议3>"]
 }}
 
-Return ONLY JSON, nothing else."""
+只返回 JSON，不要其他内容。"""
 
         try:
             result = self._client.chat_completion(
@@ -271,7 +272,7 @@ Return ONLY JSON, nothing else."""
         return {
             "overall_score": 70,
             "dimension_scores": {},
-            "feedback": "Evaluation service temporarily unavailable",
+            "feedback": "评估服务暂时不可用",
             "suggestions": [],
         }
 
@@ -285,10 +286,7 @@ Return ONLY JSON, nothing else."""
     ) -> str:
         """Generate AI opening line."""
         if not self.available:
-            return (
-                f"Hello, I'm {scenario['ai_role']} from {client_unit}. "
-                f"I heard you have {product} products?"
-            )
+            return f"你好，我是{client_unit}的{scenario['ai_role']}，听说你们有{product}产品？"
 
         rag = RAGService()
         product_knowledge = rag.search(
@@ -302,35 +300,36 @@ Return ONLY JSON, nothing else."""
 
         knowledge_context = ""
         if product_knowledge or opening_knowledge:
-            knowledge_context = "\n\n[Knowledge Base Info]\n"
+            knowledge_context = "\n\n【知识库相关信息】\n"
             if product_knowledge:
-                knowledge_context += "\nProduct info:\n" + "\n".join(
+                knowledge_context += "\n产品信息：\n" + "\n".join(
                     [f"- {item['text']}" for item in product_knowledge]
                 )
             if opening_knowledge:
-                knowledge_context += "\nOpening reference:\n" + "\n".join(
+                knowledge_context += "\n开场话术参考：\n" + "\n".join(
                     [f"- {item['text']}" for item in opening_knowledge]
                 )
 
-        prompt = f"""You are fully immersed in the role of [{scenario['ai_role']}], speaking as a real customer from {client_unit} in an initial meeting.
+        prompt = f"""你现在是【{scenario['ai_role']}】，来自{client_unit}，与销售代表初次沟通。必须用中文。
 
-[Character Traits]
-- Personality: {', '.join(scenario.get('customer_traits', ['professional, cautious']))}
-- Approach: {', '.join(scenario.get('ai_strategy', ['learn about product']))}
+【角色约束】
+- 性格：{', '.join(scenario.get('customer_traits', ['专业、谨慎']))}
+- 倾向：{', '.join(scenario.get('ai_strategy', ['了解产品']))}
+- 不要给自己起具体姓名（如"李总"），用"我"自称
 
-[Key Rules]
-1. Only use product info from the knowledge base
-2. Don't make up features, prices, or capabilities
-3. Speak naturally, like a real {scenario['ai_role']}
-4. Show genuine curiosity or concerns
+【关键规则】
+1. 只能使用知识库中的产品信息
+2. 禁止编造产品功能、价格
+3. 像真实的{scenario['ai_role']}一样自然说话
+4. 展现真实的兴趣或疑问
 
-[Scene]
-- Unit: {client_unit}
-- Product: {product}
-- Context: {scenario_type}
+【场景】
+- 单位：{client_unit}
+- 产品：{product}
+- 背景：{scenario_type}
 {knowledge_context}
 
-Speak as {scenario['ai_role']} with natural, authentic language. Just the opening line, no explanation."""
+用自然的中文说出开场白。只输出开场白，不要解释。"""
 
         try:
             result = self._client.chat_completion(
@@ -340,15 +339,9 @@ Speak as {scenario['ai_role']} with natural, authentic language. Just the openin
             )
             if result["success"]:
                 return result["content"]
-            return (
-                f"Hello, I'm {scenario['ai_role']} from {client_unit}. "
-                f"I heard you have {product} products?"
-            )
+            return f"你好，我是{client_unit}的{scenario['ai_role']}，听说你们有{product}产品？"
         except Exception:
-            return (
-                f"Hello, I'm {scenario['ai_role']} from {client_unit}. "
-                f"I heard you have {product} products?"
-            )
+            return f"你好，我是{client_unit}的{scenario['ai_role']}，听说你们有{product}产品？"
 
 
 # ==================== SessionManager ====================
@@ -448,34 +441,40 @@ class ReportGenerator:
             role = "Customer" if msg.get("role") == "ai" else "Sales Rep"
             conv_summary += f"\n{role}: {msg.get('content', '')}\n"
 
-        prompt = f"""You are a senior sales training expert. Summarize and evaluate this coaching conversation.
+        prompt = f"""你是一位资深的销售培训专家，请对这场销售陪练对话进行总结评估。所有文字必须用中文输出。
 
-[Important]
-1. Standards must come from KB training methodology
-2. Don't fabricate evaluation methods
-3. State clearly if KB has no relevant standards
+【评估原则】
+1. 评估标准应来自知识库中的销售培训方法论
+2. 不能编造评估方法
+3. 如果知识库没有相关标准，如实说明
 
-[Session Info]
-- Scenario: {scenario.get('name', '')}
-- Rounds: {rounds}
-- Client: {session_data.get('client_unit', '')}
-- Product: {session_data.get('product', '')}
+【会话信息】
+- 场景：{scenario.get('name', '')}
+- 总轮次：{rounds}
+- 客户单位：{session_data.get('client_unit', '')}
+- 产品：{session_data.get('product', '')}
 
-[Conversation Summary]
+【对话摘要】
 {conv_summary}
 {kb_ctx}
 
-Return JSON:
+返回纯 JSON（不要 markdown 代码块），所有文字用中文：
 {{
-    "total_score": <0-100>,
-    "rating_text": "<Excellent/Good/Satisfactory/Needs Improvement/Poor>",
-    "dimension_scores": {{}},
-    "highlights": ["<highlight1>", "<highlight2>", "<highlight3>"],
-    "improvements": ["<area1>", "<area2>", "<area3>"],
-    "suggestions": ["<tip1>", "<tip2>", "<tip3>"]
+    "total_score": <总分 0-100>,
+    "rating_text": "<评级：优秀/良好/满意/待改进/较差>",
+    "dimension_scores": {{
+        "开场话术": {{"score": <0-100>, "feedback": "<中文评价>"}},
+        "需求挖掘": {{"score": <0-100>, "feedback": "<中文评价>"}},
+        "产品介绍": {{"score": <0-100>, "feedback": "<中文评价>"}},
+        "异议处理": {{"score": <0-100>, "feedback": "<中文评价>"}},
+        "促成技巧": {{"score": <0-100>, "feedback": "<中文评价>"}}
+    }},
+    "highlights": ["<亮点1>", "<亮点2>", "<亮点3>"],
+    "improvements": ["<待改进1>", "<待改进2>", "<待改进3>"],
+    "suggestions": ["<建议1>", "<建议2>", "<建议3>"]
 }}
 
-Return ONLY JSON."""
+只返回 JSON，不要其他内容。"""
 
         try:
             result = self._ai._client.chat_completion(
@@ -519,21 +518,21 @@ Return ONLY JSON."""
                 if s and s not in all_suggestions:
                     all_suggestions.append(s)
 
-        highlights = [f"Completed {rounds} rounds of practice"]
+        highlights = [f"完成了 {rounds} 轮对话练习"]
         improvements = []
         if avg >= 80:
-            highlights.append("Good performance")
+            highlights.append("整体表现良好")
         elif avg < 60:
-            improvements.append("Practice more, improve fluency")
+            improvements.append("建议加强练习，提升话术熟练度")
 
         return {
             "total_score": avg,
             "rating_text": self._to_rating(avg),
             "dimension_scores": {},
             "highlights": highlights,
-            "improvements": improvements or ["Keep practicing"],
+            "improvements": improvements or ["继续保持练习"],
             "suggestions": all_suggestions[:5]
-            or ["Practice product introductions and objection handling"],
+            or ["建议多练习产品介绍和异议处理话术"],
         }
 
     @staticmethod
@@ -551,14 +550,14 @@ Return ONLY JSON."""
     @staticmethod
     def _to_rating(score: int) -> str:
         if score >= 90:
-            return "Excellent"
+            return "优秀"
         elif score >= 80:
-            return "Good"
+            return "良好"
         elif score >= 70:
-            return "Satisfactory"
+            return "满意"
         elif score >= 60:
-            return "Needs Improvement"
-        return "Poor"
+            return "待改进"
+        return "较差"
 
 
 # ==================== Convenience singletons ====================
