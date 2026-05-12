@@ -99,6 +99,71 @@ class MiniMaxClient:
 
         return {"success": False, "error": last_error or "未知错误", "error_type": "retry_exhausted"}
 
+    def stream_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.8,
+        max_tokens: int = 800
+    ):
+        """
+        Call MiniMax streaming chat completion API.
+        Yields each content delta as a string.
+
+        Yields:
+            str: content delta from AI response
+        """
+        url = f"{self.base_url}/text/chatcompletion_v2"
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True
+        }
+
+        response = requests.post(
+            url,
+            headers=headers,
+            json=data,
+            timeout=self.timeout,
+            stream=True
+        )
+        response.raise_for_status()
+
+        for line in response.iter_lines(decode_unicode=True):
+            if not line or not line.startswith("data: "):
+                continue
+
+            chunk = line[6:]  # remove "data: " prefix
+            if chunk == "[DONE]":
+                break
+
+            try:
+                obj = json.loads(chunk)
+            except json.JSONDecodeError:
+                logger.warning(f"MiniMax stream parse failure: {chunk[:100]}")
+                continue
+
+            # Check business error
+            base_resp = obj.get("base_resp", {})
+            if base_resp.get("status_code", 0) != 0:
+                err_msg = f"MiniMax stream business error [{base_resp.get('status_code')}]: {base_resp.get('status_msg', '')}"
+                logger.error(err_msg)
+                break
+
+            choices = obj.get("choices", [])
+            if not choices:
+                continue
+
+            delta = choices[0].get("delta", {})
+            content = delta.get("content", "")
+            if content:
+                yield content
+
     def create_completion(self, prompt: str, temperature: float = 0.8, max_tokens: int = 16000) -> str:
         """
         简单的补全接口
