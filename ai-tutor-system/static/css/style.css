@@ -970,6 +970,158 @@ body.has-alert .page {
     cursor: not-allowed;
 }
 
+/* ==================== SSE 流式 UI ==================== */
+
+/* 阶段指示器 */
+.stage-indicator {
+    display: none;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    background: rgba(137, 180, 250, 0.08);
+    border: 1px solid rgba(137, 180, 250, 0.2);
+    border-radius: var(--radius-md);
+    font-size: 0.85rem;
+    color: var(--primary-color);
+    animation: fadeIn 0.3s;
+}
+.stage-indicator.active { display: flex; align-items: center; gap: 0.5rem; }
+.stage-indicator.fade-out { opacity: 0; transition: opacity 0.3s; }
+.stage-icon { font-size: 1rem; }
+.stage-text { flex: 1; }
+.stage-bar {
+    width: 120px; height: 3px;
+    background: var(--border-color);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.stage-bar-fill {
+    display: block;
+    width: 30%;
+    height: 100%;
+    background: linear-gradient(90deg, var(--secondary-color), var(--primary-color));
+    border-radius: 2px;
+    animation: stagePulse 1.5s ease-in-out infinite;
+}
+@keyframes stagePulse {
+    0%, 100% { width: 20%; opacity: 0.5; }
+    50% { width: 70%; opacity: 1; }
+}
+
+/* 打字机光标 */
+.typing-cursor {
+    display: inline;
+    font-weight: bold;
+    color: var(--secondary-color);
+    animation: blink 1s step-end infinite;
+    margin-left: 2px;
+}
+@keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0; }
+}
+
+/* 流式消息气泡 */
+.message.ai.streaming .message-content {
+    min-height: 1.5rem;
+    border-right: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Toast 通知 */
+.toast-container {
+    position: fixed;
+    top: 1rem;
+    right: 1rem;
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-width: 360px;
+}
+.toast {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-md);
+    font-size: 0.9rem;
+    color: white;
+    opacity: 0;
+    transform: translateX(100%);
+    transition: all 0.3s ease;
+    pointer-events: none;
+    box-shadow: var(--shadow-md);
+}
+.toast.show { opacity: 1; transform: translateX(0); }
+.toast-info { background: var(--info-color); }
+.toast-error { background: #e74c3c; }
+.toast-success { background: var(--success-color); }
+
+/* 内联评分卡片 */
+.eval-card {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    margin: 0.5rem 0 1rem 50px;
+    background: rgba(203, 166, 247, 0.06);
+    border: 1px solid rgba(203, 166, 247, 0.2);
+    border-radius: var(--radius-md);
+    padding: 0;
+    transition: all 0.4s ease;
+}
+.eval-card.show {
+    max-height: 500px;
+    opacity: 1;
+    padding: 1rem;
+}
+.eval-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+.eval-card-round { font-size: 0.8rem; color: var(--text-secondary); }
+.eval-card-score { font-size: 1.25rem; font-weight: 700; color: #cba6f7; }
+.eval-dim {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.4rem;
+    font-size: 0.8rem;
+}
+.eval-dim-name { width: 65px; flex-shrink: 0; color: var(--text-secondary); }
+.eval-dim-bar { flex: 1; height: 6px; background: var(--border-color); border-radius: 3px; overflow: hidden; }
+.eval-dim-fill { height: 100%; border-radius: 3px; }
+.eval-dim-fill.high { background: var(--success-color); }
+.eval-dim-fill.mid { background: var(--warning-color); }
+.eval-dim-fill.low { background: #e74c3c; }
+.eval-dim-score { width: 24px; text-align: right; font-weight: 600; }
+.eval-card-feedback { margin-top: 0.75rem; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.5; }
+.eval-card-suggestions { margin-top: 0.5rem; display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.eval-tip {
+    font-size: 0.78rem;
+    background: rgba(203, 166, 247, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    color: #cba6f7;
+}
+
+/* 发送按钮 loading */
+.send-btn.loading {
+    position: relative;
+    color: transparent;
+}
+.send-btn.loading::after {
+    content: '';
+    position: absolute;
+    top: 50%; left: 50%;
+    width: 18px; height: 18px;
+    margin: -9px 0 0 -9px;
+    border: 2px solid rgba(255,255,255,0.3);
+    border-top-color: white;
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
 /* ==================== 右侧信息看板 ==================== */
 .info-panel {
     background: white;
