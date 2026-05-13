@@ -19,6 +19,16 @@ function showWorkbenchPage(pageId) {
         target.classList.add('active');
     }
 
+    // 陪练页面：紧凑布局，移除 content padding
+    var contentEl = document.querySelector('.content');
+    if (contentEl) {
+        if (pageId === 'tutor') {
+            contentEl.classList.add('tutor-active');
+        } else {
+            contentEl.classList.remove('tutor-active');
+        }
+    }
+
     // 更新侧边栏激活状态
     document.querySelectorAll('[data-nav]').forEach(function (item) {
         item.classList.remove('active');

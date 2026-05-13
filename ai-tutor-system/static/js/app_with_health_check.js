@@ -925,7 +925,7 @@ elements.messageInput.addEventListener('keydown', (e) => {
 
 elements.pauseBtn.addEventListener('click', handlePause);
 elements.endBtn.addEventListener('click', handleEnd);
-elements.backToStartBtn.addEventListener('click', () => {
+function returnToStart() {
     // 中断进行中的 SSE 连接
     if (state.abortController) {
         state.abortController.abort();
@@ -939,7 +939,20 @@ elements.backToStartBtn.addEventListener('click', () => {
     state.isChatting = false;
     state.isProcessing = false;
     setInputLocked(false);
-});
+}
+
+elements.backToStartBtn.addEventListener('click', () => returnToStart());
+
+// 聊天页返回按钮
+const chatBackBtn = document.getElementById('chatBackBtn');
+if (chatBackBtn) {
+    chatBackBtn.addEventListener('click', () => {
+        if (state.isProcessing || state.isChatting) {
+            if (!confirm('对话进行中，确定返回设置页吗？')) return;
+        }
+        returnToStart();
+    });
+}
 
 elements.viewHistoryBtn.addEventListener('click', () => openHistoryPanel());
 
