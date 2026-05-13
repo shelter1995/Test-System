@@ -1538,8 +1538,8 @@ body.has-alert #tutorApp .page {
 .history-backdrop {
     position: fixed;
     top: 0;
-    left: var(--sidebar-width);
     right: 0;
+    width: 400px;
     bottom: 0;
     background: rgba(0, 0, 0, 0);
     z-index: 2999;
@@ -1547,7 +1547,7 @@ body.has-alert #tutorApp .page {
     transition: background 0.3s;
 }
 .history-backdrop.active {
-    background: rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.15);
     pointer-events: auto;
 }
 
