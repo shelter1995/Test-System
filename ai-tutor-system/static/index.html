@@ -202,7 +202,7 @@
                                             <textarea id="messageInput"
                                                       class="message-input"
                                                       placeholder="请输入您的话术..."
-                                                      rows="6"></textarea>
+                                                      rows="3"></textarea>
                                             <div class="input-actions">
                                                 <span class="input-hint">Enter 发送 · Shift+Enter 换行</span>
                                                 <button id="sendBtn" class="send-btn">发送</button>
@@ -255,16 +255,14 @@
                                     </div>
 
                                     <div class="panel-section highlight">
-                                        <h3 class="panel-title">实时建议</h3>
+                                        <h3 class="panel-title">当前评分</h3>
                                         <div class="panel-content">
                                             <div class="suggestion-box">
                                                 <div class="suggestion-score" id="liveScore">
-                                                    <span class="score-label">当前评分</span>
+                                                    <span class="score-label">最新一轮</span>
                                                     <span class="score-value" id="scoreValue">-</span>
                                                 </div>
-                                                <div class="suggestion-list" id="liveSuggestions">
-                                                    <p class="suggestion-text">开始对话后将显示实时建议</p>
-                                                </div>
+                                                <p class="suggestion-text" style="text-align:center;color:var(--text-light);">对话中自动更新</p>
                                             </div>
                                         </div>
                                     </div>
@@ -300,6 +298,9 @@
                                 </div>
 
                                 <div class="report-content">
+                                    <div class="report-section" id="reportDimensions" style="display:none">
+                                        <h2>五维评分</h2>
+                                    </div>
                                     <div class="report-section">
                                         <h2>亮点表现</h2>
                                         <ul class="report-list" id="reportHighlights">
@@ -341,6 +342,12 @@
                                 <select id="historyFilterScenario" class="history-filter-select">
                                     <option value="">全部场景</option>
                                 </select>
+                            </div>
+                            <div class="history-legend">
+                                <span class="legend-dot" style="background:#27ae60"></span> 优秀(≥80)
+                                <span class="legend-dot" style="background:#f39c12"></span> 一般(60-79)
+                                <span class="legend-dot" style="background:#e74c3c"></span> 待改进(&lt;60)
+                                <span class="legend-dot" style="background:var(--secondary-color)"></span> 未评分
                             </div>
                             <div class="history-list" id="historyList">
                                 <!-- 动态插入 -->

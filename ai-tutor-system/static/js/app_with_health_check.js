@@ -361,11 +361,8 @@ function showEvaluationCard(evaluation, roundNum, knowledgeCount) {
     requestAnimationFrame(() => card.classList.add('show'));
     scrollToBottom();
 
-    // 同步到右侧信息看板
+    // 同步累计评分到右侧看板
     if (elements.liveScore) elements.liveScore.textContent = evaluation.overall_score;
-    if (elements.liveSuggestions && evaluation.suggestions) {
-        elements.liveSuggestions.innerHTML = evaluation.suggestions.map(s => `<p class="suggestion-text">💡 ${s}</p>`).join('');
-    }
 }
 
 function scrollToBottom() {
@@ -467,6 +464,8 @@ async function handleSend() {
                             setInputLocked(false);
                             elements.roundIndicator.textContent = `第 ${payload.round} 轮`;
                             state.isProcessing = false;
+                            // 独立发起评估请求，不受 SSE 中断影响
+                            requestEvaluation(state.currentSession);
                             break;
 
                         case 'evaluation':
@@ -502,6 +501,30 @@ async function handleSend() {
             state.isProcessing = false;
             showToast('对话中断: ' + error.message, 'error');
         }
+    }
+}
+
+/**
+ * 独立评估请求 — 不受 SSE AbortController 影响
+ */
+async function requestEvaluation(sessionId) {
+    try {
+        const response = await fetch(`${CONFIG.TUTOR_API}/chat`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                session_id: sessionId,
+                message: '',
+                is_pause: true
+            })
+        });
+        if (!response.ok) return;
+        const data = await response.json();
+        if (data.evaluation && data.evaluation.overall_score) {
+            showEvaluationCard(data.evaluation, state.currentRound, state.lastKnowledgeCount);
+        }
+    } catch (error) {
+        console.warn('独立评估请求失败:', error.message);
     }
 }
 
@@ -572,9 +595,29 @@ function updateKnowledgeBox(debugInfo) {
 function showReport(report) {
     elements.reportScore.textContent = report.total_score;
     elements.reportRating.textContent = report.rating_text;
-    elements.reportHighlights.innerHTML = (report.highlights || []).map(h => `<li>${h}</li>`).join('');
-    elements.reportImprovements.innerHTML = (report.improvements || []).map(i => `<li>${i}</li>`).join('');
-    elements.reportSuggestions.innerHTML = (report.suggestions || []).map(s => `<li>${s}</li>`).join('');
+
+    // 五维评分条形图
+    const dims = report.dimension_scores || {};
+    const dimsEl = document.getElementById('reportDimensions');
+    if (dimsEl && Object.keys(dims).length > 0) {
+        dimsEl.innerHTML = Object.entries(dims).map(([name, d]) => {
+            const s = d.score || 0;
+            const cls = s >= 80 ? 'high' : s >= 60 ? 'mid' : 'low';
+            return `<div class="eval-dim">
+                <span class="eval-dim-name">${name}</span>
+                <span class="eval-dim-bar"><span class="eval-dim-fill ${cls}" style="width:${s}%"></span></span>
+                <span class="eval-dim-score">${s}</span>
+            </div>
+            <div class="eval-dim-feedback">${d.feedback || ''}</div>`;
+        }).join('');
+        dimsEl.style.display = 'block';
+    } else if (dimsEl) {
+        dimsEl.style.display = 'none';
+    }
+
+    elements.reportHighlights.innerHTML = (report.highlights || []).map(h => `<li>${h}</li>`).join('') || '<li>暂无</li>';
+    elements.reportImprovements.innerHTML = (report.improvements || []).map(i => `<li>${i}</li>`).join('') || '<li>暂无</li>';
+    elements.reportSuggestions.innerHTML = (report.suggestions || []).map(s => `<li>${s}</li>`).join('') || '<li>暂无</li>';
     showPage(elements.reportPage);
 }
 
@@ -900,7 +943,7 @@ async function handleEnd() {
     try {
         elements.endBtn.disabled = true;
         elements.endBtn.textContent = '生成报告中...';
-        const report = await endSession('simple');
+        const report = await endSession('detailed');
         showReport(report);
         state.isChatting = false;
     } catch (error) {
