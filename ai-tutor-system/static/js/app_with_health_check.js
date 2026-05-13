@@ -943,6 +943,12 @@ function returnToStart() {
 
 elements.backToStartBtn.addEventListener('click', () => returnToStart());
 
+// 报告页顶部返回按钮
+const reportBackBtn = document.getElementById('reportBackBtn');
+if (reportBackBtn) {
+    reportBackBtn.addEventListener('click', () => returnToStart());
+}
+
 // 聊天页返回按钮
 const chatBackBtn = document.getElementById('chatBackBtn');
 if (chatBackBtn) {
