@@ -322,20 +322,6 @@ body {
 }
 
 /* ---- 工作台内历史面板覆盖 ---- */
-.page-section .history-container {
-    position: relative;
-    right: auto;
-    width: 100%;
-    height: auto;
-    box-shadow: none;
-    border-radius: var(--radius-lg);
-    background: var(--bg-secondary);
-}
-
-.page-section .history-container.active {
-    right: auto;
-}
-
 .page-section #historyPage {
     padding-top: 0;
 }
