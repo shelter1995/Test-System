@@ -740,16 +740,20 @@ body.has-alert #tutorApp .page {
 }
 
 .form-group input,
+.form-group select,
 .form-group textarea {
     width: 100%;
     padding: 0.5rem 0.75rem;
     border: 2px solid var(--border-color);
     border-radius: var(--radius-md);
     font-size: 0.95rem;
+    font-family: inherit;
     transition: border-color 0.3s;
+    box-sizing: border-box;
 }
 
 .form-group input:focus,
+.form-group select:focus,
 .form-group textarea:focus {
     outline: none;
     border-color: var(--secondary-color);
