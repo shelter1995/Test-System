@@ -68,7 +68,6 @@ const elements = {
     reportHighlights: document.getElementById('reportHighlights'),
     reportImprovements: document.getElementById('reportImprovements'),
     reportSuggestions: document.getElementById('reportSuggestions'),
-    backToStartBtn: document.getElementById('backToStartBtn'),
     viewHistoryBtn: document.getElementById('viewHistoryBtn'),
 
     historyBtn: document.getElementById('historyBtn'),
@@ -945,9 +944,7 @@ function returnToStart() {
     setInputLocked(false);
 }
 
-elements.backToStartBtn.addEventListener('click', () => returnToStart());
-
-// 报告页顶部返回按钮
+// 报告页顶部返回按钮（底部已移除，只保留顶部）
 const reportBackBtn = document.getElementById('reportBackBtn');
 if (reportBackBtn) {
     reportBackBtn.addEventListener('click', () => returnToStart());
