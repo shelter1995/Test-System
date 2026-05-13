@@ -15,9 +15,12 @@
     │   └── /ingest/upload           文件上传 + SSE 进度
     │
     └── Tutor 服务 (localhost:8002)  FastAPI
-        ├── /chat, /session/*         话术陪练
-        ├── /generation/jobs/*        内容生成
-        └── /api/status               健康检查
+        ├── /chat, /chat/stream      话术陪练（非流式 + SSE 流式）
+        ├── /session/start, /session/end, /session/{id}  会话管理
+        ├── /scenarios, /scenarios/create  场景管理
+        ├── /history                 历史记录
+        ├── /generation/jobs/*       内容生成
+        └── /api/status              健康检查
 ```
 
 ## 目录结构
@@ -25,21 +28,29 @@
 ```
 Test-System/
 ├── ai-tutor-system/           # Tutor 服务 + 前端
-│   ├── tutor_backend.py       # FastAPI 主入口（端口8002）
-│   ├── tutor_config.py        # 配置（API key、端口、模型）
-│   ├── minimax_client.py      # MiniMax API 封装（timeout=300s, retries=2）
-│   ├── rag_client.py          # RAG 客户端（并行搜索，timeout=120s）
+│   ├── tutor_backend.py       # FastAPI 路由 + 启动（~480行，精简版）
+│   ├── tutor_config.py        # 配置（API key、端口、模型、场景、评估维度）
+│   ├── tutor_models.py        # Pydantic 数据模型 + SSE 事件类型（~86行）
+│   ├── tutor_services.py      # 业务逻辑层（~580行）
+│   │   ├── RAGService         #   知识库检索（复用 rag_client.py）
+│   │   ├── AIService          #   MiniMax 流式/非流式调用 + 评估
+│   │   ├── SessionManager     #   会话 CRUD + 列表
+│   │   └── ReportGenerator    #   报告生成 + 兜底
+│   ├── tutor_streaming.py     # SSE 管线编排器（~240行）
+│   │   └── StreamingPipeline  #   RAG检索 → AI流式生成 → 异步评估
+│   ├── minimax_client.py      # MiniMax API 封装（timeout=300s, retries=2, stream/非stream）
+│   ├── rag_client.py          # RAG HTTP 客户端（并行多查询，timeout=120s）
 │   ├── generation_api.py      # 内容生成 API 路由（/generation/*）
 │   ├── generation_runner.py   # 生成管线核心（solution + training）
 │   ├── static/
 │   │   ├── index.html         # 统一工作台 SPA
-│   │   ├── css/style.css      # 全局样式（CSS 变量体系）
+│   │   ├── css/style.css      # 全局样式（CSS 变量 + flex 布局体系）
 │   │   └── js/
-│   │       ├── api.js          # WorkbenchAPI（fetch 封装）
-│   │       ├── navigation.js   # 侧边栏导航
-│   │       ├── knowledge.js    # 知识库管理（knowledgeState 全局状态）
-│   │       ├── generation.js   # 内容生成模块
-│   │       └── app_with_health_check.js  # 陪练模块
+│   │       ├── api.js                    # WorkbenchAPI（fetch 封装）
+│   │       ├── navigation.js             # 侧边栏导航 + tutor-active 类切换
+│   │       ├── knowledge.js              # 知识库管理（knowledgeState 全局状态）
+│   │       ├── generation.js             # 内容生成模块
+│   │       └── app_with_health_check.js  # 陪练模块（SSE 流式 + 打字机 + 非阻塞评分）
 │   └── tests/
 │       └── test_generation_api.py  # 15 个测试
 │
@@ -61,10 +72,65 @@ Test-System/
 | 总览 | `overview` | — | 占位 |
 | 知识库 | `knowledge` | knowledge.js | ✅ 完成 |
 | 内容生成 | `generation` | generation.js | ✅ 基本完成 |
-| 陪练系统 | `tutor` | app_with_health_check.js | 可用 |
+| 陪练系统 | `tutor` | app_with_health_check.js | ✅ SSE 流式可用 |
 | 历史产物 | `history` | generation.js | ✅ 可用 |
 
-## 内容生成模块（当前重点）
+## 陪练系统（当前重点）
+
+### 后端架构（Phase 1 重构后）
+
+三层拆分，所有服务无状态可独立测试：
+
+- `tutor_models.py` — Pydantic 模型（ScenarioCreate, SessionStart, ChatMessage, SessionEnd）+ SSEEvent 格式类（7 个静态方法）
+- `tutor_services.py` — RAGService（检索+数据库映射）、AIService（流式/非流式生成+评估+开场白）、SessionManager（CRUD+列表）、ReportGenerator（AI报告+兜底）
+- `tutor_streaming.py` — StreamingPipeline 编排四阶段：RAG 3路并行检索 → AI 逐 token 流式生成 → done 释放输入框 → 异步评估
+- `tutor_backend.py` — 精简为路由层（~480行），`/chat` 保持兼容，`/chat/stream` 新 SSE 端点
+
+### SSE 流式管线
+
+```
+POST /chat/stream
+  → event: status   {stage:"rag_searching"}    前端: 阶段指示器
+  → event: token    {delta:"你好..."}           前端: 打字机逐字追加
+  → event: done     {round:3}                  前端: 释放输入框，用户可发下一轮
+  → event: evaluation {overall_score:82,...}   前端: 评分卡片滑入（异步，不阻塞输入）
+```
+
+### 前端交互
+
+- **打字机效果**：`fetch()` + `ReadableStream` 解析 SSE，token 事件逐字追加
+- **非阻塞评分**：done 后立即启用输入框，评分通过独立请求异步获取
+- **阶段指示器**：检索中 / 生成中 进度条，自动消失
+- **评估卡片**：五维条形图 + 评分依据 + 知识库来源标注
+- **Toast 通知**：替代 alert，支持 info/error/success
+- **右侧面板**：累计评分 + 知识库状态，不含实时建议（已精简）
+
+### 历史抽屉
+
+- 从右侧滑入（400px），带半透明遮罩，点击遮罩关闭
+- 搜索框 + 场景筛选 + 评分配色（绿≥80 / 黄60-79 / 红<60）
+- 点击展开：最近对话摘要 + 五维评分条形图 + 知识库状态
+
+### 报告页
+
+- 顶栏 `← 返回设置` 按钮
+- 五维评分条形图 + 亮点/待改进/建议
+- 调用 AI 生成详细报告（`detail_level=detailed`）
+
+### 页面布局（flex 体系）
+
+三页面（开始/对话/报告）通过 flex 链填满可用空间：
+`.content.tutor-active(overflow:hidden)` → `.page-section(flex:1)` → `#tutorApp(flex:1)` → `.page(flex:1)` → 内容区
+
+开始页和报告页内部可滚动（`overflow-y: auto`），聊天页由 `.chat-messages` 独立滚动。
+
+### 已知注意事项
+
+- SSE 流式需要重启 Tutor 服务才能生效（代码已就绪）
+- AI 名称混淆已通过 system prompt 约束（禁止自编姓名）
+- 评估和报告 prompt 已全部中文化，包含评分依据要求
+
+## 内容生成模块
 
 **两种类型**：
 - `solution`：RAG 检索 5 路 → SCQA+MECE 结构化方案（温度 0.4）
@@ -83,11 +149,14 @@ Test-System/
 
 ## 风格规范
 
-- CSS 变量体系：`:root` 定义 primary/secondary/accent/success 等
+- CSS 变量体系：`:root` 定义 primary/secondary/accent/success/warning/info 等
 - 卡片组件：`.panel-card` + `.panel-pad`
-- 表单：`.form-control`（input/select）、`.form-textarea`
+- 表单：`.form-group input/select/textarea`（统一样式，padding: 0.5rem 0.75rem）
+- 陪练布局：flex 贯穿全链，无固定 calc 高度
 - 响应式断点：900px（grid 变单列）
 - JS 全局状态：`knowledgeState`（knowledge.js）、`WorkbenchAPI`（api.js）
+- SSE 流式：`state.abortController` 管理连接，`state.lastKnowledgeCount` 传递知识库状态
+- 布局切换：`navigation.js` 中 `tutor-active` 类控制陪练页面无 padding 紧凑模式
 
 ## 启动命令
 
@@ -109,6 +178,7 @@ cd ai-tutor-system && python tutor_backend.py
 `tutor_config.py`：
 - `MINIMAX_MODEL` = `"MiniMax-M2.7"`
 - `RAG_SERVICE_URL` = `"http://localhost:8003"`
+- `DEFAULT_RAG_DATABASE` = `"商务彩铃"`
 
 ## 测试
 
