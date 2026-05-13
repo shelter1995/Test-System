@@ -128,7 +128,7 @@ async def download_artifact(path: str):
     except (ValueError, TypeError):
         raise HTTPException(status_code=400, detail="Invalid path")
 
-    allowed_dirs = ["generation_output", "training_output", "solution_output"]
+    allowed_dirs = ["generation_output"]
     if not any(path.startswith(d) for d in allowed_dirs):
         raise HTTPException(status_code=403, detail="Access denied")
 

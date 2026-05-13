@@ -10,6 +10,13 @@ from typing import Any
 from dotenv import load_dotenv
 
 
+def _normalize_base_url(base_url: str, suffix: str) -> str:
+    text = str(base_url or "").rstrip("/")
+    if text.endswith(suffix):
+        return text
+    return text + suffix
+
+
 def _safe_int(value: str, default: int) -> int:
     """安全的整数转换，失败时返回默认值"""
     try:
@@ -81,8 +88,7 @@ EMBEDDING_TIMEOUT = _safe_int(os.getenv("EMBEDDING_TIMEOUT", "30"), 30)
 EMBEDDING_BATCH_SIZE = _safe_int(os.getenv("EMBEDDING_BATCH_SIZE", "20"), 20)
 
 
-# RAG-Anything 引擎配置
-RAGANYTHING_SOURCE_DIR = os.getenv("RAGANYTHING_SOURCE_DIR", r"D:\GitHub_WorkSpace\RAG-Anything")
+# RAG-Anything 引擎配置（通过 pip install raganything 安装，无需本地 clone）
 PARSER = os.getenv("PARSER", "mineru")
 PARSE_METHOD = os.getenv("PARSE_METHOD", "auto")
 MINERU_BACKEND = os.getenv("MINERU_BACKEND", "pipeline")
@@ -94,7 +100,21 @@ CHUNK_OVERLAP_SIZE = _safe_int(os.getenv("CHUNK_OVERLAP_SIZE", "100"), 100)
 ENABLE_IMAGE_PROCESSING = _safe_bool(os.getenv("ENABLE_IMAGE_PROCESSING"), True)
 ENABLE_TABLE_PROCESSING = _safe_bool(os.getenv("ENABLE_TABLE_PROCESSING"), True)
 ENABLE_EQUATION_PROCESSING = _safe_bool(os.getenv("ENABLE_EQUATION_PROCESSING"), True)
-DEFAULT_QUERY_MODE = os.getenv("DEFAULT_QUERY_MODE", "naive").strip().lower() or "naive"
+DEFAULT_QUERY_MODE = os.getenv("DEFAULT_QUERY_MODE", "hybrid").strip().lower() or "hybrid"
+
+# VLM 图片理解（MiniMax Coding Plan 专用接口）
+# POST /v1/coding_plan/vlm  {prompt, image_url} → {content}
+# 与普通 /v1/chat/completions 不同，这是 Coding Plan 套餐的图片理解 API
+ENABLE_VLM = _safe_bool(os.getenv("ENABLE_VLM"), False)
+VLM_API_KEY = os.getenv("VLM_API_KEY") or os.getenv("MINIMAX_API_KEY") or ""
+VLM_BASE_URL = os.getenv("VLM_BASE_URL", "https://api.minimaxi.com").rstrip("/")
+VLM_MODEL = os.getenv("VLM_MODEL", "")  # coding_plan 接口不需要指定模型
+
+# Rerank 重排序（硅基流动）
+ENABLE_RERANK = _safe_bool(os.getenv("ENABLE_RERANK"), False)
+RERANK_API_KEY = os.getenv("RERANK_API_KEY") or os.getenv("SILICONFLOW_API_KEY") or ""
+RERANK_BASE_URL = _normalize_base_url(os.getenv("RERANK_BASE_URL", "https://api.siliconflow.cn"), "/v1")
+RERANK_MODEL = os.getenv("RERANK_MODEL", "BAAI/bge-reranker-v2-m3")
 
 # 多库并发查询超时（秒）
 QUERY_ALL_TIMEOUT = _safe_int(os.getenv("QUERY_ALL_TIMEOUT", "60"), 60)

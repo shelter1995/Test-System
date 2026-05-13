@@ -9,9 +9,10 @@
 ```
 浏览器 (localhost:8002 静态页面)
     │
-    ├── RAG 服务 (localhost:8003)   FastAPI + RAG-Anything + LightRAG
+    ├── RAG 服务 (localhost:8003)   FastAPI + RAG-Anything + MinerU + LightRAG
     │   ├── /db/list, /db/stats      知识库管理
-    │   ├── /search, /ai_enhanced_search  语义检索
+    │   ├── /search, /query          hybrid 混合检索（向量+图谱）
+    │   ├── /context                 轻量上下文提取
     │   └── /ingest/upload           文件上传 + SSE 进度
     │
     └── Tutor 服务 (localhost:8002)  FastAPI
@@ -55,10 +56,15 @@ Test-System/
 │       └── test_generation_api.py  # 15 个测试
 │
 ├── rag-anything-api/          # RAG 服务（端口8003）
-│   ├── app.py                 # FastAPI 主入口
-│   ├── raganything_service.py # RAG 引擎封装
+│   ├── app.py                 # FastAPI 路由（/search, /query, /ingest 等）
+│   ├── config.py              # 环境变量配置（LLM/VLM/Rerank/MinerU）
+│   ├── raganything_service.py # RAG-Anything 引擎封装（VLM + Rerank）
+│   ├── start.py               # 启动脚本（自动依赖检查）
 │   ├── progress.py            # SSE 进度追踪
-│   └── database_registry.py   # 知识库注册表
+│   ├── database_registry.py   # 知识库注册表
+│   ├── raganything/           # RAG-Anything 引擎源码（内置，18个文件）
+│   ├── .env.example           # 配置模板
+│   └── requirements.txt       # Python 依赖
 │
 ├── solution-generator-skill/  # 解决方案生成技能定义（SKILL.md）
 ├── peixun-skill/              # 培训材料生成技能定义（SKILL.md）
@@ -145,7 +151,9 @@ POST /chat/stream
 **关键参数**：
 - MiniMax timeout=300s, retries=2, max_tokens=8000(solution)/8000+6000+4000(training)
 - RAG timeout=120s, 并行 5 路 × 每路 top-3 × 每片段 ≤600字
-- enable_rerank=False（已传参到 RAG 引擎层）
+- RAG 默认查询模式=hybrid（向量+图谱融合），支持 naive/local/global/hybrid/mix 五种
+- Rerank 可选开启（硅基流动 BAAI/bge-reranker-v2-m3），`ENABLE_RERANK=true`
+- VLM 图片理解可选开启（MiniMax VL），`ENABLE_VLM=true`，自动将检索到的图片提交 VLM 看图回答
 
 ## 风格规范
 
@@ -170,15 +178,46 @@ cd ai-tutor-system && python tutor_backend.py
 # 浏览器打开 http://localhost:8002
 ```
 
+> 完整部署说明（首次使用、环境配置、依赖安装、验证步骤）见 [SETUP.md](SETUP.md)
+
 ## 配置
 
-`.env` 文件需配置：
-- `MINIMAX_API_KEY` — MiniMax API 密钥
+> 复制 `.env.example` 为 `.env` 并填入密钥。完整模板见各目录下的 `.env.example`。
 
-`tutor_config.py`：
-- `MINIMAX_MODEL` = `"MiniMax-M2.7"`
-- `RAG_SERVICE_URL` = `"http://localhost:8003"`
-- `DEFAULT_RAG_DATABASE` = `"商务彩铃"`
+### Tutor 服务 — `ai-tutor-system/.env`
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MINIMAX_API_KEY` | 必填 | MiniMax API 密钥 |
+| `MINIMAX_MODEL` | `MiniMax-M2.7` | 文本生成模型 |
+| `RAG_SERVICE_URL` | `http://localhost:8003` | RAG 服务地址 |
+| `RAG_REQUEST_TIMEOUT` | `90` | RAG 请求超时（秒） |
+| `TUTOR_SERVICE_HOST` | `0.0.0.0` | Tutor 监听地址 |
+| `TUTOR_SERVICE_PORT` | `8002` | Tutor 监听端口 |
+
+### RAG 服务 — `rag-anything-api/.env`
+
+RAG-Anything 引擎源码已内置在 `rag-anything-api/raganything/` 中，无需额外安装。
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `MINIMAX_API_KEY` | 必填 | MiniMax LLM（文本生成） |
+| `MINIMAX_MODEL_M27` | `MiniMax-M2.7` | 主 LLM 模型 |
+| `SILICONFLOW_API_KEY` | 必填 | 硅基流动 Embedding + Rerank |
+| `SILICONFLOW_MODEL` | `BAAI/bge-m3` | Embedding 模型 |
+| `DEFAULT_QUERY_MODE` | `hybrid` | 查询模式：naive / local / global / hybrid / mix |
+| `ENABLE_VLM` | `false` | 开启 MiniMax Coding Plan 图片理解 |
+| `VLM_BASE_URL` | `https://api.minimaxi.com` | VLM 国内站；国际站用 `api.minimax.io` |
+| `ENABLE_RERANK` | `false` | 开启硅基流动检索重排序 |
+| `RERANK_MODEL` | `BAAI/bge-reranker-v2-m3` | Rerank 模型 |
+| `PARSER` | `mineru` | 文档解析引擎 |
+| `MINERU_BACKEND` | `pipeline` | MinerU 后端 |
+| `CHUNK_SIZE` | `1200` | 文档分块大小（tokens） |
+| `RAG_SERVICE_PORT` | `8003` | RAG 监听端口 |
+
+密钥获取：
+- MiniMax：https://platform.minimaxi.com
+- 硅基流动：https://siliconflow.cn
 
 ## 测试
 

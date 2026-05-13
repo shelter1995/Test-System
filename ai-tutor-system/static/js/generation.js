@@ -182,6 +182,9 @@
         var container = document.getElementById('generationApp');
         if (!container) return;
 
+        // 移除占位样式，让内容正常撑满宽度
+        container.classList.remove('section-placeholder');
+
         var lastDb = (typeof knowledgeState !== 'undefined') ? knowledgeState.activeDatabase : '';
         var dbOptions = renderDatabaseOptions(lastDb);
 

@@ -139,6 +139,7 @@ class SearchRequest(BaseModel):
     n_results: Optional[int] = 10
     database: Optional[str] = None
     enable_rerank: Optional[bool] = None
+    vlm_enhanced: Optional[bool] = None  # 默认自动（有 VLM 就用），可显式关闭
 
 
 class MultiSearchRequest(BaseModel):
@@ -220,10 +221,15 @@ async def root():
     return {
         "status": "running",
         "message": "RAG-Anything 智能检索系统正在运行",
-        "version": "3.0.0",
+        "version": "3.1.0",
         "engine": "RAGAnything + MinerU + LightRAG",
         "llm": f"MiniMax ({config.MINIMAX_MODEL_M27} → {config.MINIMAX_MODEL_M25})",
         "embedding": f"硅基流动 {config.SILICONFLOW_MODEL}",
+        "query": {
+            "default_mode": config.DEFAULT_QUERY_MODE,
+            "vlm": "enabled" if config.ENABLE_VLM and config.VLM_API_KEY else "disabled",
+            "rerank": "enabled" if config.ENABLE_RERANK and config.RERANK_API_KEY else "disabled",
+        },
         "endpoints": {
             "docs": "/docs",
             "search": "/search",
@@ -232,8 +238,19 @@ async def root():
             "db_list": "/db/list",
             "db_stats": "/db/stats",
             "ingest_path": "/ingest/path",
+            "ingest_upload": "/ingest/upload",
         },
     }
+
+
+def _build_query_kwargs(request: SearchRequest) -> dict:
+    """从请求体提取查询参数。"""
+    kwargs = {"mode": _query_mode(), "n_results": request.n_results or 10}
+    if request.enable_rerank is not None:
+        kwargs["enable_rerank"] = request.enable_rerank
+    if request.vlm_enhanced is not None:
+        kwargs["vlm_enhanced"] = request.vlm_enhanced
+    return kwargs
 
 
 @app.post("/search")
@@ -241,9 +258,7 @@ async def search(request: SearchRequest):
     service = _require_service()
     try:
         db_id = _normalize_database_id(request.database)
-        kwargs = {"mode": _query_mode(), "n_results": request.n_results or 10}
-        if request.enable_rerank is not None:
-            kwargs["enable_rerank"] = request.enable_rerank
+        kwargs = _build_query_kwargs(request)
         if db_id:
             result = await service.query(db_id, request.query, **kwargs)
         else:
@@ -261,9 +276,7 @@ async def ai_enhanced_search(request: SearchRequest):
     service = _require_service()
     try:
         db_id = _normalize_database_id(request.database)
-        kwargs = {"mode": _query_mode(), "n_results": request.n_results or 10}
-        if request.enable_rerank is not None:
-            kwargs["enable_rerank"] = request.enable_rerank
+        kwargs = _build_query_kwargs(request)
         if db_id:
             result = await service.query(db_id, request.query, **kwargs)
         else:
@@ -303,10 +316,11 @@ async def query(request: SearchRequest):
     service = _require_service()
     try:
         db_id = _normalize_database_id(request.database)
+        kwargs = _build_query_kwargs(request)
         if db_id:
-            result = await service.query(db_id, request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query(db_id, request.query, **kwargs)
         else:
-            result = await service.query_all(request.query, mode=_query_mode(), n_results=request.n_results or 10)
+            result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result, include_context=True)
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
@@ -332,6 +346,19 @@ async def status():
             "provider": "硅基流动",
             "model": config.SILICONFLOW_MODEL,
             "max_tokens": config.EMBEDDING_MAX_TOKENS,
+        },
+        "vlm": {
+            "enabled": config.ENABLE_VLM and bool(config.VLM_API_KEY),
+            "provider": "MiniMax (Coding Plan)",
+            "endpoint": f"{config.VLM_BASE_URL}/v1/coding_plan/vlm",
+        },
+        "rerank": {
+            "enabled": config.ENABLE_RERANK and bool(config.RERANK_API_KEY),
+            "provider": "硅基流动",
+            "model": config.RERANK_MODEL,
+        },
+        "query": {
+            "default_mode": config.DEFAULT_QUERY_MODE,
         },
         "storage": {
             "registry": str(config.DATABASE_REGISTRY_FILE),
@@ -494,6 +521,7 @@ async def multi_database_search(request: MultiSearchRequest):
         )
         payload = _to_legacy_query_response(result)
         payload["merged"] = request.merge_results
+        payload["query_mode"] = _query_mode()
         return payload
     except Exception as e:
         logger.error(f"多数据库搜索失败: {e}")

@@ -8,12 +8,15 @@ import json
 import logging
 import os
 import re
-import sys
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Callable
 
 import httpx
+
+from raganything import RAGAnything, RAGAnythingConfig
+from lightrag.llm.openai import openai_complete_if_cache, openai_embed
+from lightrag.utils import EmbeddingFunc
 
 import config
 from database_registry import DatabaseRegistry
@@ -26,18 +29,6 @@ def _normalize_base_url(base_url: str, suffix: str) -> str:
     if text.endswith(suffix):
         return text
     return text + suffix
-
-
-def _ensure_raganything_import_path() -> None:
-    src = Path(config.RAGANYTHING_SOURCE_DIR)
-    if src.exists() and str(src) not in sys.path:
-        sys.path.insert(0, str(src))
-    scripts_dir = src / ".venv" / "Scripts"
-    if scripts_dir.exists():
-        current = os.environ.get("PATH", "")
-        scripts_text = str(scripts_dir)
-        if scripts_text.lower() not in current.lower():
-            os.environ["PATH"] = scripts_text + os.pathsep + current
 
 
 def _sha256(path: Path) -> str:
@@ -85,11 +76,6 @@ class RAGAnythingService:
         return self.output_root / database_id
 
     def _create_rag(self, database_id: str, working_dir: Path):
-        _ensure_raganything_import_path()
-        from raganything import RAGAnything, RAGAnythingConfig
-        from lightrag.llm.openai import openai_complete_if_cache, openai_embed
-        from lightrag.utils import EmbeddingFunc
-
         if config.HF_ENDPOINT:
             os.environ["HF_ENDPOINT"] = config.HF_ENDPOINT
 
@@ -159,12 +145,13 @@ class RAGAnythingService:
         )
 
     # ------------------------------------------------------------------
-    # VLM 图片理解函数（MiniMax 多模态）
+    # VLM 图片理解函数（MiniMax Coding Plan 专用接口）
+    # POST /v1/coding_plan/vlm  {prompt, image_url} → {content}
     # ------------------------------------------------------------------
     def _build_vision_func(self):
-        """创建 MiniMax VLM 函数，支持三种调用模式：
-        1) func(prompt, system_prompt=...)            → 纯文本
-        2) func("", messages=[{...}])                → 多模态消息（含图片）
+        """创建 MiniMax Coding Plan VLM 函数，支持三种调用模式：
+        1) func(prompt, system_prompt=...)            → 纯文本，走标准 chat
+        2) func("", messages=[{...}])                → 多模态消息，提取首张图片 + 文字
         3) func(prompt, image_data=base64, system_prompt=...) → 单图分析
         """
         if not config.ENABLE_VLM or not config.VLM_API_KEY:
@@ -172,70 +159,99 @@ class RAGAnythingService:
 
         api_key = config.VLM_API_KEY
         base_url = config.VLM_BASE_URL
-        model = config.VLM_MODEL
         timeout = config.LLM_TIMEOUT_M27
 
-        # 额外安全目录：允许访问 storage 和 output 下的图片
-        extra_safe_dirs = [
-            str(self.storage_root.resolve()),
-            str(self.output_root.resolve()),
-        ]
+        async def _call_coding_plan_vlm(client: httpx.AsyncClient, prompt_text: str,
+                                        image_data_url: str) -> str:
+            """调用 MiniMax Coding Plan VLM 接口。"""
+            resp = await client.post(
+                f"{base_url}/v1/coding_plan/vlm",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "prompt": prompt_text,
+                    "image_url": image_data_url,
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            base_r = data.get("base_resp", {})
+            if base_r.get("status_code", 0) != 0:
+                raise RuntimeError(
+                    f"MiniMax VLM 错误 [{base_r.get('status_code')}]: "
+                    f"{base_r.get('status_msg', '未知')}"
+                )
+            return data.get("content", "")
 
-        async def vision_model_func(prompt=None, system_prompt=None, messages=None, image_data=None, **kwargs):
+        def _extract_from_messages(msgs: list):
+            """从 RAGAnything 构建的 messages 中提取文本和首张图片。"""
+            all_text = []
+            first_image = None
+            for msg in msgs:
+                content = msg.get("content", "")
+                if isinstance(content, str):
+                    if msg.get("role") == "system":
+                        all_text.insert(0, content)
+                    else:
+                        all_text.append(content)
+                elif isinstance(content, list):
+                    for part in content:
+                        if part.get("type") == "text":
+                            all_text.append(part.get("text", ""))
+                        elif part.get("type") == "image_url":
+                            url = part.get("image_url", {}).get("url", "")
+                            if url and first_image is None:
+                                first_image = url
+            return "\n".join(all_text), first_image
+
+        async def vision_model_func(prompt=None, system_prompt=None, messages=None,
+                                     image_data=None, **kwargs):
             async with httpx.AsyncClient(timeout=timeout) as client:
                 # 模式 3：单图分析（Processor 调用）
                 if image_data:
-                    user_content = [
-                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_data}"}},
-                        {"type": "text", "text": prompt or ""},
-                    ]
+                    return await _call_coding_plan_vlm(
+                        client,
+                        prompt or "请描述这张图片",
+                        f"data:image/jpeg;base64,{image_data}",
+                    )
+
                 # 模式 2：多模态消息（VLM 增强查询调用）
-                elif messages:
-                    # RAGAnything 传过来的 messages 格式：
-                    # [{"role":"system","content":...}, {"role":"user","content":[...]}]
-                    # 其中 user content 已经是 image_url + text 混合数组
-                    api_messages = messages
-                    user_content = None
-                # 模式 1：纯文本
-                else:
-                    user_content = prompt or ""
-                    api_messages = None
+                if messages:
+                    text, img = _extract_from_messages(messages)
+                    if img:
+                        return await _call_coding_plan_vlm(client, text, img)
+                    # 没有图片则退回纯文本
+                    prompt = text
 
-                if api_messages is None:
-                    api_messages = []
-                    if system_prompt:
-                        api_messages.append({"role": "system", "content": system_prompt})
-                    api_messages.append({"role": "user", "content": user_content})
-
-                # VL-01 走 OpenAI 兼容接口 /v1/chat/completions
+                # 模式 1：纯文本 — 走标准 chat completion
+                final_prompt = prompt or ""
+                if system_prompt:
+                    final_prompt = f"{system_prompt}\n\n{final_prompt}"
                 resp = await client.post(
-                    f"{base_url}/chat/completions",
+                    f"{base_url}/v1/chat/completions",
                     headers={
                         "Authorization": f"Bearer {api_key}",
                         "Content-Type": "application/json",
                     },
                     json={
-                        "model": model,
-                        "messages": api_messages,
+                        "model": "MiniMax-M2.7",
+                        "messages": [{"role": "user", "content": final_prompt}],
                         "temperature": 0.3,
                         "max_tokens": 4096,
                     },
                 )
                 resp.raise_for_status()
                 data = resp.json()
-
-                # OpenAI 兼容格式：choices[0].message.content
                 choices = data.get("choices", [])
                 if choices and "message" in choices[0]:
                     return choices[0]["message"].get("content", "")
-                # MiniMax 原生格式（兼容 /text/chatcompletion_v2 返回）
                 if choices and "messages" in choices[0]:
                     return choices[0]["messages"][-1].get("text", "")
                 return ""
 
-        logger.info(
-            "VLM 已启用: model=%s base_url=%s", model, base_url,
-        )
+        logger.info("VLM 已启用 (MiniMax Coding Plan): endpoint=%s/v1/coding_plan/vlm", base_url)
         return vision_model_func
 
     # ------------------------------------------------------------------

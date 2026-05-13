@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+rag-anything-api/raganything/__pycache__/
 *.py[cod]
 *.pyo
 .venv/
@@ -36,6 +37,9 @@ solution_output/
 *.zip
 *.tar.gz
 *.whl
+
+# Claude Code local settings (permissions, hooks)
+.claude/
 
 # Temp / migration data
 temp_fastmcp/

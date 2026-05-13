@@ -162,13 +162,13 @@ class TestListArtifacts:
         return_value=[
             {
                 "name": "training_guide.md",
-                "path": "training_output/training_guide.md",
+                "path": "generation_output/training_guide.md",
                 "size": 1024,
                 "modified": "2026-05-09T00:00:00+00:00",
             },
             {
                 "name": "solution.md",
-                "path": "solution_output/solution.md",
+                "path": "generation_output/solution.md",
                 "size": 512,
                 "modified": "2026-05-08T12:00:00+00:00",
             },
@@ -207,7 +207,7 @@ class TestDownloadArtifact:
     def test_rejects_path_traversal_from_allowed_dir(self):
         """从允许目录出发的路径穿越也应被拒绝。"""
         resp = client.get(
-            "/generation/artifacts/download?path=training_output/../../tutor_config.py"
+            "/generation/artifacts/download?path=generation_output/../../tutor_config.py"
         )
         assert resp.status_code == 400
 
@@ -219,6 +219,6 @@ class TestDownloadArtifact:
     def test_returns_404_for_missing_file(self):
         """不存在的文件应返回 404。"""
         resp = client.get(
-            "/generation/artifacts/download?path=training_output/nonexistent.md"
+            "/generation/artifacts/download?path=generation_output/nonexistent.md"
         )
         assert resp.status_code == 404

@@ -22,7 +22,7 @@ JOBS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR = ROOT / "generation_output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-ARTIFACT_DIRS = ["generation_output", "training_output", "solution_output"]
+ARTIFACT_DIRS = ["generation_output"]
 
 # ==================== 客户端 ====================
 
