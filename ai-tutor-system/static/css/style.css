@@ -157,6 +157,7 @@ body {
     padding: 0 1.5rem;
     box-shadow: 0 1px 3px rgba(0,0,0,0.08);
     z-index: 100;
+    position: relative;
 }
 
 .topbar-left {
@@ -169,6 +170,7 @@ body {
     display: flex;
     align-items: center;
     gap: 0.75rem;
+    position: relative;
 }
 
 .status-badge {
@@ -189,6 +191,75 @@ body {
 .status-badge.offline {
     background: #fee2e2;
     color: #991b1b;
+}
+
+.topbar-history-btn {
+    font-size: 0.82rem;
+    padding: 0.3rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color, #e2e8f0);
+    background: var(--bg-topbar, #fff);
+    color: var(--text-primary);
+    cursor: pointer;
+    font-weight: 500;
+    transition: background 0.2s, border-color 0.2s;
+    white-space: nowrap;
+}
+.topbar-history-btn:hover {
+    background: #f1f5f9;
+    border-color: var(--primary-color, #4f46e5);
+}
+
+/* 顶栏下拉面板 */
+.topbar-history-dropdown {
+    display: none;
+    position: absolute;
+    top: 100%;
+    right: 1.5rem;
+    margin-top: 0;
+    width: 360px;
+    max-height: 400px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid var(--border-color, #e2e8f0);
+    border-radius: 8px;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.12);
+    z-index: 200;
+}
+.topbar-history-dropdown.visible {
+    display: block;
+}
+.topbar-dropdown-empty {
+    padding: 1.5rem;
+    text-align: center;
+    color: var(--text-light, #94a3b8);
+    font-size: 0.9rem;
+}
+.topbar-dropdown-list {
+    padding: 0.5rem 0;
+}
+.topbar-dropdown-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    font-size: 0.85rem;
+    transition: background 0.15s;
+}
+.topbar-dropdown-row:hover {
+    background: #f8fafc;
+}
+.topbar-dropdown-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-primary);
+}
+.topbar-dropdown-meta {
+    color: var(--text-light, #94a3b8);
+    font-size: 0.78rem;
+    white-space: nowrap;
 }
 
 /* ---- 内容区域 ---- */
@@ -2343,94 +2414,153 @@ body.has-alert #tutorApp .page {
     color: #dc2626;
 }
 
-/* ==================== 内容生成 v2 四卡片布局 ==================== */
+/* ==================== 内容生成 — 标签页布局 ==================== */
 
-/* ==================== 内容生成 — 卡片共用 ==================== */
-
-.gen-card-icon {
-    font-size: 2rem;
-    flex-shrink: 0;
+/* 页面头部 */
+.gen-page-header {
+    margin-bottom: 1.5rem;
 }
-
-.gen-card-title {
-    font-size: 1.1rem;
-    font-weight: 600;
-    color: var(--primary-color);
+.gen-page-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0 0 0.35rem;
+}
+.gen-page-desc {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
     margin: 0;
 }
 
-.gen-card-desc {
-    font-size: 0.85rem;
+/* 标签页栏 */
+.gen-tab-bar {
+    display: flex;
+    gap: 0;
+    margin-bottom: 1.25rem;
+    border-bottom: 2px solid var(--border-color);
+}
+.gen-tab {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.5rem;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    background: transparent;
     color: var(--text-secondary);
-    margin: 0.25rem 0 0;
+    font-size: 0.95rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s, background 0.2s;
+    white-space: nowrap;
+}
+.gen-tab:hover {
+    color: var(--text-primary);
+    background: rgba(79, 70, 229, 0.04);
+}
+.gen-tab.active {
+    color: var(--primary-color);
+    border-bottom-color: var(--primary-color);
+}
+.gen-tab-icon {
+    font-size: 1.1rem;
 }
 
+/* 表单面板 */
+.gen-form-panel {
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    overflow: hidden;
+}
+.gen-form-inner {
+    padding: 1.5rem;
+}
+.gen-form-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-top: 1.25rem;
+    padding-top: 1.25rem;
+    border-top: 1px solid var(--border-color);
+}
+.gen-submit-btn {
+    padding: 0.7rem 2rem;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
 .gen-status {
     font-size: 0.85rem;
     color: var(--text-secondary);
     min-height: 1.2rem;
 }
 
-/* ==================== 内容生成 v3 — 2卡片 + 折叠分区 ==================== */
-
-.gen-type-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
-    align-items: stretch;
-}
-
-@media (max-width: 900px) {
-    .gen-type-row {
-        grid-template-columns: 1fr;
-    }
-}
-
-.gen-card {
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--radius-lg);
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-sm);
+/* 产物列表区域（本次会话） */
+.gen-results-section {
+    margin-top: 1.5rem;
+    background: #fff;
     border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    overflow: hidden;
 }
-
-.gen-card-header {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding-bottom: 0.85rem;
-    margin-bottom: 0.75rem;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.gen-card-body {
-    flex: 1;
-}
-
-.gen-card-footer {
+.gen-results-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-top: auto;
-    padding-top: 0.85rem;
-    border-top: 1px solid var(--border-color);
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    background: #f8fafc;
+    border-bottom: 1px solid var(--border-color);
 }
-.form-control {
-    width: 100%;
-    padding: 0.75rem;
-    border: 2px solid var(--border-color);
-    border-radius: var(--radius-md);
-    font-size: 1rem;
-    background: white;
+.gen-results-header h4 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 600;
     color: var(--text-primary);
-    transition: border-color 0.3s;
-    cursor: pointer;
+}
+.gen-results-count {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    background: var(--bg-primary);
+    padding: 0.15rem 0.6rem;
+    border-radius: 999px;
+}
+.gen-results-list {
+    padding: 0.75rem 1rem;
 }
 
-.form-control:focus {
-    outline: none;
-    border-color: var(--secondary-color);
+/* 产物行 */
+.artifact-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.7rem 0.75rem;
+    border-radius: var(--radius-md);
+    transition: background 0.15s;
+}
+.artifact-row:hover {
+    background: #f8fafc;
+}
+.artifact-icon {
+    font-size: 1rem;
+    flex-shrink: 0;
+    opacity: 0.6;
+}
+.artifact-name {
+    flex: 1;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 0.9rem;
+}
+.artifact-meta {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
 }
 
 /* 下载链接 */
@@ -2440,121 +2570,32 @@ body.has-alert #tutorApp .page {
     background: var(--secondary-color);
     color: white;
     border-radius: var(--radius-sm);
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     font-weight: 500;
     text-decoration: none;
     transition: background 0.2s, transform 0.2s;
     white-space: nowrap;
 }
-
 .download-link:hover {
     background: var(--primary-color);
     transform: translateY(-1px);
 }
 
-/* 产物列表 */
-.artifact-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-}
-
-.artifact-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    background: var(--bg-primary);
+/* 表单控件 */
+.form-control {
+    width: 100%;
+    padding: 0.65rem 0.75rem;
+    border: 1.5px solid var(--border-color);
     border-radius: var(--radius-md);
-    border-left: 3px solid var(--secondary-color);
-    transition: background 0.2s;
-}
-
-.artifact-row:hover {
-    background: #f0f7ff;
-}
-
-.artifact-name {
-    flex: 1;
-    font-weight: 500;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     font-size: 0.95rem;
+    background: #fff;
+    color: var(--text-primary);
+    transition: border-color 0.2s;
 }
-
-.artifact-meta {
-    font-size: 0.8rem;
-    color: var(--text-secondary);
-    white-space: nowrap;
-    min-width: 60px;
-    text-align: right;
-}
-
-/* ==================== 内容生成 v3 — 2卡片 + 折叠分区 ==================== */
-
-.gen-type-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.25rem;
-    align-items: stretch;
-}
-
-@media (max-width: 900px) {
-    .gen-type-row {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* 让卡片内部 footer 推到底部，卡片等宽等高 */
-.gen-card {
-    display: flex;
-    flex-direction: column;
-    border-radius: var(--radius-lg);
-    background: var(--bg-secondary);
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-color);
-}
-
-.gen-card-header {
-    padding-bottom: 0.85rem;
-    margin-bottom: 0.85rem;
-    border-bottom: 1px solid var(--border-color);
-}
-
-.gen-card-body {
-    flex: 1;
-}
-
-.gen-card-footer {
-    margin-top: auto;
-    padding-top: 0.85rem;
-    border-top: 1px solid var(--border-color);
-}
-
-/* 历史产物区域 */
-.gen-history-section {
-    margin-top: 1.5rem;
-}
-
-.gen-history-header {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    margin-bottom: 1rem;
-    padding-bottom: 0.6rem;
-    border-bottom: 2px solid var(--secondary-color);
-}
-
-.gen-history-header .gen-history-icon {
-    font-size: 1.3rem;
-}
-
-.gen-history-header h3 {
-    margin: 0;
-    font-size: 1.05rem;
-    color: var(--primary-color);
+.form-control:focus {
+    outline: none;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
 }
 
 /* 折叠分区 */
@@ -2597,10 +2638,30 @@ body.has-alert #tutorApp .page {
 
 .gen-section-body {
     padding: 1rem;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem 1.25rem;
 }
 
 .gen-section.collapsed .gen-section-body {
     display: none;
+}
+
+/* 文本域和考试配置跨全宽 */
+.form-group-full {
+    grid-column: 1 / -1;
+}
+.gen-section-body > .exam-type-row,
+.gen-section-body > .exam-divider,
+.gen-section-body > .form-row-3 {
+    grid-column: 1 / -1;
+}
+/* 防止 grid 子元素内容撑开列宽 */
+.gen-section-body > * {
+    min-width: 0;
+}
+.form-row-3 > * {
+    min-width: 0;
 }
 
 /* 多行文本输入 */

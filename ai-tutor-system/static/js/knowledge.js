@@ -701,8 +701,11 @@ function updateOverviewCounts() {
 
 // 页面加载时自动初始化
 document.addEventListener('DOMContentLoaded', function () {
-    const observer = new MutationObserver(function () {
-        const knowledgeSection = document.querySelector('[data-page="knowledge"]');
+    // 立即加载知识库数据，供总览和内容生成页面使用
+    loadKnowledgeBases();
+
+    var observer = new MutationObserver(function () {
+        var knowledgeSection = document.querySelector('[data-page="knowledge"]');
         if (knowledgeSection && knowledgeSection.classList.contains('active')) {
             loadKnowledgeBases();
         }

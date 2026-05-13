@@ -4,6 +4,7 @@
  */
 (function () {
     var _initialized = false;
+    var _sessionStartTime = Date.now();
 
     // ==================== 类型配置 ====================
 
@@ -102,7 +103,7 @@
                         '<select class="form-control" id="' + f.id + '">' + optionsHtml + '</select></div>';
                 }
                 if (f.type === 'textarea') {
-                    return '<div class="form-group"><label>' + f.label + '</label>' +
+                    return '<div class="form-group form-group-full"><label>' + f.label + '</label>' +
                         '<textarea class="form-textarea" id="' + f.id + '" placeholder="' + escapeHtml(f.placeholder || '') + '" rows="3"></textarea></div>';
                 }
                 var valueAttr = f.value !== undefined ? ' value="' + f.value + '"' : '';
@@ -146,55 +147,89 @@
             '</div>';
     }
 
+    var _activeGenType = 'solution';
+
+    function renderGenForm(type, dbOptions) {
+        var panel = document.getElementById('genFormPanel');
+        if (!panel) return;
+
+        var cfg = GEN_TYPES[type];
+        var sectionsHtml = cfg.sections.map(function (s, idx) {
+            return renderSectionHtml(s, idx > 0);
+        }).join('');
+
+        panel.innerHTML =
+            '<div class="gen-form-inner">' +
+                '<div class="form-group">' +
+                    '<label>选择知识库</label>' +
+                    '<select class="form-control" id="genDbSelect">' + dbOptions + '</select>' +
+                '</div>' +
+                sectionsHtml +
+                '<div class="gen-form-actions">' +
+                    '<button class="btn-primary gen-submit-btn" id="genSubmitBtn">' +
+                        '开始生成 ' + cfg.name +
+                    '</button>' +
+                    '<span class="gen-status" id="genStatus"></span>' +
+                '</div>' +
+            '</div>';
+
+        document.getElementById('genSubmitBtn').addEventListener('click', function () {
+            startGenerationJob(type);
+        });
+    }
+
     function renderGenerationPage() {
         var container = document.getElementById('generationApp');
         if (!container) return;
 
-        // 获取上次选中的知识库（跨卡片复用）
         var lastDb = (typeof knowledgeState !== 'undefined') ? knowledgeState.activeDatabase : '';
         var dbOptions = renderDatabaseOptions(lastDb);
 
-        var cardsHtml = Object.keys(GEN_TYPES).map(function (type) {
-            var cfg = GEN_TYPES[type];
-            var sectionsHtml = cfg.sections.map(function (s, idx) {
-                return renderSectionHtml(s, idx > 0);  // 第一个 section 展开，其余折叠
-            }).join('');
+        // 恢复上次选中的类型，或默认 solution
+        if (!GEN_TYPES[_activeGenType]) _activeGenType = 'solution';
 
-            return '<div class="panel-card panel-pad gen-card">' +
-                '<div class="gen-card-header">' +
-                    '<span class="gen-card-icon">' + cfg.icon + '</span>' +
-                    '<div>' +
-                        '<h3 class="gen-card-title">' + cfg.name + '</h3>' +
-                        '<p class="gen-card-desc">' + cfg.desc + '</p>' +
-                    '</div>' +
-                '</div>' +
-                '<div class="gen-card-body">' +
-                    '<div class="form-group">' +
-                        '<label>选择知识库</label>' +
-                        '<select class="form-control gen-db-select" id="genDb_' + type + '" data-type="' + type + '">' + dbOptions + '</select>' +
-                    '</div>' +
-                    sectionsHtml +
-                '</div>' +
-                '<div class="gen-card-footer">' +
-                    '<button class="btn-primary" id="genBtn_' + type + '" onclick="startGenerationJob(\'' + type + '\')">开始生成</button>' +
-                    '<span class="gen-status" id="genStatus_' + type + '"></span>' +
-                '</div>' +
-            '</div>';
+        var tabsHtml = Object.keys(GEN_TYPES).map(function (type) {
+            var cfg = GEN_TYPES[type];
+            var activeClass = type === _activeGenType ? ' active' : '';
+            return '<button class="gen-tab' + activeClass + '" data-gen-type="' + type + '">' +
+                '<span class="gen-tab-icon">' + cfg.icon + '</span>' +
+                '<span class="gen-tab-label">' + cfg.name + '</span>' +
+            '</button>';
         }).join('');
 
         container.innerHTML =
-            '<div class="gen-type-row">' + cardsHtml + '</div>' +
-            '<div class="gen-history-section panel-card panel-pad">' +
-                '<div class="gen-history-header">' +
-                    '<span class="gen-history-icon">📁</span>' +
-                    '<h3>历史产物</h3>' +
+            '<div class="gen-page-header">' +
+                '<h2 class="gen-page-title">内容生成</h2>' +
+                '<p class="gen-page-desc">基于知识库智能检索，自动生成个性化解决方案与培训材料</p>' +
+            '</div>' +
+            '<div class="gen-tab-bar">' + tabsHtml + '</div>' +
+            '<div class="gen-form-panel panel-card" id="genFormPanel"></div>' +
+            '<div class="gen-results-section" id="genResultsSection" style="display:none">' +
+                '<div class="gen-results-header">' +
+                    '<h4>本次产物</h4>' +
+                    '<span class="gen-results-count" id="genResultsCount"></span>' +
                 '</div>' +
-                '<div id="genResults">' +
-                    '<div class="empty-state"><p>暂无生成产物</p></div>' +
-                '</div>' +
+                '<div id="genResults" class="gen-results-list"></div>' +
             '</div>';
 
-        // 初始化时加载产物列表
+        // 渲染当前标签页表单
+        renderGenForm(_activeGenType, dbOptions);
+
+        // 标签页切换
+        container.querySelectorAll('.gen-tab').forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                var type = tab.getAttribute('data-gen-type');
+                if (type === _activeGenType) return;
+                _activeGenType = type;
+                container.querySelectorAll('.gen-tab').forEach(function (t) { t.classList.remove('active'); });
+                tab.classList.add('active');
+                var currentDb = document.getElementById('genDbSelect');
+                var dbVal = currentDb ? currentDb.value : lastDb;
+                renderGenForm(type, renderDatabaseOptions(dbVal));
+            });
+        });
+
+        // 加载产物
         loadGenerationArtifacts();
     }
 
@@ -228,9 +263,9 @@
         var cfg = GEN_TYPES[type];
         if (!cfg) return;
 
-        var statusEl = document.getElementById('genStatus_' + type);
-        var btnEl = document.getElementById('genBtn_' + type);
-        var dbSelect = document.getElementById('genDb_' + type);
+        var statusEl = document.getElementById('genStatus');
+        var btnEl = document.getElementById('genSubmitBtn');
+        var dbSelect = document.getElementById('genDbSelect');
         var database = dbSelect ? dbSelect.value.trim() : '';
 
         if (!database) {
@@ -300,8 +335,8 @@
     };
 
     function pollJobStatus(jobId, type) {
-        var statusEl = document.getElementById('genStatus_' + type);
-        var btnEl = document.getElementById('genBtn_' + type);
+        var statusEl = document.getElementById('genStatus');
+        var btnEl = document.getElementById('genSubmitBtn');
         var maxAttempts = 120;  // 最多轮询 10 分钟（120 × 5s）
 
         function check() {
@@ -317,11 +352,21 @@
                 ).then(function (job) {
                     // 更新阶段显示
                     var stage = job.stage || '';
-                    if (stage === 'searching' && statusEl) {
-                        statusEl.innerHTML = '<span class="gen-job-stage stage-searching">🔍 检索知识库...</span>';
-                    } else if (stage === 'generating' && statusEl) {
-                        statusEl.innerHTML = '<span class="gen-job-stage stage-generating">✍️ AI 生成中...</span>';
-                    } else if (job.status === 'completed') {
+                    var stageMessages = {
+                        'searching': '🔍 检索知识库...',
+                        'generating': '✍️ AI 生成中...',
+                        'generating_manual': '📖 正在生成培训讲义...',
+                        'generating_exam': '📝 正在生成考试试题...',
+                        'generating_readme': '📋 正在生成使用说明...',
+                    };
+                    var msg = stageMessages[stage] || ('⏳ ' + stage);
+                    var stageClass = stage.startsWith('generating') ? 'stage-generating' :
+                                     stage === 'searching' ? 'stage-searching' : '';
+                    if (statusEl) {
+                        statusEl.innerHTML = '<span class="gen-job-stage ' + stageClass + '">' + msg + '</span>';
+                    }
+
+                    if (job.status === 'completed') {
                         var files = (job.result && job.result.files) || [];
                         var fileCount = files.length;
                         var msg = '✅ 生成完成！共 ' + fileCount + ' 个文件';
@@ -347,73 +392,34 @@
 
     function renderArtifactList(artifacts) {
         var container = document.getElementById('genResults');
-        if (!container) return;
+        var section = document.getElementById('genResultsSection');
+        if (!container || !section) return;
 
         if (!artifacts || artifacts.length === 0) {
-            container.innerHTML = '<div class="empty-state"><p>暂无生成产物</p></div>';
+            section.style.display = 'none';
             return;
         }
 
-        container.innerHTML =
-            '<div class="artifact-list">' +
-                artifacts.map(function (a) {
-                    var sizeKB = a.size ? (a.size / 1024).toFixed(1) : '?';
-                    var downloadUrl = WorkbenchAPI.BASE_URLS.TUTOR_API +
-                        '/generation/artifacts/download?path=' + encodeURIComponent(a.path);
-                    return (
-                        '<div class="artifact-row">' +
-                            '<span class="artifact-name" title="' + escapeHtml(a.path || '') + '">' +
-                                escapeHtml(a.name) +
-                            '</span>' +
-                            '<span class="artifact-meta">' + sizeKB + ' KB</span>' +
-                            '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
-                        '</div>'
-                    );
-                }).join('') +
-            '</div>';
-    }
-
-    function renderHistoryPage(artifacts) {
-        var container = document.getElementById('historyApp');
-        if (!container) return;
-
-        if (!artifacts || artifacts.length === 0) {
-            container.innerHTML =
-                '<div class="panel-card panel-pad gen-history-section">' +
-                    '<div class="gen-history-header">' +
-                        '<span class="gen-history-icon">📁</span>' +
-                        '<h3>历史产物</h3>' +
-                    '</div>' +
-                    '<div class="empty-state">' +
-                        '<p>暂无历史产物</p>' +
-                    '</div>' +
-                '</div>';
-            return;
-        }
+        section.style.display = 'block';
+        var countEl = document.getElementById('genResultsCount');
+        if (countEl) countEl.textContent = artifacts.length + ' 个文件';
 
         container.innerHTML =
-            '<div class="panel-card panel-pad gen-history-section">' +
-                '<div class="gen-history-header">' +
-                    '<span class="gen-history-icon">📁</span>' +
-                    '<h3>历史产物 <span class="badge">' + artifacts.length + '</span></h3>' +
-                '</div>' +
-                '<div class="artifact-list">' +
-                    artifacts.map(function (a) {
-                        var sizeKB = a.size ? (a.size / 1024).toFixed(1) : '?';
-                        var downloadUrl = WorkbenchAPI.BASE_URLS.TUTOR_API +
-                            '/generation/artifacts/download?path=' + encodeURIComponent(a.path);
-                        return (
-                            '<div class="artifact-row">' +
-                                '<span class="artifact-name" title="' + escapeHtml(a.path || '') + '">' +
-                                    escapeHtml(a.name) +
-                                '</span>' +
-                                '<span class="artifact-meta">' + sizeKB + ' KB</span>' +
-                                '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
-                            '</div>'
-                        );
-                    }).join('') +
-                '</div>' +
-            '</div>';
+            artifacts.map(function (a) {
+                var sizeKB = a.size ? (a.size / 1024).toFixed(1) : '?';
+                var downloadUrl = WorkbenchAPI.BASE_URLS.TUTOR_API +
+                    '/generation/artifacts/download?path=' + encodeURIComponent(a.path);
+                return (
+                    '<div class="artifact-row">' +
+                        '<span class="artifact-icon">📄</span>' +
+                        '<span class="artifact-name" title="' + escapeHtml(a.path || '') + '">' +
+                            escapeHtml(a.name) +
+                        '</span>' +
+                        '<span class="artifact-meta">' + sizeKB + ' KB</span>' +
+                        '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                    '</div>'
+                );
+            }).join('');
     }
 
     function loadGenerationArtifacts() {
@@ -421,10 +427,84 @@
             WorkbenchAPI.BASE_URLS.TUTOR_API + '/generation/artifacts'
         ).then(function (data) {
             var artifacts = data.artifacts || [];
-            renderArtifactList(artifacts);
-            renderHistoryPage(artifacts);
+            // 顶栏下拉：展示全部历史产物
+            renderTopbarDropdown(artifacts);
+            // 内容生成页面底部：仅展示本次会话产物
+            var sessionArtifacts = artifacts.filter(function (a) {
+                return new Date(a.modified).getTime() > _sessionStartTime;
+            });
+            renderArtifactList(sessionArtifacts);
         }).catch(function (err) {
             console.warn('加载生成产物失败:', err.message);
+        });
+    }
+
+    // ==================== 顶栏历史产物下拉 ====================
+
+    var _topbarDropdownVisible = false;
+
+    function renderTopbarDropdown(artifacts) {
+        var panel = document.getElementById('topbarHistoryDropdown');
+        if (!panel) return;
+
+        if (!artifacts || artifacts.length === 0) {
+            panel.innerHTML = '<div class="topbar-dropdown-empty">暂无历史产物</div>';
+            return;
+        }
+
+        panel.innerHTML =
+            '<div class="topbar-dropdown-list">' +
+                artifacts.map(function (a) {
+                    var sizeKB = a.size ? (a.size / 1024).toFixed(1) : '?';
+                    var downloadUrl = WorkbenchAPI.BASE_URLS.TUTOR_API +
+                        '/generation/artifacts/download?path=' + encodeURIComponent(a.path);
+                    return (
+                        '<div class="topbar-dropdown-row">' +
+                            '<span class="topbar-dropdown-name" title="' + escapeHtml(a.path || '') + '">' +
+                                escapeHtml(a.name) +
+                            '</span>' +
+                            '<span class="topbar-dropdown-meta">' + sizeKB + ' KB</span>' +
+                            '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                        '</div>'
+                    );
+                }).join('') +
+            '</div>';
+    }
+
+    function toggleTopbarDropdown() {
+        var panel = document.getElementById('topbarHistoryDropdown');
+        if (!panel) return;
+        _topbarDropdownVisible = !_topbarDropdownVisible;
+        if (_topbarDropdownVisible) {
+            panel.classList.add('visible');
+            loadGenerationArtifacts();
+        } else {
+            panel.classList.remove('visible');
+        }
+    }
+
+    function initTopbarHistoryButton() {
+        var btn = document.getElementById('topbarHistoryBtn');
+        if (!btn) return;
+
+        // 创建下拉面板
+        var dropdown = document.createElement('div');
+        dropdown.id = 'topbarHistoryDropdown';
+        dropdown.className = 'topbar-history-dropdown';
+        dropdown.innerHTML = '<div class="topbar-dropdown-empty">加载中...</div>';
+        var topbar = document.querySelector('.topbar');
+        topbar.appendChild(dropdown);
+
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toggleTopbarDropdown();
+        });
+
+        document.addEventListener('click', function (e) {
+            if (_topbarDropdownVisible && !dropdown.contains(e.target) && e.target !== btn) {
+                _topbarDropdownVisible = false;
+                dropdown.classList.remove('visible');
+            }
         });
     }
 
@@ -434,14 +514,12 @@
         if (_initialized) return;
         _initialized = true;
 
+        initTopbarHistoryButton();
+
         var observer = new MutationObserver(function () {
             var genSection = document.querySelector('[data-page="generation"]');
             if (genSection && genSection.classList.contains('active')) {
                 renderGenerationPage();
-            }
-            var histSection = document.querySelector('[data-page="history"]');
-            if (histSection && histSection.classList.contains('active')) {
-                loadGenerationArtifacts();
             }
         });
 

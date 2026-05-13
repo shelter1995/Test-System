@@ -31,10 +31,6 @@
                     <span class="nav-icon">🎯</span>
                     <span class="nav-label">陪练系统</span>
                 </a>
-                <a data-nav="history" class="nav-item">
-                    <span class="nav-icon">📁</span>
-                    <span class="nav-label">历史产物</span>
-                </a>
             </nav>
         </aside>
 
@@ -44,6 +40,7 @@
             <header class="topbar">
                 <div class="topbar-left">统一工作台</div>
                 <div class="topbar-right">
+                    <button id="topbarHistoryBtn" class="topbar-history-btn" title="查看历史产物">📁 历史产物</button>
                     <span id="ragStatus" class="status-badge">RAG: 检查中</span>
                     <span id="tutorStatus" class="status-badge">陪练: 检查中</span>
                 </div>
@@ -69,11 +66,6 @@
                             <div class="overview-card-icon">🎯</div>
                             <h3>陪练系统</h3>
                             <p>AI 模拟客户角色进行话术实战训练</p>
-                        </div>
-                        <div class="overview-card" data-nav="history" style="cursor:pointer">
-                            <div class="overview-card-icon">📁</div>
-                            <h3>历史产物</h3>
-                            <p>查看已生成的话术、报告和训练记录</p>
                         </div>
                     </div>
                 </section>
@@ -149,15 +141,22 @@
                                             </div>
                                             <div class="form-group">
                                                 <label>产品名称</label>
-                                                <input type="text" id="productName" placeholder="例如：商务视频彩铃"
-                                                       value="商务视频彩铃">
+                                                <input type="text" id="productName" placeholder="例如：商务视频彩铃">
                                             </div>
                                         </div>
                                         <div class="form-row">
                                             <div class="form-group">
                                                 <label>对话背景</label>
-                                                <input type="text" id="scenarioType" placeholder="例如：初次沟通，建立联系"
-                                                       value="初次沟通，建立联系">
+                                                <select id="scenarioType" style="width:100%">
+                                                    <option value="">请选择对话背景...</option>
+                                                    <option value="初次沟通，建立联系">初次沟通，建立联系</option>
+                                                    <option value="需求调研，了解痛点">需求调研，了解痛点</option>
+                                                    <option value="产品演示，功能介绍">产品演示，功能介绍</option>
+                                                    <option value="异议处理，问题解答">异议处理，问题解答</option>
+                                                    <option value="商务谈判，价格协商">商务谈判，价格协商</option>
+                                                    <option value="签约推进，促成合作">签约推进，促成合作</option>
+                                                    <option value="售后跟进，客户维系">售后跟进，客户维系</option>
+                                                </select>
                                             </div>
                                             <div class="form-group">
                                                 <label>知识库</label>
@@ -405,14 +404,6 @@
                     </div>
                 </section>
 
-                <!-- 5. 历史产物 -->
-                <section data-page="history" class="page-section">
-                    <div id="historyApp" class="section-placeholder">
-                        <div class="placeholder-icon">📁</div>
-                        <h2>历史产物</h2>
-                        <p>统一历史产物管理功能开发中，敬请期待...</p>
-                    </div>
-                </section>
             </main>
         </div>
     </div>

@@ -71,6 +71,13 @@ def _save_job(job: dict) -> None:
         json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def _update_job_stage(job_id: str, stage: str) -> None:
+    job = get_job(job_id)
+    if job:
+        job["stage"] = stage
+        _save_job(job)
+
+
 def _safe_filename(text: str) -> str:
     text = str(text or "").strip()
     safe = re.sub(r'[^\w一-鿿._\-]', '_', text)
@@ -123,9 +130,13 @@ def _format_rag_results(rag_results: dict) -> str:
         for i, r in enumerate(results[:3], 1):
             content = str(r.get("text", r.get("content", "")))[:600]
             metadata = r.get("metadata", {}) if isinstance(r.get("metadata"), dict) else {}
-            source = metadata.get("source", metadata.get("filename", "未知来源"))
+            db_name = metadata.get("database", "")
+            source_list = metadata.get("sources", [])
+            source_label = db_name or "知识库"
+            if source_list:
+                source_label += "（文件：" + "、".join(source_list[:5]) + "）"
             score = r.get("score", 0)
-            blocks.append(f"\n片段{i} [来源:{source} 相关度:{score:.0%}]\n{content}\n")
+            blocks.append(f"\n片段{i} [来源：{source_label} 相关度:{score:.0%}]\n{content}\n")
     return "\n".join(blocks) if blocks else "（检索完成但无有效内容。）"
 
 
@@ -506,12 +517,16 @@ def _build_readme_prompt(request: dict) -> str:
 
 # ==================== 生成函数 ====================
 
-def _generate_solution(request: dict) -> dict:
+def _generate_solution(request: dict, job_id: str = None) -> dict:
     db_name = request.get("database", "default")
     client_unit = request.get("client_unit") or "客户"
 
     rag_results = _search_for_solution(db_name)
     prompt = _build_solution_prompt(request, rag_results)
+
+    if job_id:
+        _update_job_stage(job_id, "generating")
+
     content = _call_minimax(prompt, max_tokens=8000, temperature=0.4)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -519,7 +534,7 @@ def _generate_solution(request: dict) -> dict:
     return {"content": content, "filename": filename}
 
 
-def _generate_training(request: dict) -> dict:
+def _generate_training(request: dict, job_id: str = None) -> dict:
     db_name = request.get("database", "default")
     customer_group = request.get("target_customer_group") or ""
 
@@ -527,16 +542,22 @@ def _generate_training(request: dict) -> dict:
     rag_results = _search_for_training(db_name, customer_group)
 
     # 第1次：生成讲义
+    if job_id:
+        _update_job_stage(job_id, "generating_manual")
     manual_prompt = _build_manual_prompt(request, rag_results)
-    manual_content = _call_minimax(manual_prompt, max_tokens=8000, timeout=300, temperature=0.5)
+    manual_content = _call_minimax(manual_prompt, max_tokens=8000, timeout=600, temperature=0.5)
 
     # 第2次：生成测试题（传入讲义摘要做上下文）
+    if job_id:
+        _update_job_stage(job_id, "generating_exam")
     exam_prompt = _build_exam_prompt(request, rag_results, manual_content)
-    exam_content = _call_minimax(exam_prompt, max_tokens=6000, timeout=300, temperature=0.5)
+    exam_content = _call_minimax(exam_prompt, max_tokens=6000, timeout=600, temperature=0.5)
 
     # 第3次：生成 README
+    if job_id:
+        _update_job_stage(job_id, "generating_readme")
     readme_prompt = _build_readme_prompt(request)
-    readme_content = _call_minimax(readme_prompt, max_tokens=4000, timeout=120, temperature=0.5)
+    readme_content = _call_minimax(readme_prompt, max_tokens=4000, timeout=300, temperature=0.5)
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_db = _safe_filename(db_name)
@@ -569,10 +590,7 @@ def create_job(request: dict) -> str:
         job["stage"] = "searching"
         _save_job(job)
 
-        output = generator(request)
-
-        job["stage"] = "generating"
-        _save_job(job)
+        output = generator(request, job_id=job_id)
 
         saved_files = []
         if gen_type == "solution":
