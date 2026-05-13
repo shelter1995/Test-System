@@ -806,6 +806,8 @@ function openHistoryPanel() {
     elements.historyPage.classList.add('active');
     const container = document.querySelector('.history-container');
     if (container) container.classList.add('active');
+    const backdrop = document.getElementById('historyBackdrop');
+    if (backdrop) backdrop.classList.add('active');
     loadHistory();
 }
 
@@ -813,6 +815,8 @@ function closeHistoryPanel() {
     const container = document.querySelector('.history-container');
     if (container) container.classList.remove('active');
     elements.historyPage.classList.remove('active');
+    const backdrop = document.getElementById('historyBackdrop');
+    if (backdrop) backdrop.classList.remove('active');
 }
 
 function isHistoryPanelOpen() {
@@ -972,6 +976,12 @@ elements.historyPage.addEventListener('click', (e) => {
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && elements.historyPage.classList.contains('active')) closeHistoryPanel();
 });
+
+// 点击遮罩关闭历史抽屉
+const historyBackdrop = document.getElementById('historyBackdrop');
+if (historyBackdrop) {
+    historyBackdrop.addEventListener('click', () => closeHistoryPanel());
+}
 
 // 历史搜索/筛选
 const historySearch = document.getElementById('historySearch');

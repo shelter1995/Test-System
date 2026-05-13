@@ -1548,6 +1548,23 @@ body.has-alert #tutorApp .page {
     background: var(--border-color);
 }
 
+/* ==================== 历史抽屉遮罩 ==================== */
+.history-backdrop {
+    position: fixed;
+    top: 0;
+    left: var(--sidebar-width);
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0);
+    z-index: 2999;
+    pointer-events: none;
+    transition: background 0.3s;
+}
+.history-backdrop.active {
+    background: rgba(0, 0, 0, 0.4);
+    pointer-events: auto;
+}
+
 /* ==================== 历史记录页面 ==================== */
 .history-container {
     position: fixed;
