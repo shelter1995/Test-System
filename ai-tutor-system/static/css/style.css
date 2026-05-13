@@ -201,6 +201,7 @@ body {
 /* 陪练系统：无 padding，填充可用高度 */
 .content.tutor-active {
     padding: 0;
+    overflow: hidden;
 }
 #tutorApp {
     height: 100%;
@@ -306,9 +307,8 @@ body {
 
 .page-section .start-container {
 }
-
 .page-section .chat-main {
-    height: calc(100vh - var(--topbar-height) - 3rem - 2rem);
+    /* height 由 #tutorApp 的 flex 布局控制，不设固定值 */
 }
 
 /* ---- 工作台内历史面板覆盖 ---- */
@@ -777,6 +777,7 @@ body.has-alert .page {
     box-shadow: var(--shadow-md);
     overflow: hidden;
     min-height: 0;
+    flex: 1;
     flex: 1;
 }
 
