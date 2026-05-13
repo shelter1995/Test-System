@@ -36,7 +36,6 @@ const elements = {
     startPage: document.getElementById('startPage'),
     chatPage: document.getElementById('chatPage'),
     reportPage: document.getElementById('reportPage'),
-    historyPage: document.getElementById('historyPage'),
     serviceAlert: document.getElementById('serviceAlert'),
 
     clientUnit: document.getElementById('clientUnit'),
@@ -802,8 +801,7 @@ function filterHistory() {
 }
 
 function openHistoryPanel() {
-    elements.historyPage.classList.add('active');
-    const container = document.querySelector('.history-container');
+    const container = document.getElementById('historyContainer');
     if (container) container.classList.add('active');
     const backdrop = document.getElementById('historyBackdrop');
     if (backdrop) backdrop.classList.add('active');
@@ -811,16 +809,15 @@ function openHistoryPanel() {
 }
 
 function closeHistoryPanel() {
-    const container = document.querySelector('.history-container');
+    const container = document.getElementById('historyContainer');
     if (container) container.classList.remove('active');
-    elements.historyPage.classList.remove('active');
     const backdrop = document.getElementById('historyBackdrop');
     if (backdrop) backdrop.classList.remove('active');
 }
 
 function isHistoryPanelOpen() {
-    const container = document.querySelector('.history-container');
-    return !!(container && container.classList.contains('active') && elements.historyPage.classList.contains('active'));
+    const container = document.getElementById('historyContainer');
+    return !!(container && container.classList.contains('active'));
 }
 
 // ==================== 事件处理 ====================
@@ -967,11 +964,8 @@ elements.historyBtn.addEventListener('click', () => {
     if (isHistoryPanelOpen()) { closeHistoryPanel(); } else { openHistoryPanel(); }
 });
 elements.closeHistoryBtn.addEventListener('click', () => closeHistoryPanel());
-elements.historyPage.addEventListener('click', (e) => {
-    if (e.target === elements.historyPage) closeHistoryPanel();
-});
 document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && elements.historyPage.classList.contains('active')) closeHistoryPanel();
+    if (e.key === 'Escape' && isHistoryPanelOpen()) closeHistoryPanel();
 });
 
 // 点击遮罩关闭历史抽屉
