@@ -201,7 +201,6 @@ body {
 /* 陪练系统：无 padding，填充可用高度 */
 .content.tutor-active {
     padding: 0;
-    overflow: hidden;
 }
 #tutorApp {
     height: 100%;
@@ -213,10 +212,17 @@ body {
     min-height: 0;
     display: none;
     flex-direction: column;
-    overflow: hidden;
 }
 #tutorApp .page.active {
     display: flex;
+}
+/* 开始页和报告页：整体可滚动；聊天页：内部 chat-messages 自行滚动 */
+#tutorApp #startPage,
+#tutorApp #reportPage {
+    overflow-y: auto;
+}
+#tutorApp #chatPage {
+    overflow: hidden;
 }
 
 /* ---- 页面区块 ---- */
