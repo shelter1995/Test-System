@@ -48,6 +48,7 @@ minimax_response.json
 temp.json
 
 # Session data
+SESSION.md
 ai-tutor-system/tutor_data/
 generation_output/
 .superpowers/
