@@ -40,6 +40,7 @@ solution_output/
 
 # Claude Code local settings (permissions, hooks)
 .claude/
+CLAUDE.md
 
 # Temp / migration data
 temp_fastmcp/
@@ -49,6 +50,7 @@ temp.json
 
 # Session data
 SESSION.md
+docs/superpowers/
 ai-tutor-system/tutor_data/
 generation_output/
 .superpowers/

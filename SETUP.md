@@ -214,7 +214,8 @@ Test-System/
 │   ├── tutor_streaming.py     # SSE 流式管线
 │   └── static/                # 前端 SPA
 │
-├── CLAUDE.md                  # 项目架构文档
+├── README.md                  # 项目入口说明
+├── CHANGELOG.md               # 项目变更记录
 └── SETUP.md                   # 本文件
 ```
 

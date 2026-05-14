@@ -4,6 +4,9 @@
 
 ### 项目管理
 
+- 删除 AI 工具专用的 `CLAUDE.md`，避免公开仓库保留本地工具上下文。
+- 删除 `docs/superpowers/` 下的内部计划和设计草稿，公开仓库仅保留正式项目文档。
+- 更新 `.gitignore`，忽略后续生成的 `CLAUDE.md` 和 `docs/superpowers/`。
 - 新增根目录 `README.md`，统一说明项目用途、服务结构、启动方式、依赖和常用命令。
 - 删除子目录 `ai-tutor-system/README.md`，避免模块级旧说明与仓库级说明重复。
 - 删除已跟踪的 `SESSION.md` 会话记录文件，包括根目录和 `rag-anything-api/` 下的会话记录。
