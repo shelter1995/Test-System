@@ -20,7 +20,7 @@ MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 # RAG 服务地址
 # 统一使用 RAG-Anything 系统（LightRAG + 知识图谱）
 RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")  # RAG知识库服务地址
-DEFAULT_RAG_DATABASE = os.getenv("DEFAULT_RAG_DATABASE", "商务彩铃")
+DEFAULT_RAG_DATABASE = os.getenv("DEFAULT_RAG_DATABASE", "")
 TUTOR_SERVICE_HOST = os.getenv("TUTOR_SERVICE_HOST", "0.0.0.0")
 TUTOR_SERVICE_PORT = int(os.getenv("TUTOR_SERVICE_PORT", "8002"))
 

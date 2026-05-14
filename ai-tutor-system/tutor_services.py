@@ -14,7 +14,117 @@ import tutor_config as config
 from minimax_client import MiniMaxClient
 from rag_client import RAGClient, get_rag_client
 
+try:
+    from json_repair import repair_json
+except ImportError:  # pragma: no cover - optional dependency
+    repair_json = None
+
 logger = logging.getLogger(__name__)
+
+EVALUATION_DIMENSION_NAMES = [
+    item.get("name", key)
+    for key, item in getattr(config, "EVALUATION_DIMENSIONS", {}).items()
+]
+if not EVALUATION_DIMENSION_NAMES:
+    EVALUATION_DIMENSION_NAMES = [
+        "开场话术",
+        "需求挖掘",
+        "产品介绍",
+        "异议处理",
+        "促成技巧",
+    ]
+
+
+def _extract_json_object(text: str) -> dict:
+    """Extract the first complete JSON object from an LLM response."""
+    raw = str(text or "").strip()
+    if "```json" in raw:
+        raw = raw.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in raw:
+        raw = raw.split("```", 1)[1].split("```", 1)[0].strip()
+
+    start = raw.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in AI response")
+
+    decoder = json.JSONDecoder()
+    json_text = raw[start:]
+    try:
+        obj, _ = decoder.raw_decode(json_text)
+    except json.JSONDecodeError:
+        if repair_json is None:
+            raise
+        obj = repair_json(json_text, return_objects=True)
+
+    if not isinstance(obj, dict):
+        raise ValueError("AI response JSON is not an object")
+    return obj
+
+
+def _clamp_score(value: Any, default: int = 70) -> int:
+    try:
+        if isinstance(value, str):
+            value = value.strip().replace("分", "")
+        score = round(float(value))
+    except (TypeError, ValueError):
+        score = default
+    return max(0, min(100, score))
+
+
+def _normalize_suggestions(value: Any, default: Optional[List[str]] = None) -> List[str]:
+    if default is None:
+        default = []
+    if not isinstance(value, list):
+        return default
+    suggestions = []
+    for item in value:
+        text = str(item or "").strip()
+        if text and text not in suggestions:
+            suggestions.append(text)
+    return suggestions
+
+
+def _normalize_dimension_scores(value: Any, fallback_score: int = 70) -> Dict[str, Dict]:
+    dimensions = value if isinstance(value, dict) else {}
+    normalized: Dict[str, Dict] = {}
+    for name in EVALUATION_DIMENSION_NAMES:
+        raw = dimensions.get(name, {})
+        if isinstance(raw, dict):
+            score = _clamp_score(raw.get("score"), fallback_score)
+            feedback = str(raw.get("feedback") or "").strip()
+        else:
+            score = _clamp_score(raw, fallback_score)
+            feedback = ""
+        if not feedback:
+            feedback = "本轮该维度信息不足，按基准分处理。"
+        normalized[name] = {"score": score, "feedback": feedback}
+    return normalized
+
+
+def _normalize_evaluation(value: Any, fallback_score: int = 70) -> Dict[str, Any]:
+    evaluation = value if isinstance(value, dict) else {}
+    dims = _normalize_dimension_scores(
+        evaluation.get("dimension_scores"), fallback_score=fallback_score
+    )
+    raw_total = evaluation.get("overall_score", evaluation.get("total_score"))
+    if raw_total is None and dims:
+        raw_total = round(
+            sum(item["score"] for item in dims.values()) / len(dims)
+        )
+    overall_score = _clamp_score(raw_total, fallback_score)
+    feedback = str(evaluation.get("feedback") or "").strip()
+    if not feedback:
+        feedback = "本轮已完成评分。"
+    suggestions = _normalize_suggestions(
+        evaluation.get("suggestions"),
+        ["下一轮继续围绕客户需求给出更具体的证据和推进动作。"],
+    )
+    return {
+        "overall_score": overall_score,
+        "dimension_scores": dims,
+        "feedback": feedback,
+        "suggestions": suggestions,
+    }
 
 
 # ==================== RAGService ====================
@@ -22,11 +132,7 @@ logger = logging.getLogger(__name__)
 class RAGService:
     """Knowledge base search service wrapping RAG-Anything API."""
 
-    PRODUCT_TO_DATABASE = {
-        "商务视频彩铃": "商务彩铃",
-        "视频彩铃": "商务彩铃",
-        "商务彩铃": "商务彩铃",
-    }
+    PRODUCT_TO_DATABASE = {}
 
     def __init__(self, rag_client: RAGClient = None):
         self._client = rag_client
@@ -67,11 +173,17 @@ class RAGService:
                 timeout=config.RAG_REQUEST_TIMEOUT,
             )
 
-            # context endpoint not found? fallback to ai_enhanced_search
-            if response.status_code == 404 and endpoint == "context":
+            # Missing or stale database selection: fall back to all registered databases.
+            if response.status_code == 404 and database:
+                logger.warning(
+                    "RAG database '%s' not found for endpoint /%s; falling back to all databases",
+                    database,
+                    endpoint,
+                )
+                fallback_params = {"query": query, "n_results": top_k}
                 response = requests.post(
                     f"{config.RAG_SERVICE_URL}/ai_enhanced_search",
-                    json=params,
+                    json=fallback_params,
                     timeout=config.RAG_REQUEST_TIMEOUT,
                 )
 
@@ -84,7 +196,13 @@ class RAGService:
                 )
                 return results
             else:
-                logger.warning("RAG search failed: HTTP %d", response.status_code)
+                logger.warning(
+                    "RAG search failed: HTTP %d, endpoint=/%s, database=%s, body=%s",
+                    response.status_code,
+                    endpoint,
+                    database or "all",
+                    response.text[:300],
+                )
                 return []
         except Exception as e:
             logger.error("RAG search error: %s", e)
@@ -186,12 +304,7 @@ class AIService:
     ) -> Dict[str, Any]:
         """Evaluate user's sales pitch. Returns score + suggestions."""
         if not self.available:
-            return {
-                "overall_score": 70,
-                "dimension_scores": {},
-                "feedback": "AI service not configured",
-                "suggestions": [],
-            }
+            return self._fallback_evaluation("AI服务未配置，使用默认基准评分。")
 
         # Search for evaluation standards
         eval_knowledge = RAGService().search(
@@ -242,39 +355,37 @@ class AIService:
             result = self._client.chat_completion(
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.3,
-                max_tokens=1000,
+                max_tokens=1800,
             )
             if not result["success"]:
                 return self._fallback_evaluation()
 
-            text = result["content"]
-            # Extract JSON
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-            if not text.startswith("{"):
-                start = text.find("{")
-                end = text.rfind("}")
-                if start != -1 and end != -1:
-                    text = text[start : end + 1]
-
-            evaluation = json.loads(text)
+            try:
+                evaluation = _extract_json_object(result["content"])
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "AI evaluation JSON parse failed: %s; using fallback evaluation",
+                    e,
+                )
+                return self._fallback_evaluation()
+            evaluation = _normalize_evaluation(evaluation)
             logger.info(
                 "AI evaluation complete: score %s", evaluation.get("overall_score", 0)
             )
             return evaluation
         except Exception as e:
-            logger.error("AI evaluation exception: %s", e)
+            logger.error("AI evaluation exception: %s; using fallback evaluation", e)
             return self._fallback_evaluation()
 
-    def _fallback_evaluation(self) -> dict:
-        return {
-            "overall_score": 70,
-            "dimension_scores": {},
-            "feedback": "评估服务暂时不可用",
-            "suggestions": [],
-        }
+    def _fallback_evaluation(self, feedback: str = "评估服务暂时不可用") -> dict:
+        return _normalize_evaluation(
+            {
+                "overall_score": 70,
+                "dimension_scores": {},
+                "feedback": feedback,
+                "suggestions": ["建议下一轮围绕客户需求、产品价值和推进动作给出更具体表达。"],
+            }
+        )
 
     def generate_opening(
         self,
@@ -409,7 +520,10 @@ class ReportGenerator:
         self._ai = ai_service or AIService()
 
     def generate(self, session_data: dict) -> dict:
-        """Generate final evaluation report using AI."""
+        """Generate final evaluation report."""
+        if session_data.get("evaluations"):
+            return self._from_evaluations(session_data)
+
         if not self._ai.available:
             return self._fallback(session_data)
 
@@ -485,26 +599,110 @@ class ReportGenerator:
             if not result["success"]:
                 return self._fallback(session_data)
 
-            text = result["content"]
-            if "```json" in text:
-                text = text.split("```json")[1].split("```")[0].strip()
-            elif "```" in text:
-                text = text.split("```")[1].split("```")[0].strip()
-            if not text.startswith("{"):
-                start = text.find("{")
-                end = text.rfind("}")
-                if start != -1 and end != -1:
-                    text = text[start : end + 1]
-
-            report = json.loads(text)
-            report.setdefault("total_score", self._calc_avg(session_data))
-            report.setdefault("rating_text", self._to_rating(report["total_score"]))
+            try:
+                report = _extract_json_object(result["content"])
+            except (json.JSONDecodeError, ValueError) as e:
+                logger.warning(
+                    "Report JSON parse failed: %s; using fallback report",
+                    e,
+                )
+                return self._fallback(session_data)
+            report = self._normalize_report(report, session_data)
             for field in ["highlights", "improvements", "suggestions"]:
                 report.setdefault(field, [])
             return report
         except Exception as e:
             logger.error("Report generation exception: %s", e)
             return self._fallback(session_data)
+
+    def _from_evaluations(self, session_data: dict) -> dict:
+        """Build a fast deterministic report from completed round evaluations."""
+        evals = [
+            _normalize_evaluation(ev)
+            for ev in session_data.get("evaluations", [])
+            if isinstance(ev, dict)
+        ]
+        if not evals:
+            return self._fallback(session_data)
+
+        total_score = round(
+            sum(ev["overall_score"] for ev in evals) / len(evals)
+        )
+        dimension_scores: Dict[str, Dict] = {}
+        for name in EVALUATION_DIMENSION_NAMES:
+            scores = [
+                ev["dimension_scores"][name]["score"]
+                for ev in evals
+                if name in ev.get("dimension_scores", {})
+            ]
+            avg_score = round(sum(scores) / len(scores)) if scores else 70
+            feedbacks = []
+            for ev in evals[-3:]:
+                feedback = ev.get("dimension_scores", {}).get(name, {}).get("feedback", "")
+                if feedback and feedback not in feedbacks:
+                    feedbacks.append(feedback)
+            dimension_scores[name] = {
+                "score": avg_score,
+                "feedback": "；".join(feedbacks[:2])
+                or "该维度已按逐轮评分汇总。",
+            }
+
+        strong_dims = [
+            name for name, data in dimension_scores.items() if data["score"] >= 80
+        ]
+        weak_dims = [
+            name for name, data in dimension_scores.items() if data["score"] < 70
+        ]
+        rounds = session_data.get("round", len(evals))
+        highlights = [f"完成了 {rounds} 轮对话练习"]
+        if strong_dims:
+            highlights.append(f"{strong_dims[0]}表现相对稳定")
+        if total_score >= 80:
+            highlights.append("整体话术达到了较好的训练水平")
+
+        improvements = []
+        for name in weak_dims[:3]:
+            improvements.append(f"需要继续加强{name}")
+        if not improvements:
+            improvements.append("继续提升表达的针对性和成交推进节奏")
+
+        suggestions = []
+        for ev in evals:
+            for item in ev.get("suggestions", []):
+                text = str(item or "").strip()
+                if text and text not in suggestions:
+                    suggestions.append(text)
+        if not suggestions:
+            suggestions = [
+                "后续练习中先确认客户真实需求，再结合产品价值给出证据。",
+                "遇到异议时先复述客户顾虑，再给出案例或数据支撑。",
+                "每轮结尾增加明确的下一步推进动作。",
+            ]
+
+        return {
+            "total_score": total_score,
+            "rating_text": self._to_rating(total_score),
+            "dimension_scores": dimension_scores,
+            "highlights": highlights[:3],
+            "improvements": improvements[:3],
+            "suggestions": suggestions[:5],
+        }
+
+    def _normalize_report(self, report: dict, session_data: dict) -> dict:
+        total_score = _clamp_score(
+            report.get("total_score", report.get("overall_score")),
+            self._calc_avg(session_data),
+        )
+        return {
+            "total_score": total_score,
+            "rating_text": str(report.get("rating_text") or self._to_rating(total_score)),
+            "dimension_scores": _normalize_dimension_scores(
+                report.get("dimension_scores"), fallback_score=total_score
+            ),
+            "highlights": _normalize_suggestions(report.get("highlights")),
+            "improvements": _normalize_suggestions(report.get("improvements")),
+            "suggestions": _normalize_suggestions(report.get("suggestions")),
+        }
 
     def _fallback(self, session_data: dict) -> dict:
         """Fallback report when AI unavailable."""
@@ -528,7 +726,7 @@ class ReportGenerator:
         return {
             "total_score": avg,
             "rating_text": self._to_rating(avg),
-            "dimension_scores": {},
+            "dimension_scores": _normalize_dimension_scores({}, fallback_score=avg),
             "highlights": highlights,
             "improvements": improvements or ["继续保持练习"],
             "suggestions": all_suggestions[:5]

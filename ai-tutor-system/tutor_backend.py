@@ -404,7 +404,7 @@ async def end_session(session_end: SessionEnd):
     if session_end.detail_level == "simple":
         report = report_gen._fallback(session_data)
     else:
-        report = report_gen.generate(session_data)
+        report = await asyncio.to_thread(report_gen.generate, session_data)
 
     report["session_id"] = session_id
     report["scenario"] = session_data["scenario"]["name"]

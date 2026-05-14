@@ -5,6 +5,7 @@ RAG-Anything API 启动脚本
 
 import importlib
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -17,6 +18,21 @@ def check_dependency(module_name: str, package_name: str | None = None) -> bool:
         return True
     except ImportError:
         pkg = package_name or module_name
+        print(f"[MISSING] {pkg} 未安装")
+        return False
+
+
+def check_command(command: str, package_name: str | None = None) -> bool:
+    try:
+        subprocess.run(
+            [command, "--version"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        return True
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pkg = package_name or command
         print(f"[MISSING] {pkg} 未安装")
         return False
 
@@ -41,8 +57,8 @@ def main() -> None:
         if not check_dependency(module, package):
             missing.append(package)
 
-    # MinerU 是可选的
-    mineru_ok = check_dependency("magic_pdf", "mineru[core]")
+    # MinerU 是可选的。新版 MinerU 提供 mineru CLI，不再提供旧的 magic_pdf 模块。
+    mineru_ok = check_command("mineru", "mineru[core]")
     if not mineru_ok:
         print('[WARN] mineru[core] 未安装，PDF/Office 文档解析不可用（文本导入正常）')
         print('[WARN] 如需解析文档: pip install -U "mineru[core]"')

@@ -10,7 +10,7 @@ import os
 import re
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Optional
 
 import httpx
 
@@ -46,6 +46,44 @@ def _safe_text_filename(source: str, text: str) -> str:
     stem = stem[:60]
     digest = hashlib.sha256(f"{source}\n{text}".encode("utf-8")).hexdigest()[:12]
     return f"{stem}_{digest}.txt"
+
+
+def _query_terms(query: str) -> list[str]:
+    terms = []
+    for token in re.findall(r"[0-9A-Za-z]+|[\u4e00-\u9fff]+", str(query or "").lower()):
+        if len(token) >= 2:
+            terms.append(token)
+            if re.fullmatch(r"[\u4e00-\u9fff]+", token) and len(token) > 4:
+                terms.extend(token[i : i + 2] for i in range(len(token) - 1))
+    seen = set()
+    result = []
+    for term in terms:
+        if term not in seen:
+            seen.add(term)
+            result.append(term)
+    return result
+
+
+def _score_text(text: str, terms: list[str]) -> int:
+    haystack = str(text or "").lower()
+    score = 0
+    for term in terms:
+        count = haystack.count(term)
+        if count:
+            score += count * max(1, len(term))
+    return score
+
+
+def _trim_snippet(text: str, terms: list[str], max_chars: int) -> str:
+    clean = re.sub(r"\s+", " ", str(text or "")).strip()
+    if len(clean) <= max_chars:
+        return clean
+    lower = clean.lower()
+    positions = [lower.find(term) for term in terms if lower.find(term) >= 0]
+    center = min(positions) if positions else 0
+    start = max(0, center - max_chars // 3)
+    end = min(len(clean), start + max_chars)
+    return clean[start:end].strip()
 
 
 class RAGAnythingService:
@@ -333,6 +371,94 @@ class RAGAnythingService:
         self._instances.pop(database_id, None)
         return True
 
+    def _load_local_items(self, database_id: str) -> list[dict[str, Any]]:
+        items = []
+        seen = set()
+
+        def add_item(text: str, source: str, kind: str):
+            text = str(text or "").strip()
+            if not text:
+                return
+            key = (source, text[:200])
+            if key in seen:
+                return
+            seen.add(key)
+            items.append(
+                {
+                    "text": text,
+                    "metadata": {
+                        "source": source,
+                        "database": database_id,
+                        "mode": "local_fallback",
+                        "kind": kind,
+                    },
+                    "score": 0,
+                }
+            )
+
+        working_dir = self._db_working_dir(database_id)
+        for filename, field, kind in (
+            ("kv_store_text_chunks.json", "content", "chunk"),
+            ("kv_store_full_docs.json", "content", "document"),
+        ):
+            path = working_dir / filename
+            if path.exists():
+                try:
+                    data = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(data, dict):
+                        for value in data.values():
+                            if isinstance(value, dict):
+                                add_item(
+                                    value.get(field, ""),
+                                    value.get("file_path") or filename,
+                                    kind,
+                                )
+                except (json.JSONDecodeError, OSError) as exc:
+                    logger.warning("Local fallback failed reading %s: %s", path, exc)
+
+        output_dir = self._db_output_dir(database_id)
+        if output_dir.exists():
+            for path in output_dir.rglob("*.md"):
+                try:
+                    add_item(path.read_text(encoding="utf-8"), path.name, "mineru_markdown")
+                except OSError as exc:
+                    logger.warning("Local fallback failed reading %s: %s", path, exc)
+
+        db = self.registry.get_database(database_id) or {}
+        for doc in db.get("documents", []):
+            path = Path(str(doc.get("file_path") or ""))
+            if path.suffix.lower() in {".txt", ".md"} and path.exists():
+                try:
+                    add_item(path.read_text(encoding="utf-8"), doc.get("file_name") or path.name, "source_file")
+                except OSError as exc:
+                    logger.warning("Local fallback failed reading %s: %s", path, exc)
+
+        return items
+
+    def _local_search(self, database_id: str, query: str, n_results: int = 10, max_chars: int = 1200) -> dict[str, Any]:
+        terms = _query_terms(query)
+        ranked = []
+        for item in self._load_local_items(database_id):
+            score = _score_text(item["text"], terms)
+            if score > 0 or not terms:
+                copy = dict(item)
+                copy["metadata"] = dict(item.get("metadata", {}))
+                copy["metadata"]["fallback_reason"] = "rag_query_unavailable"
+                copy["score"] = float(score or 1)
+                copy["text"] = _trim_snippet(item["text"], terms, max_chars)
+                ranked.append(copy)
+
+        ranked.sort(key=lambda item: item.get("score", 0), reverse=True)
+        results = ranked[: max(1, n_results)]
+        return {
+            "query": query,
+            "database": database_id,
+            "results": results,
+            "contexts": results,
+            "total_found": len(results),
+            "fallback": "local_text",
+        }
+
     async def query(self, database_id: str, query: str, mode: str = "hybrid", n_results: int = 10,
                     enable_rerank: Optional[bool] = None,
                     vlm_enhanced: Optional[bool] = None) -> dict[str, Any]:
@@ -346,7 +472,19 @@ class RAGAnythingService:
             aquery_kwargs["enable_rerank"] = enable_rerank
         if vlm_enhanced is not None:
             aquery_kwargs["vlm_enhanced"] = vlm_enhanced
-        answer = await rag.aquery(query, **aquery_kwargs)
+        try:
+            answer = await asyncio.wait_for(
+                rag.aquery(query, **aquery_kwargs),
+                timeout=config.RAG_QUERY_TIMEOUT,
+            )
+        except Exception as exc:
+            logger.warning(
+                "RAG query failed or timed out for database=%s query=%r: %s; using local fallback",
+                database_id,
+                query,
+                exc,
+            )
+            return self._local_search(database_id, query, n_results=n_results)
         db = self.registry.get_database(database_id) or {}
         sources = [
             item.get("file_name")
@@ -414,12 +552,59 @@ class RAGAnythingService:
         }
 
     async def query_context(self, database_id: str, query: str, mode: str = "naive", max_chars: int = 3000) -> dict[str, Any]:
+        if getattr(config, "CONTEXT_LOCAL_FIRST", True):
+            result = self._local_search(
+                database_id,
+                query,
+                n_results=5,
+                max_chars=max(500, max_chars // 2),
+            )
+            contexts = result.get("contexts", [])
+            if contexts:
+                return {
+                    "query": query,
+                    "database": database_id,
+                    "contexts": contexts,
+                    "total_found": len(contexts),
+                    "fallback": "local_text",
+                }
+
         rag = self.get_rag(database_id, create_if_missing=False)
         init_result = await rag._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
             raise RuntimeError(f"RAG 引擎初始化失败: {(init_result or {}).get('error', 'unknown')}")
 
-        context = await rag.aquery(query, mode=mode, only_need_context=True)
+        try:
+            context = await asyncio.wait_for(
+                rag.aquery(
+                    query,
+                    mode=mode,
+                    only_need_context=True,
+                    vlm_enhanced=False,
+                ),
+                timeout=config.RAG_QUERY_TIMEOUT,
+            )
+        except Exception as exc:
+            logger.warning(
+                "RAG context query failed or timed out for database=%s query=%r: %s; using local fallback",
+                database_id,
+                query,
+                exc,
+            )
+            result = self._local_search(
+                database_id,
+                query,
+                n_results=5,
+                max_chars=max(500, max_chars // 2),
+            )
+            contexts = result.get("contexts", [])
+            return {
+                "query": query,
+                "database": database_id,
+                "contexts": contexts,
+                "total_found": len(contexts),
+                "fallback": "local_text",
+            }
         text = str(context).strip()
         if max_chars > 0:
             text = text[:max_chars]

@@ -103,35 +103,51 @@ def _query_mode() -> str:
 
 
 def _ensure_registry_seeded() -> None:
-    """首次运行时迁移旧列表，并在缺失时写入默认项。"""
+    """Seed registry and recover databases that already exist on disk."""
     assert registry is not None
 
-    if config.DATABASE_REGISTRY_FILE.exists():
-        return
+    should_discover_existing_dirs = not config.DATABASE_REGISTRY_FILE.exists()
+    if should_discover_existing_dirs:
+        legacy_file = config.LEGACY_LIGHTRAG_DIR / "databases.json"
+        if legacy_file.exists():
+            try:
+                legacy = json.loads(legacy_file.read_text(encoding="utf-8"))
+                if isinstance(legacy, list):
+                    for db_id in legacy:
+                        db_id = _normalize_database_id(db_id)
+                        if db_id:
+                            registry.register_database(
+                                db_id,
+                                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
+                                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
+                            )
+            except (json.JSONDecodeError, OSError):
+                pass
 
-    legacy_file = config.LEGACY_LIGHTRAG_DIR / "databases.json"
-    if legacy_file.exists():
-        try:
-            legacy = json.loads(legacy_file.read_text(encoding="utf-8"))
-            if isinstance(legacy, list):
-                for db_id in legacy:
-                    db_id = _normalize_database_id(db_id)
-                    if db_id:
-                        registry.register_database(
-                            db_id,
-                            working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
-                            output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
-                        )
-                return
-        except (json.JSONDecodeError, OSError):
-            pass
+        for db_id in config.DEFAULT_DATABASE_IDS:
+            registry.register_database(
+                db_id,
+                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
+                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
+            )
 
-    for db_id in config.DEFAULT_DATABASE_IDS:
-        registry.register_database(
-            db_id,
-            working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
-            output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
-        )
+        discovered = set()
+        for root in (config.RAGANYTHING_STORAGE_ROOT, config.RAGANYTHING_OUTPUT_ROOT):
+            if not root.exists():
+                continue
+            for path in root.iterdir():
+                if not path.is_dir() or path.name == "files":
+                    continue
+                db_id = _normalize_database_id(path.name)
+                if db_id:
+                    discovered.add(db_id)
+
+        for db_id in sorted(discovered):
+            registry.register_database(
+                db_id,
+                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
+                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
+            )
 
 
 class SearchRequest(BaseModel):
@@ -465,10 +481,14 @@ async def delete_database(db_id: str):
     try:
         service.registry.delete_database(db_id)
         service.unload_rag(db_id)
-        # 清理已上传的文件目录
-        files_dir = Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id
-        if files_dir.exists():
-            shutil.rmtree(files_dir, ignore_errors=True)
+        cleanup_dirs = [
+            Path(config.RAGANYTHING_STORAGE_ROOT) / "files" / db_id,
+            Path(config.RAGANYTHING_STORAGE_ROOT) / db_id,
+            Path(config.RAGANYTHING_OUTPUT_ROOT) / db_id,
+        ]
+        for path in cleanup_dirs:
+            if path.exists():
+                shutil.rmtree(path, ignore_errors=True)
         return {"status": "success", "message": f"知识库 '{db_id}' 已删除"}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
