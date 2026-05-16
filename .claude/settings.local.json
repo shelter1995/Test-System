@@ -76,7 +76,8 @@
       "Bash(pkill -f \"python.*tutor_backend\")",
       "mcp__chrome-devtools__handle_dialog",
       "Bash(cd \"C:/Users/shelt/.claude/skills/ui-ux-pro-max\" && python scripts/search.py \"business training tool dashboard compact efficient\" --design-system -p \"AI-Tutor\" -f markdown)",
-      "Read(//c/Users/shelt/.agents/skills/ui-ux-pro-max/**)"
+      "Read(//c/Users/shelt/.agents/skills/ui-ux-pro-max/**)",
+      "Bash(.venv/Scripts/pip install *)"
     ]
   }
 }
