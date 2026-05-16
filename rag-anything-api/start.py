@@ -11,6 +11,12 @@ from pathlib import Path
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+python_scripts_dir = Path(sys.executable).parent
+if python_scripts_dir.exists():
+    entries = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
+    if str(python_scripts_dir) not in entries:
+        os.environ["PATH"] = os.pathsep.join([str(python_scripts_dir), *entries])
+
 
 def check_dependency(module_name: str, package_name: str | None = None) -> bool:
     try:

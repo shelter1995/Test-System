@@ -170,6 +170,8 @@ class DatabaseRegistry:
         file_path: str,
         sha256: str,
         source: str | None = None,
+        status: str = "已导入",
+        error: str = "",
     ) -> None:
         data = self._load()
 
@@ -198,12 +200,43 @@ class DatabaseRegistry:
                 "file_path": file_path,
                 "sha256": sha256,
                 "source": source or file_name,
-                "status": "已导入",
+                "status": status,
+                "error": error,
                 "imported_at": self._now(),
             }
         )
         database["updated_at"] = self._now()
         self._save(data)
+
+    def update_document_status(
+        self,
+        database_id: str,
+        sha256: str,
+        status: str,
+        error: str = "",
+    ) -> bool:
+        database_id = str(database_id).strip()
+        sha256 = str(sha256).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+        if not sha256:
+            raise ValueError("sha256 must not be empty")
+
+        data = self._load()
+        for item in data["databases"]:
+            if str(item.get("id", "")).strip() != database_id:
+                continue
+            for doc in item.get("documents", []):
+                if doc.get("sha256") == sha256:
+                    doc["status"] = status
+                    doc["error"] = error
+                    doc["updated_at"] = self._now()
+                    item["updated_at"] = self._now()
+                    self._save(data)
+                    return True
+            return False
+
+        raise KeyError(f"Database '{database_id}' not found")
 
     def delete_database(self, database_id: str) -> bool:
         """删除知识库，返回是否成功删除。

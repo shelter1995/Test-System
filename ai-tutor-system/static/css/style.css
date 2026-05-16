@@ -2277,6 +2277,11 @@ body.has-alert #tutorApp .page {
     color: #856404;
 }
 
+.status-text.status-error {
+    background: #f8d7da;
+    color: #842029;
+}
+
 /* 空状态 */
 .empty-state {
     display: flex;

@@ -7,6 +7,7 @@
 """
 
 import io
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -70,6 +71,30 @@ class FakeRegistry:
         if database_id not in self._databases:
             raise KeyError(f"Database '{database_id}' not found")
         return self._databases[database_id].get("documents", [])
+
+    def register_document(self, database_id, file_name, file_path, sha256, source=None, status="已导入", error=""):
+        self.register_database(database_id)
+        documents = self._databases[database_id].setdefault("documents", [])
+        documents[:] = [doc for doc in documents if doc.get("sha256") != sha256]
+        documents.append(
+            {
+                "file_name": file_name,
+                "file_path": file_path,
+                "sha256": sha256,
+                "source": source or file_name,
+                "status": status,
+                "error": error,
+            }
+        )
+
+    def update_document_status(self, database_id, sha256, status, error=""):
+        docs = self.list_documents(database_id)
+        for doc in docs:
+            if doc.get("sha256") == sha256:
+                doc["status"] = status
+                doc["error"] = error
+                return True
+        return False
 
 
 class FakeService:
@@ -215,6 +240,80 @@ class TestListDocuments:
         response = client.get("/db/no-such-db/documents")
         assert response.status_code == 404
 
+    def test_list_documents_reconciles_failed_lightrag_status(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("doc-db")
+        service.registry.register_document(
+            "doc-db",
+            file_name="book.pdf",
+            file_path=str(tmp_path / "book.pdf"),
+            sha256="sha-book",
+            status="processing",
+        )
+        status_dir = tmp_path / "doc-db" / "rag_storage"
+        status_dir.mkdir(parents=True)
+        (status_dir / "kv_store_doc_status.json").write_text(
+            json.dumps(
+                {
+                    "doc-1": {
+                        "status": "failed",
+                        "file_path": "book.pdf",
+                        "error_msg": "LLM func: Worker execution timeout after 360s",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        response = client.get("/db/doc-db/documents")
+
+        assert response.status_code == 200
+        doc = response.json()["documents"][0]
+        assert doc["status"] == "error"
+        assert "Worker execution timeout" in doc["error"]
+
+    def test_list_documents_treats_duplicate_as_imported_when_original_processed(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("doc-db")
+        service.registry.register_document(
+            "doc-db",
+            file_name="repeat.pdf",
+            file_path=str(tmp_path / "repeat.pdf"),
+            sha256="sha-repeat",
+            status="processing",
+        )
+        status_dir = tmp_path / "doc-db" / "rag_storage"
+        status_dir.mkdir(parents=True)
+        (status_dir / "kv_store_doc_status.json").write_text(
+            json.dumps(
+                {
+                    "doc-original": {
+                        "status": "processed",
+                        "file_path": "repeat.pdf",
+                        "updated_at": "2026-01-01T00:00:00+00:00",
+                    },
+                    "dup-latest": {
+                        "status": "failed",
+                        "file_path": "repeat.pdf",
+                        "error_msg": "Content already exists. Original doc_id: doc-original",
+                        "metadata": {"is_duplicate": True, "original_doc_id": "doc-original"},
+                        "updated_at": "2026-01-02T00:00:00+00:00",
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        response = client.get("/db/doc-db/documents")
+
+        assert response.status_code == 200
+        doc = response.json()["documents"][0]
+        assert doc["status"] == "已导入"
+        assert doc["error"] == ""
+
 
 # ── POST /ingest/upload ──────────────────────────────────────────────────
 
@@ -243,6 +342,10 @@ class TestIngestUpload:
         saved = tmp_path / "files" / "upload-db" / "test.txt"
         assert saved.exists()
         assert saved.read_bytes() == file_content
+
+        docs = service.registry.list_documents("upload-db")
+        assert docs[0]["file_name"] == "test.txt"
+        assert docs[0]["status"] == "processing"
 
     def test_upload_multiple_files(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)
@@ -304,6 +407,11 @@ class TestIngestUpload:
         error_events = [e for e in events if e["type"] == "error"]
         assert len(error_events) == 1
         assert "ingest boom" in error_events[0]["error"]
+
+        docs = service.registry.list_documents("fail-db")
+        assert docs[0]["file_name"] == "bad.txt"
+        assert docs[0]["status"] == "error"
+        assert "ingest boom" in docs[0]["error"]
 
 
 # ── /db/list includes description and documents_count ────────────────────

@@ -4,8 +4,11 @@ RAG-Anything API 配置
 
 import json
 import os
+import shutil
+import sys
 from pathlib import Path
 from typing import Any
+from importlib.util import find_spec
 
 from dotenv import load_dotenv
 
@@ -37,11 +40,43 @@ def _safe_bool(value: str, default: bool) -> bool:
     return default
 
 
+def _discover_winget_ffmpeg() -> str:
+    local_app_data = os.getenv("LOCALAPPDATA", "")
+    if not local_app_data:
+        return ""
+    packages = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+    if not packages.exists():
+        return ""
+    matches = sorted(packages.glob("Gyan.FFmpeg_*/ffmpeg-*/bin/ffmpeg.exe"), reverse=True)
+    if not matches:
+        return ""
+    exe = matches[0]
+    os.environ["PATH"] = f"{exe.parent}{os.pathsep}{os.environ.get('PATH', '')}"
+    return str(exe)
+
+
+def _prepend_path(path: Path) -> str:
+    text = str(path)
+    entries = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
+    if text not in entries:
+        os.environ["PATH"] = os.pathsep.join([text, *entries])
+    return text
+
+
+def _ensure_python_scripts_on_path(executable: str | None = None) -> str:
+    exe_path = Path(executable or sys.executable)
+    scripts_dir = exe_path.parent
+    if not scripts_dir.exists():
+        return ""
+    return _prepend_path(scripts_dir)
+
+
 # 加载 .env
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 if ENV_PATH.exists():
     load_dotenv(ENV_PATH)
 
+PYTHON_SCRIPTS_DIR = _ensure_python_scripts_on_path()
 
 # 路径配置
 BASE_DIR = Path(__file__).resolve().parent
@@ -100,7 +135,13 @@ CHUNK_OVERLAP_SIZE = _safe_int(os.getenv("CHUNK_OVERLAP_SIZE", "100"), 100)
 ENABLE_IMAGE_PROCESSING = _safe_bool(os.getenv("ENABLE_IMAGE_PROCESSING"), True)
 ENABLE_TABLE_PROCESSING = _safe_bool(os.getenv("ENABLE_TABLE_PROCESSING"), True)
 ENABLE_EQUATION_PROCESSING = _safe_bool(os.getenv("ENABLE_EQUATION_PROCESSING"), True)
+ENABLE_VIDEO_PROCESSING = _safe_bool(os.getenv("ENABLE_VIDEO_PROCESSING"), False)
+ENABLE_AUDIO_PROCESSING = _safe_bool(os.getenv("ENABLE_AUDIO_PROCESSING"), False)
 DEFAULT_QUERY_MODE = os.getenv("DEFAULT_QUERY_MODE", "hybrid").strip().lower() or "hybrid"
+
+FFMPEG_PATH = shutil.which("ffmpeg") or _discover_winget_ffmpeg()
+WHISPER_AVAILABLE = find_spec("whisper") is not None
+MINERU_PATH = shutil.which("mineru")
 
 # VLM 图片理解（MiniMax Coding Plan 专用接口）
 # POST /v1/coding_plan/vlm  {prompt, image_url} → {content}

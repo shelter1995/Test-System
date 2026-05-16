@@ -4,6 +4,7 @@ RAG-Anything REST API 服务
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -11,7 +12,7 @@ import shutil
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -95,6 +96,14 @@ app.add_middleware(
 
 def _normalize_database_id(text: Optional[str]) -> str:
     return str(text or "").strip()
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _query_mode() -> str:
@@ -368,6 +377,15 @@ async def status():
             "provider": "MiniMax (Coding Plan)",
             "endpoint": f"{config.VLM_BASE_URL}/v1/coding_plan/vlm",
         },
+        "media": {
+            "video_enabled": config.ENABLE_VIDEO_PROCESSING,
+            "audio_enabled": config.ENABLE_AUDIO_PROCESSING,
+            "mineru_available": bool(config.MINERU_PATH),
+            "mineru_path": config.MINERU_PATH,
+            "ffmpeg_available": bool(config.FFMPEG_PATH),
+            "ffmpeg_path": config.FFMPEG_PATH,
+            "whisper_available": bool(config.WHISPER_AVAILABLE),
+        },
         "rerank": {
             "enabled": config.ENABLE_RERANK and bool(config.RERANK_API_KEY),
             "provider": "硅基流动",
@@ -500,10 +518,87 @@ async def delete_database(db_id: str):
 async def list_documents(db_id: str):
     service = _require_service()
     try:
+        _reconcile_processing_documents(db_id, service)
         documents = service.registry.list_documents(db_id)
         return {"status": "success", "database": db_id, "documents": documents}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+
+
+def _doc_status_path(db_id: str, service: Any) -> Path:
+    if hasattr(service, "_db_working_dir"):
+        return Path(service._db_working_dir(db_id)) / "kv_store_doc_status.json"
+    return Path(config.RAGANYTHING_STORAGE_ROOT) / db_id / "rag_storage" / "kv_store_doc_status.json"
+
+
+def _load_lightrag_doc_status(db_id: str, service: Any) -> dict[str, Any]:
+    status_path = _doc_status_path(db_id, service)
+    if not status_path.exists():
+        return {}
+    try:
+        data = json.loads(status_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("读取 LightRAG 文档状态失败 [%s]: %s", status_path, exc)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _status_matches_file(item: dict[str, Any], file_name: str) -> bool:
+    candidates = {
+        str(item.get("file_path", "")).replace("\\", "/").split("/")[-1],
+        str(item.get("source", "")).replace("\\", "/").split("/")[-1],
+    }
+    return file_name in candidates
+
+
+def _latest_status_for_file(doc_status: dict[str, Any], file_name: str) -> tuple[str, dict[str, Any]] | None:
+    matches = [
+        (doc_id, item)
+        for doc_id, item in doc_status.items()
+        if isinstance(item, dict) and _status_matches_file(item, file_name)
+    ]
+    if not matches:
+        return None
+    matches.sort(key=lambda pair: str(pair[1].get("updated_at") or pair[1].get("created_at") or ""))
+    return matches[-1]
+
+
+def _reconcile_processing_documents(db_id: str, service: Any) -> None:
+    documents = service.registry.list_documents(db_id)
+    processing_docs = [doc for doc in documents if doc.get("status") == "processing"]
+    if not processing_docs:
+        return
+
+    doc_status = _load_lightrag_doc_status(db_id, service)
+    if not doc_status:
+        return
+
+    for doc in processing_docs:
+        file_name = str(doc.get("file_name") or Path(str(doc.get("file_path", ""))).name)
+        sha256 = str(doc.get("sha256", "")).strip()
+        if not file_name or not sha256:
+            continue
+
+        latest = _latest_status_for_file(doc_status, file_name)
+        if latest is None:
+            continue
+
+        doc_id, item = latest
+        status = str(item.get("status", "")).strip().lower()
+        metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+        if status == "processed":
+            service.registry.update_document_status(db_id, sha256, status="已导入", error="")
+        elif status == "failed" and metadata.get("is_duplicate"):
+            original_id = metadata.get("original_doc_id")
+            original = doc_status.get(original_id) if original_id else None
+            if isinstance(original, dict) and str(original.get("status", "")).lower() == "processed":
+                service.registry.update_document_status(db_id, sha256, status="已导入", error="")
+            else:
+                error = str(item.get("error_msg") or f"重复文档: {doc_id}")
+                service.registry.update_document_status(db_id, sha256, status="error", error=error)
+        elif status == "failed":
+            error = str(item.get("error_msg") or "LightRAG 文档处理失败")
+            service.registry.update_document_status(db_id, sha256, status="error", error=error)
 
 
 @app.delete("/db/{db_id}/documents/{sha256}")
@@ -646,7 +741,16 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
         finally:
             file.file.close()
 
-        saved_files.append((filename, str(target_path)))
+        sha256 = _sha256(target_path)
+        service.registry.register_document(
+            db_id,
+            file_name=filename,
+            file_path=str(target_path),
+            sha256=sha256,
+            source=filename,
+            status="processing",
+        )
+        saved_files.append((filename, str(target_path), sha256))
 
     task_id = progress_tracker.create_task(len(saved_files))
     asyncio.create_task(_process_uploaded_files(db_id, saved_files, task_id))
@@ -662,13 +766,14 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
 
 async def _process_uploaded_files(db_id: str, files: list, task_id: str):
     service = _require_service()
-    for filename, filepath in files:
+    for filename, filepath, sha256 in files:
         try:
             progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
             await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
             progress_tracker.emit(task_id, "done", filename, f"{filename} 导入完成")
         except Exception as e:
             logger.error(f"文件导入失败 [{filename}]: {e}")
+            service.registry.update_document_status(db_id, sha256, status="error", error=str(e))
             progress_tracker.emit(task_id, "error", filename, f"{filename} 导入失败", error=str(e))
     progress_tracker.finalize(task_id)
 

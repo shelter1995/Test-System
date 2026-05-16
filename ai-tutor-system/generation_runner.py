@@ -9,6 +9,7 @@
 import json
 import logging
 import re
+import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -575,13 +576,12 @@ _TYPE_NAMES = {"solution": "解决方案", "training": "培训材料"}
 
 # ==================== 公共接口 ====================
 
-def create_job(request: dict) -> str:
+def _run_job(job_id: str) -> None:
+    job = get_job(job_id)
+    if not job:
+        return
+    request = job.get("request", {})
     gen_type = request.get("type", "solution")
-    job_id = uuid.uuid4().hex[:12]
-    job = {"job_id": job_id, "status": "running", "stage": "init",
-           "created_at": _now(), "request": request, "result": None, "error": None}
-    _save_job(job)
-
     try:
         generator = _GENERATORS.get(gen_type)
         if not generator:
@@ -617,7 +617,22 @@ def create_job(request: dict) -> str:
         job["error"] = str(e)
         job["finished_at"] = _now()
         _save_job(job)
-        return job_id
+
+
+def create_job(request: dict) -> str:
+    job_id = uuid.uuid4().hex[:12]
+    job = {"job_id": job_id, "status": "running", "stage": "init",
+           "created_at": _now(), "request": request, "result": None, "error": None}
+    _save_job(job)
+
+    worker = threading.Thread(
+        target=_run_job,
+        args=(job_id,),
+        name=f"generation-job-{job_id}",
+        daemon=True,
+    )
+    worker.start()
+    return job_id
 
 
 def get_job(job_id: str) -> dict | None:

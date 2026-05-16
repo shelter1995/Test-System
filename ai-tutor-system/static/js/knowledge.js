@@ -144,12 +144,12 @@ function renderUploadSection() {
     return `
         <div class="upload-row">
             <input type="file" id="uploadFileInput" multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json"
+                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json,.mp4,.avi,.mkv,.mov,.webm,.mp3,.wav,.flac,.aac,.ogg,.m4a"
                 onchange="updateFileSelection()" />
             <button class="btn-primary" id="uploadBtn" onclick="uploadKnowledgeFiles()">上传并导入</button>
         </div>
         <div id="selectedFiles" class="selected-files"></div>
-        <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON（可多选）</p>
+        <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON、音频、视频（可多选）</p>
     `;
 }
 
@@ -603,9 +603,11 @@ function _renderFileRow(item, isUploading) {
     const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
     const rawStatus = isUploading ? 'processing' : (item.status || '已导入');
     const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
+    const errorText = escapeHtml(item.error || '');
     const source = isUploading ? '—' : escapeHtml(item.source || item.file_path || '-');
     const isDone = !isUploading && (rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported');
-    const statusClass = isDone ? 'status-success' : 'status-pending';
+    const isError = !isUploading && rawStatus === 'error';
+    const statusClass = isDone ? 'status-success' : (isError ? 'status-error' : 'status-pending');
     const deleteBtn = isUploading ? '' : `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`;
     return `
     <div class="file-row">
@@ -613,7 +615,7 @@ function _renderFileRow(item, isUploading) {
             ${isUploading ? '⏳' : '📄'} ${fileName}
         </span>
         <span class="file-col-status">
-            <span class="status-text ${statusClass}">
+            <span class="status-text ${statusClass}" title="${errorText}">
                 ${statusText}
             </span>
         </span>
@@ -635,7 +637,7 @@ async function loadKnowledgeDocuments() {
 
     try {
         const data = await WorkbenchAPI.requestJson(
-            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${knowledgeState.activeDatabase}/documents`
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(knowledgeState.activeDatabase)}/documents`
         );
         const documents = Array.isArray(data) ? data : (data.documents || []);
 

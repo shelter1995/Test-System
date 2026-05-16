@@ -8,7 +8,6 @@
 - GET    /generation/artifacts/download 下载产物文件
 """
 
-import asyncio
 import re
 from pathlib import Path
 
@@ -80,7 +79,7 @@ async def create_generation_job(request: GenerationRequest):
             detail=f"Invalid type: {request.type}. Must be one of {valid_types}"
         )
 
-    job_id = await asyncio.to_thread(create_job, request.model_dump())
+    job_id = create_job(request.model_dump())
     return {"job_id": job_id, "status": "running"}
 
 

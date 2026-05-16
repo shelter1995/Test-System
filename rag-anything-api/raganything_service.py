@@ -14,11 +14,11 @@ from typing import Any, Callable, Optional
 
 import httpx
 
+import config
 from raganything import RAGAnything, RAGAnythingConfig
 from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
-import config
 from database_registry import DatabaseRegistry
 
 logger = logging.getLogger(__name__)
@@ -158,6 +158,8 @@ class RAGAnythingService:
             enable_image_processing=config.ENABLE_IMAGE_PROCESSING,
             enable_table_processing=config.ENABLE_TABLE_PROCESSING,
             enable_equation_processing=config.ENABLE_EQUATION_PROCESSING,
+            enable_video_processing=config.ENABLE_VIDEO_PROCESSING,
+            enable_audio_processing=config.ENABLE_AUDIO_PROCESSING,
         )
 
         # 构建 LightRAG 额外参数
@@ -498,7 +500,7 @@ class RAGAnythingService:
                 {
                     "text": str(answer),
                     "metadata": {
-                        "source": database_id,
+                        "source": "raganything",
                         "database": database_id,
                         "mode": mode,
                         "sources": sources,

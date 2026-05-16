@@ -340,7 +340,7 @@
     function pollJobStatus(jobId, type) {
         var statusEl = document.getElementById('genStatus');
         var btnEl = document.getElementById('genSubmitBtn');
-        var maxAttempts = 120;  // 最多轮询 10 分钟（120 × 5s）
+        var maxAttempts = 900;  // 最多轮询 15 分钟（900 × 1s）
 
         function check() {
             if (maxAttempts-- <= 0) {
@@ -385,7 +385,7 @@
                 }).catch(function () {
                     check();
                 });
-            }, 5000);
+            }, 1000);
         }
 
         check();

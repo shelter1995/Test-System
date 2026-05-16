@@ -34,6 +34,17 @@ SUPPORTED_FORMATS = {
     ".tif",
     ".gif",
     ".webp",
+    ".mp4",
+    ".avi",
+    ".mkv",
+    ".mov",
+    ".webm",
+    ".mp3",
+    ".wav",
+    ".flac",
+    ".aac",
+    ".ogg",
+    ".m4a",
 }
 
 
