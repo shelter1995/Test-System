@@ -28,6 +28,25 @@ class FakeRAG:
         self.files.append((file_path, output_dir, parse_method, backend))
 
 
+class LoopBoundFakeRAG:
+    def __init__(self):
+        self.loop = None
+
+    async def process_document_complete(
+        self,
+        file_path,
+        output_dir,
+        parse_method,
+        display_stats,
+        backend,
+    ):
+        loop = asyncio.get_running_loop()
+        if self.loop is None:
+            self.loop = loop
+        elif self.loop is not loop:
+            raise RuntimeError("bound to a different event loop")
+
+
 def test_query_wraps_result(tmp_path: Path):
     registry = DatabaseRegistry(tmp_path / "databases.json")
     registry.register_database("商务彩铃")
@@ -89,6 +108,36 @@ def test_ingest_text_routes_through_raganything_document_flow(tmp_path: Path):
     database = registry.get_database("商务彩铃")
     assert database is not None
     assert database["documents"][0]["source"] == "migration:sample.json:1"
+
+
+def test_ingest_file_sync_does_not_reuse_rag_across_event_loops(tmp_path: Path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    created = []
+
+    def factory(_db, _wd):
+        rag = LoopBoundFakeRAG()
+        created.append(rag)
+        return rag
+
+    service = RAGAnythingService(
+        storage_root=tmp_path / "raganything",
+        output_root=tmp_path / "output",
+        registry=registry,
+        rag_factory=factory,
+    )
+    first = tmp_path / "first.txt"
+    second = tmp_path / "second.txt"
+    first.write_text("first", encoding="utf-8")
+    second.write_text("second", encoding="utf-8")
+
+    service.ingest_file_sync("kb", first)
+    service.ingest_file_sync("kb", second)
+
+    assert len(created) == 2
+    assert [doc["file_name"] for doc in registry.list_documents("kb")] == [
+        "first.txt",
+        "second.txt",
+    ]
 
 
 def test_recover_file_from_markdown_segments_updates_partial_status(tmp_path: Path):

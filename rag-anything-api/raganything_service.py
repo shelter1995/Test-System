@@ -104,6 +104,7 @@ class RAGAnythingService:
         self.query_timeout = float(query_timeout or config.QUERY_ALL_TIMEOUT)
         self.max_instances = max(1, int(max_instances or config.MAX_RAG_INSTANCES))
         self._instances: OrderedDict[str, Any] = OrderedDict()
+        self._instance_loop_ids: dict[str, int | None] = {}
 
         self.storage_root.mkdir(parents=True, exist_ok=True)
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -113,6 +114,12 @@ class RAGAnythingService:
 
     def _db_output_dir(self, database_id: str) -> Path:
         return self.output_root / database_id
+
+    def _current_loop_id(self) -> int | None:
+        try:
+            return id(asyncio.get_running_loop())
+        except RuntimeError:
+            return None
 
     def _create_rag(self, database_id: str, working_dir: Path):
         if config.HF_ENDPOINT:
@@ -348,18 +355,27 @@ class RAGAnythingService:
         if not create_if_missing and not self.database_exists(database_id):
             raise KeyError(f"database not found: {database_id}")
 
-        if database_id in self._instances:
+        loop_id = self._current_loop_id()
+        if (
+            database_id in self._instances
+            and self._instance_loop_ids.get(database_id) == loop_id
+        ):
             self._instances.move_to_end(database_id)
             return self._instances[database_id]
+        if database_id in self._instances:
+            self._instances.pop(database_id, None)
+            self._instance_loop_ids.pop(database_id, None)
 
         working_dir = self._db_working_dir(database_id)
         working_dir.mkdir(parents=True, exist_ok=True)
         output_dir = self._db_output_dir(database_id)
         output_dir.mkdir(parents=True, exist_ok=True)
         self._instances[database_id] = self.rag_factory(database_id, working_dir)
+        self._instance_loop_ids[database_id] = loop_id
         self._instances.move_to_end(database_id)
         while len(self._instances) > self.max_instances:
-            self._instances.popitem(last=False)
+            evicted_db_id, _ = self._instances.popitem(last=False)
+            self._instance_loop_ids.pop(evicted_db_id, None)
         self.registry.register_database(
             database_id,
             working_dir=str(working_dir),
@@ -372,6 +388,7 @@ class RAGAnythingService:
         if database_id not in self._instances:
             return False
         self._instances.pop(database_id, None)
+        self._instance_loop_ids.pop(database_id, None)
         return True
 
     def _load_local_items(self, database_id: str) -> list[dict[str, Any]]:
