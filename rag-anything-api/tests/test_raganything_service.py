@@ -274,3 +274,31 @@ def test_recover_file_skips_newer_part_output_dirs(tmp_path: Path):
 
     assert result["status"] == "已导入"
     assert calls == ["book_part_001.md"]
+
+
+def test_local_search_downweights_generic_terms_and_prefers_relevant_snippet(tmp_path: Path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    registry.register_database("kb")
+    service = RAGAnythingService(
+        storage_root=tmp_path / "storage",
+        output_root=tmp_path / "output",
+        registry=registry,
+    )
+
+    noisy_long_text = ("如何" * 300) + " 视觉文化讨论"
+    relevant_text = "坐椅子要坐前缘，拍照时如何摆姿势会更自然，注意腿部角度。"
+    service._load_local_items = lambda _db: [
+        {
+            "text": noisy_long_text,
+            "metadata": {"source": "noise.md", "database": "kb", "mode": "local_fallback", "kind": "document"},
+            "score": 0,
+        },
+        {
+            "text": relevant_text,
+            "metadata": {"source": "pose.md", "database": "kb", "mode": "local_fallback", "kind": "chunk"},
+            "score": 0,
+        },
+    ]
+
+    result = service._local_search("kb", "坐椅子时如何摆拍照姿势", n_results=2)
+    assert result["results"][0]["metadata"]["source"] == "pose.md"

@@ -678,6 +678,7 @@ function _renderFileRow(item, isUploading) {
         'uploaded': '已上传',
         'rag_ingest': '解析/入库中',
         'graph_enrichment': '图谱处理中',
+        'interrupted': '已中断',
         'done': '已完成',
         'error': '失败'
     };

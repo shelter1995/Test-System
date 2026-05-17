@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sys
+import xml.etree.ElementTree as ET
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
@@ -61,6 +62,7 @@ async def initialize_service() -> None:
             output_root=config.RAGANYTHING_OUTPUT_ROOT,
             registry=registry,
         )
+        _recover_interrupted_processing_documents(rag_service)
         startup_error = None
         logger.info("RAG-Anything 服务初始化完成")
     except Exception as e:
@@ -173,6 +175,13 @@ class MultiSearchRequest(BaseModel):
     merge_results: Optional[bool] = False
 
 
+class KBChatRequest(BaseModel):
+    query: str
+    database: str
+    n_results: Optional[int] = 5
+    history: Optional[List[dict]] = None
+
+
 class DocumentIngestRequest(BaseModel):
     text: str
     database: Optional[str] = "default"
@@ -246,6 +255,94 @@ def _to_legacy_query_response(result: dict, include_context: bool = False) -> di
     return payload
 
 
+def _trim_snippet(text: str, max_chars: int = 220) -> str:
+    clean = " ".join(str(text or "").split()).strip()
+    if len(clean) <= max_chars:
+        return clean
+    return clean[:max_chars].rstrip() + "..."
+
+
+def _build_chat_prompt(query: str, history: Optional[List[dict]], max_turns: int = 4) -> str:
+    current = str(query or "").strip()
+    if not current:
+        return ""
+    history = history or []
+    if not history:
+        return current
+
+    turns = history[-max_turns:]
+    lines = ["请仅基于给定知识库进行回答，若资料中没有请明确说明。", "", "历史对话："]
+    for turn in turns:
+        q = str((turn or {}).get("q", "")).strip()
+        a = str((turn or {}).get("a", "")).strip()
+        if q:
+            lines.append(f"用户：{q}")
+        if a:
+            lines.append(f"助手：{a}")
+        if q or a:
+            lines.append("")
+    lines.append(f"当前问题：{current}")
+    return "\n".join(lines)
+
+
+def _build_chat_sources(query_result: dict, context_result: dict, max_items: int = 8) -> list[dict]:
+    query_results = query_result.get("results") or []
+    first = query_results[0] if query_results else {}
+    first_meta = first.get("metadata", {}) if isinstance(first, dict) else {}
+    source_names = first_meta.get("sources") if isinstance(first_meta, dict) else []
+    if not isinstance(source_names, list):
+        source_names = []
+    source_names = [str(name).strip() for name in source_names if str(name).strip()]
+
+    contexts = context_result.get("contexts") or []
+    normalized = []
+    for ctx in contexts:
+        if not isinstance(ctx, dict):
+            continue
+        text = _trim_snippet(ctx.get("text", ""))
+        if not text:
+            continue
+        meta = ctx.get("metadata", {}) if isinstance(ctx.get("metadata"), dict) else {}
+        normalized.append(
+            {
+                "file_name": str(meta.get("source") or meta.get("database") or "知识库资料").strip(),
+                "snippet": text,
+            }
+        )
+
+    sources = []
+    used = set()
+    if source_names:
+        for file_name in source_names:
+            snippet = ""
+            for item in normalized:
+                if item["file_name"] == file_name:
+                    snippet = item["snippet"]
+                    break
+            if not snippet and normalized:
+                snippet = normalized[0]["snippet"]
+            if not snippet:
+                snippet = "已命中该来源，未返回可展示片段。"
+            key = f"{file_name}|{snippet}"
+            if key in used:
+                continue
+            used.add(key)
+            sources.append({"file_name": file_name, "snippet": snippet})
+            if len(sources) >= max_items:
+                return sources
+        return sources
+
+    for item in normalized:
+        key = f"{item['file_name']}|{item['snippet']}"
+        if key in used:
+            continue
+        used.add(key)
+        sources.append(item)
+        if len(sources) >= max_items:
+            break
+    return sources
+
+
 @app.get("/")
 async def root():
     return {
@@ -265,6 +362,7 @@ async def root():
             "search": "/search",
             "ai_enhanced_search": "/ai_enhanced_search",
             "query": "/query",
+            "kb_chat": "/kb/chat",
             "db_list": "/db/list",
             "db_stats": "/db/stats",
             "ingest_path": "/ingest/path",
@@ -356,6 +454,54 @@ async def query(request: SearchRequest):
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
     except Exception as e:
         logger.error(f"RAG查询失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/kb/chat")
+async def kb_chat(request: KBChatRequest):
+    service = _require_service()
+    try:
+        db_id = _normalize_database_id(request.database)
+        if not db_id:
+            raise HTTPException(status_code=400, detail="database 不能为空")
+
+        query_text = _build_chat_prompt(request.query, request.history)
+        if not query_text:
+            raise HTTPException(status_code=400, detail="query 不能为空")
+
+        query_result = await service.query(
+            db_id,
+            query_text,
+            mode=_query_mode(),
+            n_results=request.n_results or 5,
+        )
+        context_result = await service.query_context(
+            db_id,
+            request.query,
+            mode=config.CONTEXT_QUERY_MODE,
+            max_chars=config.CONTEXT_MAX_CHARS,
+        )
+
+        first = (query_result.get("results") or [{}])[0]
+        answer = str(first.get("text") or "").strip()
+        sources = _build_chat_sources(query_result, context_result)
+        if not answer:
+            answer = "当前知识库未找到相关资料。"
+
+        return {
+            "query": request.query,
+            "database": db_id,
+            "answer": answer,
+            "sources": sources,
+            "total_sources": len(sources),
+            "fallback": query_result.get("fallback") or context_result.get("fallback"),
+        }
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"知识库问答失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -575,6 +721,225 @@ def _status_matches_file(item: dict[str, Any], file_name: str) -> bool:
     return file_name in candidates
 
 
+def _write_json_file(path: Path, data: Any) -> None:
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _load_json_file(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        logger.warning("读取 JSON 存储失败 [%s]: %s", path, exc)
+        return None
+
+
+def _value_references_any(value: Any, refs: set[str]) -> bool:
+    if not refs:
+        return False
+    if isinstance(value, str):
+        return any(ref and ref in value for ref in refs)
+    if isinstance(value, dict):
+        return any(_value_references_any(item, refs) for item in value.values())
+    if isinstance(value, list):
+        return any(_value_references_any(item, refs) for item in value)
+    return False
+
+
+def _prune_chunk_lists(value: Any, chunk_ids: set[str]) -> Any:
+    if isinstance(value, dict):
+        pruned = {}
+        for key, item in value.items():
+            if isinstance(item, list) and key in {"chunks", "chunk_ids", "chunks_list", "source_id"}:
+                pruned[key] = [chunk for chunk in item if chunk not in chunk_ids]
+            else:
+                pruned[key] = _prune_chunk_lists(item, chunk_ids)
+        return pruned
+    if isinstance(value, list):
+        return [_prune_chunk_lists(item, chunk_ids) for item in value]
+    return value
+
+
+def _cleanup_dict_store(path: Path, doc_ids: set[str], chunk_ids: set[str], file_refs: set[str]) -> int:
+    data = _load_json_file(path)
+    if not isinstance(data, dict):
+        return 0
+
+    removed = 0
+    changed = False
+    for key in list(data.keys()):
+        value = data[key]
+        if key in doc_ids or key in chunk_ids or _value_references_any(value, doc_ids | file_refs):
+            data.pop(key, None)
+            removed += 1
+            changed = True
+            continue
+        pruned = _prune_chunk_lists(value, chunk_ids)
+        if pruned != value:
+            data[key] = pruned
+            changed = True
+            if isinstance(pruned, dict):
+                for list_key in ("chunks", "chunk_ids", "chunks_list", "source_id"):
+                    if list_key in pruned and pruned[list_key] == []:
+                        data.pop(key, None)
+                        removed += 1
+                        break
+
+    if changed:
+        _write_json_file(path, data)
+    return removed
+
+
+def _cleanup_vector_store(path: Path, doc_ids: set[str], chunk_ids: set[str], file_refs: set[str]) -> int:
+    data = _load_json_file(path)
+    if not isinstance(data, dict) or not isinstance(data.get("data"), list):
+        return 0
+
+    refs = doc_ids | chunk_ids | file_refs
+    before = len(data["data"])
+    data["data"] = [
+        item
+        for item in data["data"]
+        if not (
+            isinstance(item, dict)
+            and (
+                str(item.get("__id__", "")) in chunk_ids
+                or str(item.get("full_doc_id", "")) in doc_ids
+                or _value_references_any(item, refs)
+            )
+        )
+    ]
+    removed = before - len(data["data"])
+    if removed:
+        _write_json_file(path, data)
+    return removed
+
+
+def _cleanup_graph_store(path: Path, refs: set[str]) -> int:
+    if not path.exists() or not refs:
+        return 0
+    try:
+        tree = ET.parse(path)
+    except (ET.ParseError, OSError) as exc:
+        logger.warning("读取 GraphML 存储失败 [%s]: %s", path, exc)
+        return 0
+
+    root = tree.getroot()
+    namespace = ""
+    if root.tag.startswith("{"):
+        namespace = root.tag.split("}", 1)[0].strip("{")
+    ns = {"g": namespace} if namespace else {}
+    graph = root.find("g:graph", ns) if namespace else root.find("graph")
+    if graph is None:
+        return 0
+
+    def element_refs_deleted(element: ET.Element) -> bool:
+        return any(ref in "".join(element.itertext()) for ref in refs)
+
+    removed = 0
+    removed_nodes: set[str] = set()
+    for node in list(graph.findall("g:node", ns) if namespace else graph.findall("node")):
+        if element_refs_deleted(node):
+            node_id = node.attrib.get("id")
+            if node_id:
+                removed_nodes.add(node_id)
+            graph.remove(node)
+            removed += 1
+
+    for edge in list(graph.findall("g:edge", ns) if namespace else graph.findall("edge")):
+        if (
+            edge.attrib.get("source") in removed_nodes
+            or edge.attrib.get("target") in removed_nodes
+            or element_refs_deleted(edge)
+        ):
+            graph.remove(edge)
+            removed += 1
+
+    if removed:
+        if namespace:
+            ET.register_namespace("", namespace)
+        tree.write(path, encoding="utf-8", xml_declaration=True)
+    return removed
+
+
+def _cleanup_lightrag_document_residue(db_id: str, service: Any, document: dict[str, Any]) -> dict[str, int]:
+    file_name = str(document.get("file_name") or Path(str(document.get("file_path", ""))).name)
+    if not file_name:
+        return {"doc_status": 0, "chunks": 0, "vectors": 0}
+
+    storage_dir = _doc_status_path(db_id, service).parent
+    status_path = storage_dir / "kv_store_doc_status.json"
+    doc_status = _load_json_file(status_path)
+    if not isinstance(doc_status, dict):
+        return {"doc_status": 0, "chunks": 0, "vectors": 0}
+
+    matched_doc_ids: set[str] = set()
+    chunk_ids: set[str] = set()
+    for doc_id, item in doc_status.items():
+        if not isinstance(item, dict) or not _status_matches_file(item, file_name):
+            continue
+        matched_doc_ids.add(str(doc_id))
+        chunk_ids.update(str(chunk) for chunk in item.get("chunks_list", []) if chunk)
+
+    if not matched_doc_ids and not chunk_ids:
+        return {"doc_status": 0, "chunks": 0, "vectors": 0}
+
+    file_refs = {file_name, Path(str(document.get("file_path", ""))).name, Path(file_name).stem}
+    file_refs = {ref for ref in file_refs if ref}
+    removed = {"doc_status": 0, "chunks": 0, "vectors": 0}
+    removed["doc_status"] += _cleanup_dict_store(status_path, matched_doc_ids, chunk_ids, file_refs)
+
+    for name in (
+        "kv_store_full_docs.json",
+        "kv_store_text_chunks.json",
+        "kv_store_entity_chunks.json",
+        "kv_store_relation_chunks.json",
+        "kv_store_parse_cache.json",
+    ):
+        path = storage_dir / name
+        if path.exists():
+            removed["chunks"] += _cleanup_dict_store(path, matched_doc_ids, chunk_ids, file_refs)
+
+    for name in ("vdb_chunks.json", "vdb_entities.json", "vdb_relationships.json"):
+        path = storage_dir / name
+        if path.exists():
+            removed["vectors"] += _cleanup_vector_store(path, matched_doc_ids, chunk_ids, file_refs)
+
+    graph_path = storage_dir / "graph_chunk_entity_relation.graphml"
+    if graph_path.exists():
+        removed["vectors"] += _cleanup_graph_store(graph_path, matched_doc_ids | chunk_ids | file_refs)
+
+    return removed
+
+
+def _cleanup_mineru_output(db_id: str, service: Any, document: dict[str, Any]) -> int:
+    file_name = str(document.get("file_name") or Path(str(document.get("file_path", ""))).name)
+    stem = Path(file_name).stem
+    if not stem:
+        return 0
+
+    if hasattr(service, "_db_output_dir"):
+        output_dir = Path(service._db_output_dir(db_id))
+    else:
+        output_dir = Path(config.RAGANYTHING_OUTPUT_ROOT) / db_id
+    if not output_dir.exists():
+        return 0
+
+    removed = 0
+    output_root = output_dir.resolve()
+    for path in output_dir.iterdir():
+        if not path.is_dir() or not (path.name == stem or path.name.startswith(f"{stem}_")):
+            continue
+        try:
+            resolved = path.resolve()
+        except OSError:
+            continue
+        if output_root not in resolved.parents and resolved != output_root:
+            continue
+        shutil.rmtree(resolved, ignore_errors=True)
+        removed += 1
+    return removed
+
+
 def _latest_status_for_file(doc_status: dict[str, Any], file_name: str) -> tuple[str, dict[str, Any]] | None:
     matches = [
         (doc_id, item)
@@ -625,6 +990,41 @@ def _reconcile_processing_documents(db_id: str, service: Any) -> None:
             service.registry.update_document_status(db_id, sha256, status="error", error=error)
 
 
+def _recover_interrupted_processing_documents(service: Any) -> None:
+    """Mark processing documents left by a previous process as interrupted.
+
+    In-memory upload tasks do not survive a service restart. Keep any LightRAG
+    terminal status if it exists, then make the remaining registry rows
+    user-actionable instead of leaving them permanently stuck in processing.
+    """
+    if not hasattr(service.registry, "list_databases") or not hasattr(service.registry, "list_documents"):
+        return
+
+    for database in service.registry.list_databases():
+        db_id = str(database.get("id", "")).strip()
+        if not db_id:
+            continue
+        try:
+            _reconcile_processing_documents(db_id, service)
+            documents = service.registry.list_documents(db_id)
+        except (KeyError, AttributeError):
+            continue
+
+        for doc in documents:
+            if doc.get("status") != "processing":
+                continue
+            sha256 = str(doc.get("sha256", "")).strip()
+            if not sha256:
+                continue
+            service.registry.update_document_status(
+                db_id,
+                sha256,
+                status="error",
+                error="服务重启后后台导入任务已中断，请删除后重新上传或使用重试。",
+            )
+            service.registry.update_document_progress(db_id, sha256, stage="interrupted")
+
+
 @app.delete("/db/{db_id}/documents/{sha256}")
 async def delete_document(db_id: str, sha256: str):
     service = _require_service()
@@ -640,6 +1040,9 @@ async def delete_document(db_id: str, sha256: str):
                 Path(target["file_path"]).unlink(missing_ok=True)
             except OSError:
                 pass
+        if target:
+            _cleanup_lightrag_document_residue(db_id, service, target)
+            _cleanup_mineru_output(db_id, service, target)
         return {"status": "success", "message": "文档已删除"}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")

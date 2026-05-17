@@ -179,73 +179,6 @@
         renderSources();
     }
 
-    function buildQueryPrompt(question) {
-        if (!state.turns.length) return question;
-        const recent = state.turns.slice(-state.maxTurns);
-        const historyText = recent.map(function (turn) {
-            return '用户：' + turn.q + '\n助手：' + turn.a;
-        }).join('\n\n');
-        return '请仅基于给定知识库进行回答，若资料中没有请明确说明。\n\n历史对话：\n'
-            + historyText
-            + '\n\n当前问题：' + question;
-    }
-
-    function normalizeSnippet(text, maxLen) {
-        const clean = String(text || '')
-            .replace(/\s+/g, ' ')
-            .trim();
-        if (!clean) return '';
-        if (clean.length <= maxLen) return clean;
-        return clean.slice(0, maxLen) + '...';
-    }
-
-    function buildSources(queryData, contextData) {
-        const firstResult = queryData && Array.isArray(queryData.results) ? queryData.results[0] : null;
-        const sourceNames = firstResult && firstResult.metadata && Array.isArray(firstResult.metadata.sources)
-            ? firstResult.metadata.sources.filter(Boolean)
-            : [];
-        const contexts = contextData && Array.isArray(contextData.contexts) ? contextData.contexts : [];
-        const snippets = contexts
-            .map(function (ctx) { return normalizeSnippet(ctx && ctx.text, 220); })
-            .filter(Boolean);
-
-        let items = [];
-        if (sourceNames.length) {
-            items = sourceNames.map(function (name, idx) {
-                return {
-                    fileName: String(name),
-                    snippet: snippets[idx] || snippets[0] || '已命中该来源，未返回可展示片段。',
-                };
-            });
-        } else if (snippets.length) {
-            items = snippets.map(function (snippet, idx) {
-                const ctx = contexts[idx] || {};
-                const metadata = ctx.metadata || {};
-                const sourceName = metadata.source || metadata.database || '知识库上下文';
-                return {
-                    fileName: String(sourceName),
-                    snippet: snippet,
-                };
-            });
-        }
-
-        const dedup = new Set();
-        return items
-            .filter(function (item) {
-                const key = item.fileName + '|' + item.snippet;
-                if (dedup.has(key)) return false;
-                dedup.add(key);
-                return true;
-            })
-            .slice(0, 8);
-    }
-
-    function extractAnswer(queryData) {
-        const results = queryData && Array.isArray(queryData.results) ? queryData.results : [];
-        const text = results[0] && results[0].text ? String(results[0].text).trim() : '';
-        return text || '';
-    }
-
     async function askQuestion() {
         if (state.pending) return;
         if (!state.activeDatabase) {
@@ -264,33 +197,27 @@
         renderMessages();
         setPending(true);
 
-        const prompt = buildQueryPrompt(question);
-        const queryPayload = {
-            database: state.activeDatabase,
-            query: prompt,
-            n_results: 5,
-        };
-        const contextPayload = {
+        const payload = {
             database: state.activeDatabase,
             query: question,
             n_results: 5,
+            history: state.turns.slice(-state.maxTurns),
         };
 
         try {
-            const queryPromise = WorkbenchAPI.postJson(
-                WorkbenchAPI.BASE_URLS.RAG_API + '/query',
-                queryPayload
+            const data = await WorkbenchAPI.postJson(
+                WorkbenchAPI.BASE_URLS.RAG_API + '/kb/chat',
+                payload
             );
-            const contextPromise = WorkbenchAPI.postJson(
-                WorkbenchAPI.BASE_URLS.RAG_API + '/context',
-                contextPayload
-            ).catch(function () { return {}; });
-
-            const pair = await Promise.all([queryPromise, contextPromise]);
-            const queryData = pair[0] || {};
-            const contextData = pair[1] || {};
-            const answer = extractAnswer(queryData);
-            const sources = buildSources(queryData, contextData);
+            const answer = String((data && data.answer) || '').trim();
+            const sources = Array.isArray(data && data.sources)
+                ? data.sources.map(function (item) {
+                    return {
+                        fileName: String((item && item.file_name) || '').trim() || '知识库资料',
+                        snippet: String((item && item.snippet) || '').trim() || '已命中该来源，未返回可展示片段。',
+                    };
+                })
+                : [];
 
             if (!answer && !sources.length) {
                 addMessage('assistant', '当前知识库未找到相关资料。', []);

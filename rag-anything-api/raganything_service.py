@@ -24,6 +24,24 @@ from markdown_splitter import split_markdown_text, write_markdown_segments
 
 logger = logging.getLogger(__name__)
 
+ZH_GENERIC_TERMS = {
+    "如何",
+    "怎么",
+    "怎样",
+    "哪些",
+    "什么",
+    "为何",
+    "为什么",
+    "是否",
+    "可以",
+    "需要",
+    "时候",
+    "一下",
+    "一个",
+    "这个",
+    "那个",
+}
+
 
 def _normalize_base_url(base_url: str, suffix: str) -> str:
     text = str(base_url or "").rstrip("/")
@@ -67,12 +85,45 @@ def _query_terms(query: str) -> list[str]:
 
 def _score_text(text: str, terms: list[str]) -> int:
     haystack = str(text or "").lower()
-    score = 0
+    if not haystack or not terms:
+        return 0
+
+    raw_score = 0.0
+    matched_terms = 0
+    capped_total = 0.0
     for term in terms:
         count = haystack.count(term)
         if count:
-            score += count * max(1, len(term))
-    return score
+            matched_terms += 1
+            term_len = len(term)
+            is_zh = bool(re.fullmatch(r"[\u4e00-\u9fff]+", term))
+
+            if is_zh and term in ZH_GENERIC_TERMS:
+                weight = 0.25
+            elif term_len >= 6:
+                weight = 2.4
+            elif term_len >= 4:
+                weight = 1.9
+            elif term_len == 3:
+                weight = 1.5
+            else:
+                weight = 1.0
+
+            # 高频词在超长文档里会天然放大，做上限截断避免“长文噪声优势”。
+            capped_count = min(count, 10)
+            capped_total += capped_count
+            raw_score += capped_count * max(1, term_len) * weight
+
+    if raw_score <= 0:
+        return 0
+
+    coverage = matched_terms / max(1, len(terms))
+    length_penalty = 1.0 + (len(haystack) / 2800.0)
+    coverage_bonus = 0.55 + coverage
+    concentration_bonus = 1.0 + (capped_total / max(1.0, len(haystack) / 120.0))
+
+    final_score = raw_score * coverage_bonus * concentration_bonus / length_penalty
+    return int(final_score)
 
 
 def _trim_snippet(text: str, terms: list[str], max_chars: int) -> str:

@@ -106,6 +106,14 @@ class FakeRegistry:
                 return True
         return False
 
+    def delete_document(self, database_id, sha256):
+        docs = self.list_documents(database_id)
+        before = len(docs)
+        self._databases[database_id]["documents"] = [
+            doc for doc in docs if doc.get("sha256") != sha256
+        ]
+        return len(self._databases[database_id]["documents"]) < before
+
 
 class FakeService:
     def __init__(self):
@@ -323,6 +331,133 @@ class TestListDocuments:
         doc = response.json()["documents"][0]
         assert doc["status"] == "已导入"
         assert doc["error"] == ""
+
+    def test_startup_recovery_marks_unfinished_processing_as_error(self, tmp_path):
+        service = FakeService()
+        service.registry.register_database("doc-db")
+        service.registry.register_document(
+            "doc-db",
+            file_name="stuck.pdf",
+            file_path=str(tmp_path / "stuck.pdf"),
+            sha256="sha-stuck",
+            status="processing",
+        )
+
+        rag_api._recover_interrupted_processing_documents(service)
+
+        doc = service.registry.list_documents("doc-db")[0]
+        assert doc["status"] == "error"
+        assert "服务重启" in doc["error"]
+        assert doc["stage"] == "interrupted"
+
+
+class TestDeleteDocument:
+    def test_delete_document_cleans_lightrag_residue(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("doc-db")
+        upload_file = tmp_path / "files" / "doc-db" / "book.pdf"
+        upload_file.parent.mkdir(parents=True)
+        upload_file.write_bytes(b"pdf")
+        service.registry.register_document(
+            "doc-db",
+            file_name="book.pdf",
+            file_path=str(upload_file),
+            sha256="sha-book",
+            status="error",
+            error="interrupted",
+        )
+        status_dir = tmp_path / "doc-db" / "rag_storage"
+        status_dir.mkdir(parents=True)
+        (status_dir / "kv_store_doc_status.json").write_text(
+            json.dumps(
+                {
+                    "doc-book": {
+                        "status": "processing",
+                        "file_path": "book.pdf",
+                        "chunks_list": ["chunk-a", "chunk-b"],
+                    },
+                    "doc-other": {
+                        "status": "processed",
+                        "file_path": "other.pdf",
+                        "chunks_list": ["chunk-c"],
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        (status_dir / "kv_store_full_docs.json").write_text(
+            json.dumps(
+                {
+                    "doc-book": {"content": "stale", "file_path": "book.pdf"},
+                    "doc-other": {"content": "keep", "file_path": "other.pdf"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (status_dir / "kv_store_text_chunks.json").write_text(
+            json.dumps(
+                {
+                    "chunk-a": {"content": "stale a", "full_doc_id": "doc-book"},
+                    "chunk-b": {"content": "stale b", "full_doc_id": "doc-book"},
+                    "chunk-c": {"content": "keep", "full_doc_id": "doc-other"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        (status_dir / "vdb_chunks.json").write_text(
+            json.dumps(
+                {
+                    "embedding_dim": 1024,
+                    "data": [
+                        {"__id__": "chunk-a", "full_doc_id": "doc-book", "file_path": "book.pdf"},
+                        {"__id__": "chunk-c", "full_doc_id": "doc-other", "file_path": "other.pdf"},
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        (status_dir / "graph_chunk_entity_relation.graphml").write_text(
+            """<?xml version="1.0" encoding="utf-8"?>
+<graphml xmlns="http://graphml.graphdrawing.org/xmlns">
+  <graph edgedefault="undirected">
+    <node id="stale"><data key="source_id">chunk-a</data></node>
+    <node id="keep"><data key="source_id">chunk-c</data></node>
+    <edge id="e-stale" source="stale" target="keep"><data key="source_id">chunk-b</data></edge>
+  </graph>
+</graphml>
+""",
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+        output_dir = tmp_path / "output" / "doc-db"
+        stale_output = output_dir / "book_abcd1234"
+        keep_output = output_dir / "other_abcd1234"
+        stale_output.mkdir(parents=True)
+        keep_output.mkdir(parents=True)
+        (stale_output / "book.md").write_text("stale", encoding="utf-8")
+        (keep_output / "other.md").write_text("keep", encoding="utf-8")
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_OUTPUT_ROOT", tmp_path / "output")
+
+        response = client.delete("/db/doc-db/documents/sha-book")
+
+        assert response.status_code == 200
+        assert not upload_file.exists()
+        assert not stale_output.exists()
+        assert keep_output.exists()
+        assert service.registry.list_documents("doc-db") == []
+        doc_status = json.loads((status_dir / "kv_store_doc_status.json").read_text(encoding="utf-8"))
+        full_docs = json.loads((status_dir / "kv_store_full_docs.json").read_text(encoding="utf-8"))
+        text_chunks = json.loads((status_dir / "kv_store_text_chunks.json").read_text(encoding="utf-8"))
+        vdb_chunks = json.loads((status_dir / "vdb_chunks.json").read_text(encoding="utf-8"))
+        graphml = (status_dir / "graph_chunk_entity_relation.graphml").read_text(encoding="utf-8")
+        assert "doc-book" not in doc_status
+        assert "doc-book" not in full_docs
+        assert "chunk-a" not in text_chunks
+        assert "chunk-b" not in text_chunks
+        assert [item["__id__"] for item in vdb_chunks["data"]] == ["chunk-c"]
+        assert "chunk-a" not in graphml
+        assert "chunk-b" not in graphml
+        assert "chunk-c" in graphml
 
 
 class TestRetryDocument:
