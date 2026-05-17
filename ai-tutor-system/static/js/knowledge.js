@@ -600,14 +600,26 @@ async function deleteDocument(sha256) {
 function _renderFileRow(item, isUploading) {
     const fileName = escapeHtml(item.file_name || item.name || '-');
     const sha256 = isUploading ? '' : escapeHtml(item.sha256 || '');
-    const statusMap = { 'imported': '已导入', '已导入': '已导入', 'completed': '已完成', 'ready': '就绪', 'processing': '处理中', 'error': '失败' };
+    const statusMap = {
+        'imported': '已导入',
+        '已导入': '已导入',
+        'completed': '已完成',
+        'ready': '就绪',
+        'processing': '处理中',
+        'partial_success': '部分成功',
+        'error': '失败'
+    };
     const rawStatus = isUploading ? 'processing' : (item.status || '已导入');
     const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
-    const errorText = escapeHtml(item.error || '');
+    const progressText = item.segments_total
+        ? `分段: ${item.segments_done || 0}/${item.segments_total}, 失败: ${item.segments_failed || 0}`
+        : '';
+    const titleText = escapeHtml([progressText, item.error || ''].filter(Boolean).join(' | '));
     const source = isUploading ? '—' : escapeHtml(item.source || item.file_path || '-');
     const isDone = !isUploading && (rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported');
     const isError = !isUploading && rawStatus === 'error';
-    const statusClass = isDone ? 'status-success' : (isError ? 'status-error' : 'status-pending');
+    const isPartial = !isUploading && rawStatus === 'partial_success';
+    const statusClass = isDone ? 'status-success' : (isError ? 'status-error' : (isPartial ? 'status-partial' : 'status-pending'));
     const deleteBtn = isUploading ? '' : `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`;
     return `
     <div class="file-row">
@@ -615,7 +627,7 @@ function _renderFileRow(item, isUploading) {
             ${isUploading ? '⏳' : '📄'} ${fileName}
         </span>
         <span class="file-col-status">
-            <span class="status-text ${statusClass}" title="${errorText}">
+            <span class="status-text ${statusClass}" title="${titleText}">
                 ${statusText}
             </span>
         </span>

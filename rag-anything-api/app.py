@@ -197,6 +197,11 @@ class DatabaseUpdateRequest(BaseModel):
     status: Optional[str] = None
 
 
+class RetryDocumentRequest(BaseModel):
+    strategy: str = "markdown_segments"
+    max_chars: int = 12000
+
+
 def _database_payload(item: dict) -> dict:
     return {
         "id": item.get("id"),
@@ -523,6 +528,25 @@ async def list_documents(db_id: str):
         return {"status": "success", "database": db_id, "documents": documents}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+
+
+@app.post("/db/{db_id}/documents/{sha256}/retry")
+async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest):
+    service = _require_service()
+    docs = service.registry.list_documents(db_id)
+    doc = next((item for item in docs if item.get("sha256") == sha256), None)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="文档不存在")
+    if request.strategy != "markdown_segments":
+        raise HTTPException(status_code=400, detail="仅支持 markdown_segments")
+
+    return await asyncio.to_thread(
+        service.recover_from_mineru_markdown,
+        db_id,
+        Path(doc["file_path"]),
+        sha256,
+        request.max_chars,
+    )
 
 
 def _doc_status_path(db_id: str, service: Any) -> Path:

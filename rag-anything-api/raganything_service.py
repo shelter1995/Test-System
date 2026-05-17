@@ -20,6 +20,7 @@ from lightrag.llm.openai import openai_complete_if_cache, openai_embed
 from lightrag.utils import EmbeddingFunc
 
 from database_registry import DatabaseRegistry
+from markdown_splitter import split_markdown_text, write_markdown_segments
 
 logger = logging.getLogger(__name__)
 
@@ -662,6 +663,106 @@ class RAGAnythingService:
     def ingest_file_sync(self, database_id: str, file_path: str | Path, source: str | None = None) -> dict[str, Any]:
         """同步包装 ingest_file，供 asyncio.to_thread 后台调用。"""
         return asyncio.run(self.ingest_file(database_id, file_path, source))
+
+    def recover_from_mineru_markdown(
+        self,
+        database_id: str,
+        file_path: str | Path,
+        sha256: str,
+        max_chars: int = 12000,
+    ) -> dict[str, Any]:
+        source_path = Path(file_path)
+        output_dir = self._db_output_dir(database_id)
+        if not output_dir.exists():
+            raise FileNotFoundError(f"MinerU output directory not found: {output_dir}")
+
+        stem = source_path.stem
+        candidates = [
+            path for path in output_dir.iterdir()
+            if path.is_dir() and path.name.startswith(stem)
+        ]
+        if not candidates:
+            raise FileNotFoundError(f"MinerU output not found for: {source_path.name}")
+
+        sorted_candidates = sorted(candidates, key=lambda p: p.stat().st_mtime, reverse=True)
+        markdown_path: Path | None = None
+        for candidate in sorted_candidates:
+            direct = candidate / f"{stem}.md"
+            if direct.exists():
+                markdown_path = direct
+                break
+            nested_matches = list(candidate.rglob(f"{stem}.md"))
+            if nested_matches:
+                markdown_path = max(nested_matches, key=lambda p: p.stat().st_mtime)
+                break
+        if markdown_path is None:
+            raise FileNotFoundError(
+                f"MinerU markdown not found for: {source_path.name} under {output_dir}"
+            )
+
+        text = markdown_path.read_text(encoding="utf-8")
+        segments = split_markdown_text(text, max_chars=max_chars)
+        if not segments:
+            raise ValueError("MinerU markdown is empty")
+
+        segment_dir = self.storage_root / str(database_id).strip() / "segments" / str(sha256).strip()
+        segment_files = write_markdown_segments(segments, segment_dir, source_stem=stem)
+
+        done = 0
+        failed = 0
+        partial_errors: list[str] = []
+        total = len(segment_files)
+
+        self.registry.update_document_progress(
+            database_id,
+            sha256,
+            stage="graph_enrichment",
+            segments_total=total,
+            segments_done=done,
+            segments_failed=failed,
+            partial_errors=partial_errors,
+        )
+
+        for segment in segment_files:
+            try:
+                self.ingest_file_sync(database_id, segment, source=source_path.name)
+                # 分段文件是中间产物，不应作为独立文档出现在知识库清单中。
+                self.registry.delete_document(database_id, _sha256(segment))
+                done += 1
+            except Exception as exc:
+                failed += 1
+                partial_errors.append(str(exc))
+            self.registry.update_document_progress(
+                database_id,
+                sha256,
+                stage="graph_enrichment",
+                segments_total=total,
+                segments_done=done,
+                segments_failed=failed,
+                partial_errors=partial_errors,
+            )
+
+        if done == total:
+            status = "已导入"
+            error = ""
+        elif done > 0:
+            status = "partial_success"
+            error = f"{failed} segment failed"
+        else:
+            status = "error"
+            error = f"{failed} segment failed"
+
+        self.registry.update_document_status(database_id, sha256, status=status, error=error)
+        return {
+            "status": status,
+            "database": database_id,
+            "file": source_path.name,
+            "segments_total": total,
+            "segments_done": done,
+            "segments_failed": failed,
+            "partial_errors": partial_errors,
+            "error": error,
+        }
 
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:
         content = str(text or "").strip()

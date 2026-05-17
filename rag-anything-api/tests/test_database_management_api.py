@@ -8,6 +8,7 @@
 
 import io
 import json
+import asyncio
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -313,6 +314,68 @@ class TestListDocuments:
         doc = response.json()["documents"][0]
         assert doc["status"] == "已导入"
         assert doc["error"] == ""
+
+
+class TestRetryDocument:
+    def test_retry_document_uses_segment_strategy(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb")
+        service.registry.register_document(
+            "kb",
+            file_name="book.pdf",
+            file_path=str(tmp_path / "book.pdf"),
+            sha256="abc",
+            status="error",
+            error="timeout",
+        )
+        calls = []
+
+        def recover(database_id, file_path, sha256, max_chars=12000):
+            calls.append((database_id, Path(file_path).name, sha256))
+            service.registry.update_document_status(
+                database_id, sha256, "partial_success", "1 segment failed"
+            )
+            return {"status": "partial_success"}
+
+        service.recover_from_mineru_markdown = recover
+
+        response = client.post(
+            "/db/kb/documents/abc/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "partial_success"
+        assert calls == [("kb", "book.pdf", "abc")]
+
+    def test_retry_document_runs_recover_off_event_loop(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb")
+        service.registry.register_document(
+            "kb",
+            file_name="book.pdf",
+            file_path=str(tmp_path / "book.pdf"),
+            sha256="abc",
+            status="error",
+            error="timeout",
+        )
+
+        def recover(database_id, file_path, sha256, max_chars=12000):
+            try:
+                asyncio.get_running_loop()
+            except RuntimeError:
+                return {"status": "partial_success"}
+            raise RuntimeError("called in event loop")
+
+        service.recover_from_mineru_markdown = recover
+
+        response = client.post(
+            "/db/kb/documents/abc/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "partial_success"
 
 
 # ── POST /ingest/upload ──────────────────────────────────────────────────

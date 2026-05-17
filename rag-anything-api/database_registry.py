@@ -202,6 +202,11 @@ class DatabaseRegistry:
                 "source": source or file_name,
                 "status": status,
                 "error": error,
+                "stage": "",
+                "segments_total": 0,
+                "segments_done": 0,
+                "segments_failed": 0,
+                "partial_errors": [],
                 "imported_at": self._now(),
             }
         )
@@ -230,6 +235,44 @@ class DatabaseRegistry:
                 if doc.get("sha256") == sha256:
                     doc["status"] = status
                     doc["error"] = error
+                    doc["updated_at"] = self._now()
+                    item["updated_at"] = self._now()
+                    self._save(data)
+                    return True
+            return False
+
+        raise KeyError(f"Database '{database_id}' not found")
+
+    def update_document_progress(
+        self,
+        database_id: str,
+        sha256: str,
+        **progress: Any,
+    ) -> bool:
+        database_id = str(database_id).strip()
+        sha256 = str(sha256).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+        if not sha256:
+            raise ValueError("sha256 must not be empty")
+
+        allowed = {
+            "stage",
+            "segments_total",
+            "segments_done",
+            "segments_failed",
+            "partial_errors",
+        }
+
+        data = self._load()
+        for item in data["databases"]:
+            if str(item.get("id", "")).strip() != database_id:
+                continue
+            for doc in item.get("documents", []):
+                if doc.get("sha256") == sha256:
+                    for key, value in progress.items():
+                        if key in allowed:
+                            doc[key] = value
                     doc["updated_at"] = self._now()
                     item["updated_at"] = self._now()
                     self._save(data)
