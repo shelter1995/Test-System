@@ -47,6 +47,7 @@ def test_register_document_accepts_processing_status_and_updates_status(tmp_path
     doc = registry.list_documents("商务彩铃")[0]
     assert doc["file_name"] == "介绍.pdf"
     assert doc["status"] == "processing"
+    assert doc["updated_at"]
 
     updated = registry.update_document_status(
         "商务彩铃",

@@ -12,10 +12,40 @@ function escapeHtml(str) {
 const knowledgeState = {
     databases: [],
     activeDatabase: '',
-    uploadEventSource: null,
-    uploadLogState: null,  // 切换知识库时保留上传日志
-    uploadingFiles: [],    // 正在上传处理中的文件名列表
+    uploadStates: {},      // 按知识库隔离上传日志、SSE 和处理中队列
+    documentRefreshTimer: null,
 };
+
+function getUploadState(dbId) {
+    const key = String(dbId || knowledgeState.activeDatabase || '').trim();
+    if (!key) {
+        return { uploadEventSource: null, uploadLogState: null, uploadingFiles: [] };
+    }
+    if (!knowledgeState.uploadStates[key]) {
+        knowledgeState.uploadStates[key] = {
+            uploadEventSource: null,
+            uploadLogState: null,
+            uploadingFiles: [],
+        };
+    }
+    return knowledgeState.uploadStates[key];
+}
+
+function clearDocumentRefreshTimer() {
+    if (knowledgeState.documentRefreshTimer) {
+        clearTimeout(knowledgeState.documentRefreshTimer);
+        knowledgeState.documentRefreshTimer = null;
+    }
+}
+
+function scheduleDocumentRefresh(dbId) {
+    clearDocumentRefreshTimer();
+    knowledgeState.documentRefreshTimer = setTimeout(() => {
+        if (dbId === knowledgeState.activeDatabase) {
+            loadKnowledgeDocuments();
+        }
+    }, 15000);
+}
 
 /**
  * 加载知识库列表
@@ -103,7 +133,7 @@ function renderKnowledgePage() {
     `;
 
     // 恢复之前的上传日志
-    if (knowledgeState.uploadLogState) {
+    if (getUploadState().uploadLogState) {
         restoreUploadLog();
     }
 }
@@ -159,7 +189,6 @@ function renderUploadSection() {
 function selectDatabase(dbId) {
     // 保存当前上传日志状态
     saveUploadLogState();
-    closeUploadSSE();
     knowledgeState.activeDatabase = dbId;
     renderKnowledgePage();
     loadKnowledgeDocuments();
@@ -198,7 +227,8 @@ async function editDatabase(dbId) {
  * 删除知识库
  */
 async function deleteDatabase(dbId) {
-    if (knowledgeState.uploadEventSource && knowledgeState.activeDatabase === dbId) {
+    const uploadState = getUploadState(dbId);
+    if (uploadState.uploadEventSource || uploadState.uploadingFiles.length) {
         alert('该知识库有文件正在上传处理中，请等待完成后再删除。');
         return;
     }
@@ -214,7 +244,7 @@ async function deleteDatabase(dbId) {
         if (knowledgeState.activeDatabase === dbId) {
             knowledgeState.activeDatabase = '';
         }
-        knowledgeState.uploadLogState = null;
+        delete knowledgeState.uploadStates[dbId];
         loadKnowledgeBases();
     } catch (err) {
         console.error('删除知识库失败:', err);
@@ -290,9 +320,10 @@ function updateFileSelection() {
  * 保存上传日志状态（切换知识库前调用）
  */
 function saveUploadLogState() {
+    const uploadState = getUploadState();
     const logEl = document.getElementById('uploadLog');
     if (logEl) {
-        knowledgeState.uploadLogState = {
+        uploadState.uploadLogState = {
             html: logEl.parentElement.innerHTML,
         };
     }
@@ -302,9 +333,10 @@ function saveUploadLogState() {
  * 恢复上传日志（切换知识库后调用）
  */
 function restoreUploadLog() {
+    const uploadState = getUploadState();
     const logContainer = document.getElementById('uploadLogContainer');
-    if (!logContainer || !knowledgeState.uploadLogState) return;
-    logContainer.innerHTML = knowledgeState.uploadLogState.html;
+    if (!logContainer || !uploadState.uploadLogState) return;
+    logContainer.innerHTML = uploadState.uploadLogState.html;
 
     // 更新关闭按钮事件
     const closeBtn = logContainer.querySelector('.btn-log-clear');
@@ -333,12 +365,13 @@ async function uploadKnowledgeFiles() {
     }
 
     const files = Array.from(fileInput.files);
+    const uploadDb = knowledgeState.activeDatabase;
     const formData = new FormData();
-    formData.append('database', knowledgeState.activeDatabase);
+    formData.append('database', uploadDb);
     files.forEach(f => formData.append('files', f));
 
     // 显示日志窗口
-    showUploadLog(files);
+    showUploadLog(files, uploadDb);
 
     // 禁用上传按钮
     const uploadBtn = document.getElementById('uploadBtn');
@@ -357,22 +390,23 @@ async function uploadKnowledgeFiles() {
         const totalFiles = files.length;
 
         // 连接 SSE 获取实时进度
-        connectUploadSSE(taskId, totalFiles);
+        connectUploadSSE(taskId, totalFiles, uploadDb);
     } catch (err) {
         console.error('上传文件失败:', err);
-        appendLogEntry({ type: 'error', file: '请求失败', message: err.message, error: err.message });
-        finishUpload(false);
+        appendLogEntry({ type: 'error', file: '请求失败', message: err.message, error: err.message }, uploadDb);
+        finishUpload(false, uploadDb);
     }
 }
 
 /**
  * 显示上传日志窗口
  */
-function showUploadLog(files) {
+function showUploadLog(files, dbId) {
+    const uploadState = getUploadState(dbId);
     const logContainer = document.getElementById('uploadLogContainer');
-    if (!logContainer) return;
+    const isActiveDb = dbId === knowledgeState.activeDatabase;
 
-    logContainer.innerHTML = `
+    const html = `
         <div class="upload-log" id="uploadLog">
             <div class="upload-log-header">
                 <span>上传日志</span>
@@ -386,27 +420,36 @@ function showUploadLog(files) {
             </div>
         </div>
     `;
+    uploadState.uploadLogState = { html };
+
+    if (logContainer && isActiveDb) {
+        logContainer.innerHTML = html;
+    }
 
     // 记录正在上传的文件名
-    knowledgeState.uploadingFiles = Array.from(files).map(f => f.name);
+    uploadState.uploadingFiles = Array.from(files).map(f => f.name);
 
     // 刷新文件列表，让"处理中"状态显示出来
-    refreshFileListWithProgress();
+    if (isActiveDb) {
+        refreshFileListWithProgress();
 
-    // 确保日志容器可见
-    document.getElementById('uploadLog').style.display = 'block';
-    updateLogToggleBadge();
+        // 确保日志容器可见
+        const logEl = document.getElementById('uploadLog');
+        if (logEl) logEl.style.display = 'block';
+        updateLogToggleBadge();
+    }
 }
 
 /**
  * 连接 SSE 进度推送
  */
-function connectUploadSSE(taskId, total) {
-    closeUploadSSE();
+function connectUploadSSE(taskId, total, dbId) {
+    closeUploadSSE(dbId);
 
     const url = `${WorkbenchAPI.BASE_URLS.RAG_API}/ingest/progress/${taskId}`;
     const es = new EventSource(url);
-    knowledgeState.uploadEventSource = es;
+    const uploadState = getUploadState(dbId);
+    uploadState.uploadEventSource = es;
 
     let completed = 0;
     let lastEventKey = '';
@@ -419,7 +462,7 @@ function connectUploadSSE(taskId, total) {
             if (data.type === 'finished') {
                 finished = true;
                 es.close();
-                finishUpload(true);
+                finishUpload(true, dbId);
                 return;
             }
 
@@ -428,18 +471,24 @@ function connectUploadSSE(taskId, total) {
             if (eventKey === lastEventKey) return;
             lastEventKey = eventKey;
 
-            appendLogEntry(data);
+            appendLogEntry(data, dbId);
+
+            if (data.type === 'parsing' && dbId === knowledgeState.activeDatabase) {
+                loadKnowledgeDocuments();
+            }
 
             if (data.type === 'done' || data.type === 'error') {
                 // 从处理中列表移除，刷新文件列表
-                knowledgeState.uploadingFiles = knowledgeState.uploadingFiles.filter(f => f !== data.file);
-                loadKnowledgeDocuments();
+                uploadState.uploadingFiles = uploadState.uploadingFiles.filter(f => f !== data.file);
+                if (dbId === knowledgeState.activeDatabase) {
+                    loadKnowledgeDocuments();
+                }
                 if (data.type === 'done') completed++;
                 else if (data.type === 'error') completed++;
             }
 
             const summaryEl = document.getElementById('uploadLogSummary');
-            if (summaryEl) {
+            if (summaryEl && dbId === knowledgeState.activeDatabase) {
                 summaryEl.textContent = `${completed} / ${total} 完成`;
             }
         } catch (e) {
@@ -451,7 +500,7 @@ function connectUploadSSE(taskId, total) {
         if (!finished) {
             finished = true;
             es.close();
-            finishUpload(true);
+            finishUpload(true, dbId);
         }
     };
 }
@@ -459,20 +508,19 @@ function connectUploadSSE(taskId, total) {
 /**
  * 关闭 SSE 连接
  */
-function closeUploadSSE() {
-    if (knowledgeState.uploadEventSource) {
-        knowledgeState.uploadEventSource.close();
-        knowledgeState.uploadEventSource = null;
+function closeUploadSSE(dbId) {
+    const uploadState = getUploadState(dbId);
+    if (uploadState.uploadEventSource) {
+        uploadState.uploadEventSource.close();
+        uploadState.uploadEventSource = null;
     }
 }
 
 /**
  * 追加日志条目
  */
-function appendLogEntry(data) {
-    const logBody = document.getElementById('uploadLogBody');
-    if (!logBody) return;
-
+function appendLogEntry(data, dbId) {
+    const uploadState = getUploadState(dbId);
     let icon, cssClass;
     switch (data.type) {
         case 'parsing':
@@ -500,29 +548,44 @@ function appendLogEntry(data) {
         <span class="log-file">${escapeHtml(data.file || '')}</span>
         <span class="log-msg">${escapeHtml(data.error || data.message || '')}</span>
     `;
-    logBody.appendChild(entry);
 
-    // 自动滚动到底部
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = (uploadState.uploadLogState && uploadState.uploadLogState.html) || '';
+    const savedBody = wrapper.querySelector('#uploadLogBody');
+    if (savedBody) {
+        savedBody.appendChild(entry.cloneNode(true));
+        uploadState.uploadLogState = { html: wrapper.innerHTML };
+    }
+
+    if (dbId !== knowledgeState.activeDatabase) return;
+    const logBody = document.getElementById('uploadLogBody');
+    if (!logBody) return;
+    logBody.appendChild(entry);
     logBody.scrollTop = logBody.scrollHeight;
 }
 
 /**
  * 上传结束处理
  */
-function finishUpload(success) {
-    const uploadBtn = document.getElementById('uploadBtn');
+function finishUpload(success, dbId) {
+    const uploadState = getUploadState(dbId);
+    const isActiveDb = dbId === knowledgeState.activeDatabase;
+    const uploadBtn = isActiveDb ? document.getElementById('uploadBtn') : null;
     if (uploadBtn) uploadBtn.disabled = false;
 
     // 更新日志汇总
-    const summaryEl = document.getElementById('uploadLogSummary');
+    const summaryEl = isActiveDb ? document.getElementById('uploadLogSummary') : null;
     if (summaryEl && success) {
         summaryEl.textContent = '全部完成';
     }
 
     // 清理处理中状态并刷新
-    knowledgeState.uploadingFiles = [];
-    loadKnowledgeDocuments();
-    updateOverviewCounts();
+    uploadState.uploadingFiles = [];
+    uploadState.uploadEventSource = null;
+    if (isActiveDb) {
+        loadKnowledgeDocuments();
+        updateOverviewCounts();
+    }
 }
 
 /**
@@ -530,8 +593,9 @@ function finishUpload(success) {
  */
 function clearUploadLog() {
     closeUploadSSE();
-    knowledgeState.uploadLogState = null;
-    knowledgeState.uploadingFiles = [];
+    const uploadState = getUploadState();
+    uploadState.uploadLogState = null;
+    uploadState.uploadingFiles = [];
     const logContainer = document.getElementById('uploadLogContainer');
     if (logContainer) {
         logContainer.innerHTML = '';
@@ -609,18 +673,44 @@ function _renderFileRow(item, isUploading) {
         'partial_success': '部分成功',
         'error': '失败'
     };
+    const stageMap = {
+        'queued': '排队中',
+        'uploaded': '已上传',
+        'rag_ingest': '解析/入库中',
+        'graph_enrichment': '图谱处理中',
+        'done': '已完成',
+        'error': '失败'
+    };
     const rawStatus = isUploading ? 'processing' : (item.status || '已导入');
-    const statusText = escapeHtml(statusMap[rawStatus] || rawStatus);
+    const rawStage = isUploading ? 'queued' : (item.stage || '');
+    const updatedAt = item.updated_at || item.imported_at || '';
+    const updatedAtMs = updatedAt ? Date.parse(updatedAt) : NaN;
+    const isStale = !isUploading
+        && rawStatus === 'processing'
+        && Number.isFinite(updatedAtMs)
+        && Date.now() - updatedAtMs > 10 * 60 * 1000;
+    const statusText = escapeHtml(isStale
+        ? '疑似卡住'
+        : (rawStatus === 'processing' && rawStage
+            ? (stageMap[rawStage] || rawStage)
+            : (statusMap[rawStatus] || rawStatus)));
     const progressText = item.segments_total
         ? `分段: ${item.segments_done || 0}/${item.segments_total}, 失败: ${item.segments_failed || 0}`
         : '';
-    const titleText = escapeHtml([progressText, item.error || ''].filter(Boolean).join(' | '));
+    const stageText = rawStage ? `阶段: ${stageMap[rawStage] || rawStage}` : '';
+    const updatedText = updatedAt ? `最后更新: ${updatedAt}` : '';
+    const titleText = escapeHtml([stageText, updatedText, progressText, item.error || ''].filter(Boolean).join(' | '));
     const source = isUploading ? '—' : escapeHtml(item.source || item.file_path || '-');
     const isDone = !isUploading && (rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported');
     const isError = !isUploading && rawStatus === 'error';
     const isPartial = !isUploading && rawStatus === 'partial_success';
-    const statusClass = isDone ? 'status-success' : (isError ? 'status-error' : (isPartial ? 'status-partial' : 'status-pending'));
-    const deleteBtn = isUploading ? '' : `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`;
+    const statusClass = isDone ? 'status-success'
+        : (isError ? 'status-error'
+            : (isPartial ? 'status-partial'
+                : (isStale ? 'status-stale' : 'status-pending')));
+    const deleteBtn = sha256
+        ? `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`
+        : '';
     return `
     <div class="file-row">
         <span class="file-col-name" title="${fileName}">
@@ -641,11 +731,12 @@ async function loadKnowledgeDocuments() {
     if (!fileListContainer) return;
 
     if (!knowledgeState.activeDatabase) {
+        clearDocumentRefreshTimer();
         fileListContainer.innerHTML = '<div class="empty-state"><p>请先选择一个知识库</p></div>';
         return;
     }
 
-    const uploading = knowledgeState.uploadingFiles.filter(f => f);
+    const uploading = getUploadState().uploadingFiles.filter(f => f);
 
     try {
         const data = await WorkbenchAPI.requestJson(
@@ -653,13 +744,19 @@ async function loadKnowledgeDocuments() {
         );
         const documents = Array.isArray(data) ? data : (data.documents || []);
 
-        // 过滤掉正在上传的（避免已注册的与 processing 行重复）
-        const uploadingSet = new Set(uploading);
-        const filteredDocs = documents.filter(d => !uploadingSet.has(d.file_name || d.name || ''));
+        // 后端已有记录时优先显示真实行，保留 sha256，失败/处理中也能删除。
+        const documentNames = new Set(documents.map(d => d.file_name || d.name || '').filter(Boolean));
+        const pendingUploads = uploading.filter(fn => !documentNames.has(fn));
+        const hasProcessingDocs = documents.some(d => d.status === 'processing');
+        if (hasProcessingDocs || pendingUploads.length) {
+            scheduleDocumentRefresh(knowledgeState.activeDatabase);
+        } else {
+            clearDocumentRefreshTimer();
+        }
 
         // 构建行：先显示处理中的，再显示已导入的
-        const processingRows = uploading.map(fn => _renderFileRow({ file_name: fn }, true));
-        const docRows = filteredDocs.map(d => _renderFileRow(d, false));
+        const processingRows = pendingUploads.map(fn => _renderFileRow({ file_name: fn }, true));
+        const docRows = documents.map(d => _renderFileRow(d, false));
         const allRows = [...processingRows, ...docRows];
 
         if (allRows.length === 0) {

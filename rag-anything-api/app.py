@@ -774,6 +774,7 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
             source=filename,
             status="processing",
         )
+        service.registry.update_document_progress(db_id, sha256, stage="uploaded")
         saved_files.append((filename, str(target_path), sha256))
 
     task_id = progress_tracker.create_task(len(saved_files))
@@ -792,12 +793,15 @@ async def _process_uploaded_files(db_id: str, files: list, task_id: str):
     service = _require_service()
     for filename, filepath, sha256 in files:
         try:
+            service.registry.update_document_progress(db_id, sha256, stage="rag_ingest")
             progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
             await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
+            service.registry.update_document_progress(db_id, sha256, stage="done")
             progress_tracker.emit(task_id, "done", filename, f"{filename} 导入完成")
         except Exception as e:
             logger.error(f"文件导入失败 [{filename}]: {e}")
             service.registry.update_document_status(db_id, sha256, status="error", error=str(e))
+            service.registry.update_document_progress(db_id, sha256, stage="error")
             progress_tracker.emit(task_id, "error", filename, f"{filename} 导入失败", error=str(e))
     progress_tracker.finalize(task_id)
 

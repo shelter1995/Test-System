@@ -85,8 +85,17 @@ class FakeRegistry:
                 "source": source or file_name,
                 "status": status,
                 "error": error,
+                "stage": "",
             }
         )
+
+    def update_document_progress(self, database_id, sha256, **progress):
+        docs = self.list_documents(database_id)
+        for doc in docs:
+            if doc.get("sha256") == sha256:
+                doc.update(progress)
+                return True
+        return False
 
     def update_document_status(self, database_id, sha256, status, error=""):
         docs = self.list_documents(database_id)
@@ -475,6 +484,32 @@ class TestIngestUpload:
         assert docs[0]["file_name"] == "bad.txt"
         assert docs[0]["status"] == "error"
         assert "ingest boom" in docs[0]["error"]
+
+    def test_background_upload_records_processing_stage(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("stage-db")
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        observed_stage = {}
+
+        def _ingest(*args, **kwargs):
+            docs = service.registry.list_documents("stage-db")
+            observed_stage["stage"] = docs[0].get("stage")
+            return {"status": "success"}
+
+        service.ingest_file_sync = _ingest
+
+        response = client.post(
+            "/ingest/upload",
+            data={"database": "stage-db"},
+            files={"files": ("slow.pdf", io.BytesIO(b"data"), "application/pdf")},
+        )
+        assert response.status_code == 200
+
+        import time
+        time.sleep(1.5)
+
+        assert observed_stage["stage"] == "rag_ingest"
 
 
 # ── /db/list includes description and documents_count ────────────────────

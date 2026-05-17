@@ -2287,6 +2287,11 @@ body.has-alert #tutorApp .page {
     color: #084298;
 }
 
+.status-text.status-stale {
+    background: #fde2e1;
+    color: #9f1239;
+}
+
 /* 空状态 */
 .empty-state {
     display: flex;
@@ -2422,6 +2427,290 @@ body.has-alert #tutorApp .page {
     background: #fee2e2;
     border-color: #fca5a5;
     color: #dc2626;
+}
+
+/* ==================== 知识库问答页面 ==================== */
+.kbchat-page {
+    display: grid;
+    grid-template-columns: 1.65fr 1fr;
+    gap: 1rem;
+    min-height: calc(100vh - var(--topbar-height) - 3rem);
+}
+
+.kbchat-card {
+    background: var(--bg-secondary);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid #e8edf3;
+    min-width: 0;
+}
+
+.kbchat-main {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.kbchat-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.kbchat-toolbar-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-right: auto;
+}
+
+.kbchat-db-select {
+    min-width: 240px;
+    max-width: 360px;
+    width: 100%;
+}
+
+.kbchat-btn {
+    border: 1px solid var(--border-color);
+    background: #fff;
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 0.45rem 0.8rem;
+    font-size: 0.84rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.kbchat-btn:hover {
+    background: #f8fafc;
+    border-color: #b8c4d3;
+}
+
+.kbchat-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.kbchat-messages {
+    flex: 1;
+    min-height: 280px;
+    max-height: calc(100vh - 300px);
+    overflow-y: auto;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    background: linear-gradient(180deg, #fbfdff 0%, #f6f9fc 100%);
+}
+
+.kbchat-empty {
+    margin: auto;
+    text-align: center;
+    color: var(--text-secondary);
+}
+
+.kbchat-empty p {
+    margin-top: 0.35rem;
+    font-size: 0.9rem;
+}
+
+.kbchat-msg {
+    max-width: 88%;
+    border-radius: 10px;
+    padding: 0.7rem 0.85rem;
+    font-size: 0.92rem;
+    line-height: 1.55;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.kbchat-msg.user {
+    align-self: flex-end;
+    background: #dbeafe;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+}
+
+.kbchat-msg.assistant {
+    align-self: flex-start;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    color: var(--text-primary);
+}
+
+.kbchat-msg.system {
+    align-self: center;
+    max-width: 100%;
+    background: #f1f5f9;
+    border: 1px dashed #cbd5e1;
+    color: #334155;
+    font-size: 0.85rem;
+}
+
+.kbchat-msg-meta {
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.kbchat-input-wrap {
+    border-top: 1px solid var(--border-color);
+    padding: 0.85rem 1rem;
+}
+
+.kbchat-input {
+    width: 100%;
+    min-height: 84px;
+    max-height: 180px;
+    resize: vertical;
+    border: 1.5px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 0.65rem 0.75rem;
+    font-family: inherit;
+    font-size: 0.92rem;
+    line-height: 1.5;
+    background: #fff;
+}
+
+.kbchat-input:focus {
+    outline: none;
+    border-color: #7aa9d8;
+    box-shadow: 0 0 0 3px rgba(122, 169, 216, 0.16);
+}
+
+.kbchat-input-row {
+    margin-top: 0.6rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.kbchat-hint {
+    color: var(--text-light);
+    font-size: 0.78rem;
+}
+
+.kbchat-send {
+    margin-left: auto;
+    padding: 0.5rem 1.1rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--secondary-color);
+    color: #fff;
+    font-size: 0.86rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.kbchat-send:hover {
+    background: #2b84c6;
+}
+
+.kbchat-send:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.kbchat-sources {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.kbchat-sources-header {
+    padding: 0.95rem 1rem;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.kbchat-sources-title {
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.kbchat-sources-subtitle {
+    font-size: 0.78rem;
+    color: var(--text-light);
+}
+
+.kbchat-sources-list {
+    padding: 0.75rem;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+}
+
+.kbchat-source-item {
+    border: 1px solid #e2e8f0;
+    border-radius: var(--radius-md);
+    background: #fff;
+    padding: 0.65rem 0.7rem;
+}
+
+.kbchat-source-file {
+    font-size: 0.83rem;
+    font-weight: 600;
+    color: #0f4c81;
+    margin-bottom: 0.35rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.kbchat-source-snippet {
+    font-size: 0.84rem;
+    color: #334155;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.kbchat-sources-empty {
+    margin: auto;
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    padding: 2rem 1rem;
+}
+
+@media (max-width: 1200px) {
+    .kbchat-page {
+        grid-template-columns: 1fr;
+        min-height: auto;
+    }
+
+    .kbchat-messages {
+        max-height: 430px;
+    }
+
+    .kbchat-sources-list {
+        max-height: 300px;
+    }
+}
+
+@media (max-width: 700px) {
+    .kbchat-toolbar {
+        flex-wrap: wrap;
+    }
+
+    .kbchat-toolbar-title {
+        width: 100%;
+        margin-right: 0;
+    }
+
+    .kbchat-db-select {
+        min-width: 0;
+        max-width: none;
+        flex: 1;
+    }
 }
 
 /* ==================== 内容生成 — 标签页布局 ==================== */

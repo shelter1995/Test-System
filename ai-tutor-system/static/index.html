@@ -23,6 +23,10 @@
                     <span class="nav-icon">📚</span>
                     <span class="nav-label">知识库</span>
                 </a>
+                <a data-nav="knowledge-chat" class="nav-item">
+                    <span class="nav-icon">💬</span>
+                    <span class="nav-label">知识库问答</span>
+                </a>
                 <a data-nav="generation" class="nav-item">
                     <span class="nav-icon">✏️</span>
                     <span class="nav-label">内容生成</span>
@@ -57,6 +61,11 @@
                             <p><span id="knowledgeCount">0</span> 个知识库 · <span id="fileCount">0</span> 个文件</p>
                             <p>管理产品文档、话术技巧、异议处理等知识内容</p>
                         </div>
+                        <div class="overview-card" data-nav="knowledge-chat" style="cursor:pointer">
+                            <div class="overview-card-icon">💬</div>
+                            <h3>知识库问答</h3>
+                            <p>业务人员通过对话快速查询资料并核对来源依据</p>
+                        </div>
                         <div class="overview-card" data-nav="generation" style="cursor:pointer">
                             <div class="overview-card-icon">✏️</div>
                             <h3>内容生成</h3>
@@ -79,7 +88,16 @@
                     </div>
                 </section>
 
-                <!-- 3. 内容生成 -->
+                <!-- 3. 知识库问答 -->
+                <section data-page="knowledge-chat" class="page-section">
+                    <div id="knowledgeChatApp" class="section-placeholder">
+                        <div class="placeholder-icon">💬</div>
+                        <h2>知识库问答</h2>
+                        <p>知识库问答功能开发中，敬请期待...</p>
+                    </div>
+                </section>
+
+                <!-- 4. 内容生成 -->
                 <section data-page="generation" class="page-section">
                     <div id="generationApp" class="section-placeholder">
                         <div class="placeholder-icon">✏️</div>
@@ -88,7 +106,7 @@
                     </div>
                 </section>
 
-                <!-- 4. 陪练系统（保留全部原有 tutor 子页面） -->
+                <!-- 5. 陪练系统（保留全部原有 tutor 子页面） -->
                 <section data-page="tutor" class="page-section">
                     <div id="tutorApp">
 
@@ -415,6 +433,9 @@
 
     <!-- 知识库管理模块 -->
     <script src="/static/js/knowledge.js"></script>
+
+    <!-- 知识库问答模块 -->
+    <script src="/static/js/knowledge-chat.js"></script>
 
     <!-- 内容生成模块 -->
     <script src="/static/js/generation.js"></script>

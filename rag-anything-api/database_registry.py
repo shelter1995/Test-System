@@ -194,6 +194,7 @@ class DatabaseRegistry:
 
         documents = database.setdefault("documents", [])
         documents[:] = [doc for doc in documents if doc.get("sha256") != sha256]
+        now = self._now()
         documents.append(
             {
                 "file_name": file_name,
@@ -207,7 +208,8 @@ class DatabaseRegistry:
                 "segments_done": 0,
                 "segments_failed": 0,
                 "partial_errors": [],
-                "imported_at": self._now(),
+                "imported_at": now,
+                "updated_at": now,
             }
         )
         database["updated_at"] = self._now()
