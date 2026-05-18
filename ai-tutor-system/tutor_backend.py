@@ -287,6 +287,20 @@ async def chat(chat_message: ChatMessage):
             product = session_data.get("product", "")
             database = session_data.get("database") or rag_service.resolve_database(product)
 
+            existing = next(
+                (
+                    item for item in session_data.get("evaluations", [])
+                    if int(item.get("round", session_data["round"])) == int(session_data["round"])
+                ),
+                None,
+            )
+            if existing:
+                return {
+                    "is_pause_response": True,
+                    "evaluation": existing,
+                    "ai_response": None,
+                }
+
             evaluation = await asyncio.to_thread(
                 ai_service.evaluate,
                 last_user["content"],
@@ -296,6 +310,9 @@ async def chat(chat_message: ChatMessage):
                 "",
                 database=database,
             )
+            evaluation["round"] = session_data["round"]
+            session_data.setdefault("evaluations", []).append(evaluation)
+            SessionManager.save(session_id, session_data)
             return {
                 "is_pause_response": True,
                 "evaluation": evaluation,

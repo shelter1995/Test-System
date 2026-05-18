@@ -117,13 +117,7 @@ class StreamingPipeline:
             logger.error("AI streaming interrupted: %s", e)
             yield SSEEvent.error("AI generation interrupted, please retry", "ai_stream_error")
 
-        # ——— Stage 3: Release input (non-blocking for evaluation) ———
-        yield SSEEvent.done(
-            round_num,
-            extra={"knowledge_count": total_kg},
-        )
-
-        # Save messages to session
+        # ——— Stage 3: Save messages and release input ———
         session_data["round"] = round_num
         session_data["messages"].append(
             {
@@ -140,23 +134,10 @@ class StreamingPipeline:
             }
         )
 
-        # ——— Stage 4: Async Evaluation (does not block done) ———
-        try:
-            evaluation = await asyncio.to_thread(
-                self.ai.evaluate,
-                user_message=user_message,
-                ai_response=full_response,
-                round_num=round_num,
-                scenario=scenario,
-                knowledge_context=knowledge_context,
-                database=database,
-            )
-            session_data["evaluations"].append(evaluation)
-            yield SSEEvent.evaluation(evaluation)
-        except asyncio.CancelledError:
-            logger.info("Evaluation cancelled (user started next round), round=%d", round_num)
-        except Exception as e:
-            logger.error("Evaluation failed: %s", e)
+        yield SSEEvent.done(
+            round_num,
+            extra={"knowledge_count": total_kg},
+        )
 
 
 def _build_knowledge_context(

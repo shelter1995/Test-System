@@ -465,10 +465,13 @@ async function handleSend() {
                             elements.roundIndicator.textContent = `第 ${payload.round} 轮`;
                             state.isProcessing = false;
                             // 独立发起评估请求，不受 SSE 中断影响
-                            requestEvaluation(state.currentSession);
+                            if (!state.pendingEval) {
+                                requestEvaluation(state.currentSession);
+                            }
                             break;
 
                         case 'evaluation':
+                            // 后端流式管道不再推送评分；保留分支兼容旧服务。
                             showEvaluationCard(payload, state.currentRound, state.lastKnowledgeCount);
                             break;
 
@@ -508,6 +511,8 @@ async function handleSend() {
  * 独立评估请求 — 不受 SSE AbortController 影响
  */
 async function requestEvaluation(sessionId) {
+    if (state.pendingEval) return;
+    state.pendingEval = new AbortController();
     try {
         const response = await fetch(`${CONFIG.TUTOR_API}/chat`, {
             method: 'POST',
@@ -516,7 +521,8 @@ async function requestEvaluation(sessionId) {
                 session_id: sessionId,
                 message: '',
                 is_pause: true
-            })
+            }),
+            signal: state.pendingEval.signal
         });
         if (!response.ok) return;
         const data = await response.json();
@@ -524,7 +530,13 @@ async function requestEvaluation(sessionId) {
             showEvaluationCard(data.evaluation, state.currentRound, state.lastKnowledgeCount);
         }
     } catch (error) {
-        console.warn('独立评估请求失败:', error.message);
+        if (error.name === 'AbortError') {
+            console.log('评估请求已取消');
+        } else {
+            console.warn('独立评估请求失败:', error.message);
+        }
+    } finally {
+        state.pendingEval = null;
     }
 }
 
