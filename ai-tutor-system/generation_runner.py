@@ -8,6 +8,7 @@
 
 import json
 import logging
+import os
 import re
 import threading
 import uuid
@@ -24,6 +25,9 @@ OUTPUT_DIR = ROOT / "generation_output"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ARTIFACT_DIRS = ["generation_output"]
+
+MAX_RUNNING_JOBS = int(os.getenv("GENERATION_MAX_RUNNING_JOBS", "1"))
+
 
 # ==================== 客户端 ====================
 
@@ -85,6 +89,18 @@ def _safe_filename(text: str) -> str:
     return safe[:60] or "untitled"
 
 
+def _running_jobs_count() -> int:
+    count = 0
+    for path in JOBS_DIR.glob("*.json"):
+        try:
+            job = json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            continue
+        if job.get("status") == "running":
+            count += 1
+    return count
+
+
 # ==================== RAG 检索 ====================
 
 def _search_for_solution(database: str) -> dict:
@@ -116,6 +132,14 @@ def _search_for_training(database: str, customer_group: str = "") -> dict:
     ]
     logger.info(f"RAG 检索（培训）：{len(queries)} 路 → {database}")
     return rag.multi_query_search(queries, database, n_results=5, use_enhanced=True)
+
+
+def _validate_markdown_artifact(content: str, artifact_name: str) -> None:
+    text = str(content or "").strip()
+    if len(text) < 80:
+        raise RuntimeError(f"{artifact_name} 生成内容过短")
+    if "#" not in text:
+        raise RuntimeError(f"{artifact_name} 缺少 Markdown 标题")
 
 
 # ==================== RAG 格式化 ====================
@@ -529,6 +553,7 @@ def _generate_solution(request: dict, job_id: str = None) -> dict:
         _update_job_stage(job_id, "generating")
 
     content = _call_minimax(prompt, max_tokens=8000, temperature=0.4)
+    _validate_markdown_artifact(content, "解决方案")
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{_safe_filename(db_name)}_{_safe_filename(client_unit)}_解决方案_{ts}.md"
@@ -547,18 +572,21 @@ def _generate_training(request: dict, job_id: str = None) -> dict:
         _update_job_stage(job_id, "generating_manual")
     manual_prompt = _build_manual_prompt(request, rag_results)
     manual_content = _call_minimax(manual_prompt, max_tokens=8000, timeout=600, temperature=0.5)
+    _validate_markdown_artifact(manual_content, "培训讲义")
 
     # 第2次：生成测试题（传入讲义摘要做上下文）
     if job_id:
         _update_job_stage(job_id, "generating_exam")
     exam_prompt = _build_exam_prompt(request, rag_results, manual_content)
     exam_content = _call_minimax(exam_prompt, max_tokens=6000, timeout=600, temperature=0.5)
+    _validate_markdown_artifact(exam_content, "测试题")
 
     # 第3次：生成 README
     if job_id:
         _update_job_stage(job_id, "generating_readme")
     readme_prompt = _build_readme_prompt(request)
     readme_content = _call_minimax(readme_prompt, max_tokens=4000, timeout=300, temperature=0.5)
+    _validate_markdown_artifact(readme_content, "使用说明")
 
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_db = _safe_filename(db_name)
@@ -615,11 +643,16 @@ def _run_job(job_id: str) -> None:
         job["status"] = "failed"
         job["stage"] = "error"
         job["error"] = str(e)
+        job["error_type"] = e.__class__.__name__
+        job["retryable"] = isinstance(e, (RuntimeError, TimeoutError, ConnectionError))
         job["finished_at"] = _now()
         _save_job(job)
 
 
 def create_job(request: dict) -> str:
+    if _running_jobs_count() >= MAX_RUNNING_JOBS:
+        raise RuntimeError(f"已有 {MAX_RUNNING_JOBS} 个生成作业正在运行，请稍后再试")
+
     job_id = uuid.uuid4().hex[:12]
     job = {"job_id": job_id, "status": "running", "stage": "init",
            "created_at": _now(), "request": request, "result": None, "error": None}

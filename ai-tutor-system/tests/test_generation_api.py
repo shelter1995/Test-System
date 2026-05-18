@@ -111,6 +111,12 @@ class TestCreateJob:
         resp = client.post("/generation/jobs", json={"type": "readme", "database": "test_db"})
         assert resp.status_code == 400
 
+    @patch("generation_runner.create_job", side_effect=RuntimeError("已有 1 个生成作业正在运行，请稍后再试"))
+    def test_returns_409_when_running_limit_reached(self, mock_create):
+        resp = client.post("/generation/jobs", json={"type": "solution", "database": "kb"})
+        assert resp.status_code == 409
+        assert "正在运行" in resp.json()["detail"]
+
 
 # ==================== GET /generation/jobs/{job_id} ====================
 
