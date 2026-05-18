@@ -44,6 +44,10 @@ class FakeService:
             "total_found": 1,
         }
 
+    async def generate_answer(self, prompt):
+        assert "只能基于【知识库资料】回答" in prompt
+        return "商务彩铃基础版资费为 10 元/月/线。依据：资费说明中明确写明基础版价格。"
+
     async def query_context(self, database_id, query, mode="naive", max_chars=3000):
         return {
             "query": query,
@@ -112,3 +116,6 @@ def test_kb_chat_contract(monkeypatch):
     assert data["database"] == "商务彩铃"
     assert "answer" in data and isinstance(data["answer"], str)
     assert "sources" in data and isinstance(data["sources"], list)
+    assert "10 元/月/线" in data["answer"]
+    assert data["answer"] != data["sources"][0]["snippet"]
+    assert data["fallback"] in (None, "local_text")

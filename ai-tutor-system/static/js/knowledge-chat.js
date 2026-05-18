@@ -219,13 +219,12 @@
                 })
                 : [];
 
-            if (!answer && !sources.length) {
-                addMessage('assistant', '当前知识库未找到相关资料。', []);
-                state.latestSources = [];
-            } else {
-                addMessage('assistant', answer || '当前知识库未找到可用回答。', sources);
-                state.latestSources = sources;
-            }
+            var fallback = String((data && data.fallback) || '').trim();
+            var note = fallback
+                ? '\n\n（提示：本次使用本地文本兜底检索，答案可信度取决于召回片段，请核对来源。）'
+                : '';
+            addMessage('assistant', (answer || '当前知识库未找到相关资料。') + note, sources);
+            state.latestSources = sources;
 
             state.turns.push({
                 q: question,

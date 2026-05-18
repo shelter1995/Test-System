@@ -833,6 +833,20 @@ class RAGAnythingService:
             "error": error,
         }
 
+    async def generate_answer(self, prompt: str) -> str:
+        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
+        response = await openai_complete_if_cache(
+            config.MINIMAX_MODEL_M27,
+            prompt,
+            system_prompt="你是严谨的中文知识库问答助手。",
+            history_messages=[],
+            api_key=config.MINIMAX_API_KEY,
+            base_url=llm_base,
+        )
+        if isinstance(response, str):
+            response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        return str(response or "").strip()
+
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:
         content = str(text or "").strip()
         if not content:

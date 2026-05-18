@@ -30,6 +30,7 @@ import config
 from database_registry import DatabaseRegistry
 from progress import progress_tracker
 from raganything_service import RAGAnythingService
+from kb_answer import build_kb_answer_prompt, extract_source_summaries
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -465,16 +466,10 @@ async def kb_chat(request: KBChatRequest):
         if not db_id:
             raise HTTPException(status_code=400, detail="database 不能为空")
 
-        query_text = _build_chat_prompt(request.query, request.history)
+        query_text = str(request.query or "").strip()
         if not query_text:
             raise HTTPException(status_code=400, detail="query 不能为空")
 
-        query_result = await service.query(
-            db_id,
-            query_text,
-            mode=_query_mode(),
-            n_results=request.n_results or 5,
-        )
         context_result = await service.query_context(
             db_id,
             request.query,
@@ -482,9 +477,15 @@ async def kb_chat(request: KBChatRequest):
             max_chars=config.CONTEXT_MAX_CHARS,
         )
 
-        first = (query_result.get("results") or [{}])[0]
-        answer = str(first.get("text") or "").strip()
-        sources = _build_chat_sources(query_result, context_result)
+        contexts = context_result.get("contexts") or []
+        sources = extract_source_summaries(contexts)
+        if contexts:
+            prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
+            answer = await service.generate_answer(prompt)
+            answer = str(answer or "").strip()
+        else:
+            answer = "当前知识库未找到相关资料。"
+
         if not answer:
             answer = "当前知识库未找到相关资料。"
 
@@ -494,7 +495,7 @@ async def kb_chat(request: KBChatRequest):
             "answer": answer,
             "sources": sources,
             "total_sources": len(sources),
-            "fallback": query_result.get("fallback") or context_result.get("fallback"),
+            "fallback": context_result.get("fallback"),
         }
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
