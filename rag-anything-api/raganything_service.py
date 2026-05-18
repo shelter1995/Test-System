@@ -172,27 +172,35 @@ class RAGAnythingService:
         except RuntimeError:
             return None
 
+    async def _call_llm(self, prompt: str, system_prompt: str | None = None, history_messages: list | None = None, **kwargs) -> str:
+        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
+        kwargs.pop("keyword_extraction", None)
+        response = await openai_complete_if_cache(
+            config.MINIMAX_MODEL_M27,
+            prompt,
+            system_prompt=system_prompt,
+            history_messages=history_messages or [],
+            api_key=config.MINIMAX_API_KEY,
+            base_url=llm_base,
+            **kwargs,
+        )
+        if isinstance(response, str):
+            response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
+        return response
+
     def _create_rag(self, database_id: str, working_dir: Path):
         if config.HF_ENDPOINT:
             os.environ["HF_ENDPOINT"] = config.HF_ENDPOINT
 
-        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
         embedding_base = _normalize_base_url(config.SILICONFLOW_BASE_URL, "/v1")
 
         async def llm_model_func(prompt, system_prompt=None, history_messages=None, **kwargs):
-            kwargs.pop("keyword_extraction", None)
-            response = await openai_complete_if_cache(
-                config.MINIMAX_MODEL_M27,
+            return await self._call_llm(
                 prompt,
                 system_prompt=system_prompt,
-                history_messages=history_messages or [],
-                api_key=config.MINIMAX_API_KEY,
-                base_url=llm_base,
+                history_messages=history_messages,
                 **kwargs,
             )
-            if isinstance(response, str):
-                response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
-            return response
 
         async def embedding_func_async(texts, **kwargs):
             return await openai_embed.func(
@@ -834,17 +842,11 @@ class RAGAnythingService:
         }
 
     async def generate_answer(self, prompt: str) -> str:
-        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
-        response = await openai_complete_if_cache(
-            config.MINIMAX_MODEL_M27,
+        response = await self._call_llm(
             prompt,
             system_prompt="你是严谨的中文知识库问答助手。",
             history_messages=[],
-            api_key=config.MINIMAX_API_KEY,
-            base_url=llm_base,
         )
-        if isinstance(response, str):
-            response = re.sub(r"<think>.*?</think>", "", response, flags=re.DOTALL).strip()
         return str(response or "").strip()
 
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:

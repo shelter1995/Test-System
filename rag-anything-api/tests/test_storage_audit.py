@@ -43,3 +43,26 @@ def test_audit_reports_unregistered_lightrag_sources(tmp_path: Path):
     assert report["orphan_sources"] == ["orphan.pdf"]
     assert report["missing_registered_files"] == []
     assert report["contaminated"] is True
+
+
+def test_audit_reports_missing_registered_files(tmp_path: Path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    registry.register_database(
+        "kb",
+        working_dir=str(tmp_path / "storage" / "kb" / "rag_storage"),
+        output_dir=str(tmp_path / "output" / "kb"),
+    )
+    # Register a document whose physical file does not exist
+    registry.register_document(
+        "kb",
+        file_name="missing.pdf",
+        file_path=str(tmp_path / "files" / "kb" / "missing.pdf"),
+        sha256="sha-missing",
+        status="已导入",
+    )
+
+    report = audit_database_storage(registry, "kb")
+
+    assert report["missing_registered_files"] == ["missing.pdf"]
+    assert report["orphan_sources"] == []
+    assert report["contaminated"] is True

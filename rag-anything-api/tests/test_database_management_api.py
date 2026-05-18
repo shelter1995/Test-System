@@ -73,10 +73,22 @@ class FakeRegistry:
             raise KeyError(f"Database '{database_id}' not found")
         return self._databases[database_id].get("documents", [])
 
-    def register_document(self, database_id, file_name, file_path, sha256, source=None, status="已导入", error="", stored_file_name=None):
+    def register_document(
+        self,
+        database_id,
+        file_name,
+        file_path,
+        sha256,
+        source=None,
+        status="已导入",
+        error="",
+        stored_file_name=None,
+    ):
+        from datetime import datetime, timezone
         self.register_database(database_id)
         documents = self._databases[database_id].setdefault("documents", [])
         documents[:] = [doc for doc in documents if doc.get("sha256") != sha256]
+        now = datetime.now(timezone.utc).isoformat()
         documents.append(
             {
                 "file_name": file_name,
@@ -87,6 +99,14 @@ class FakeRegistry:
                 "status": status,
                 "error": error,
                 "stage": "",
+                "segments_total": 0,
+                "segments_done": 0,
+                "segments_failed": 0,
+                "partial_errors": [],
+                "cleanup_status": "",
+                "rag_doc_ids": [],
+                "imported_at": now,
+                "updated_at": now,
             }
         )
 
@@ -679,10 +699,12 @@ def test_database_audit_endpoint_reports_orphans(monkeypatch, tmp_path):
         output_dir=str(tmp_path / "output" / "audit-db"),
     )
     db["working_dir"] = str(tmp_path / "audit-db" / "rag_storage")
+    registered_file = tmp_path / "registered.pdf"
+    registered_file.write_bytes(b"registered")
     service.registry.register_document(
         "audit-db",
         file_name="registered.pdf",
-        file_path=str(tmp_path / "registered.pdf"),
+        file_path=str(registered_file),
         sha256="sha-registered",
         status="已导入",
     )
@@ -699,6 +721,7 @@ def test_database_audit_endpoint_reports_orphans(monkeypatch, tmp_path):
     data = response.json()
     assert data["status"] == "success"
     assert data["audit"]["orphan_sources"] == ["orphan.pdf"]
+    assert data["audit"]["missing_registered_files"] == []
     assert data["audit"]["contaminated"] is True
 
 
