@@ -54,3 +54,4 @@ docs/superpowers/
 ai-tutor-system/tutor_data/
 generation_output/
 .superpowers/
+.worktrees/
