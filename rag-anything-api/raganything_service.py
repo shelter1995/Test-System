@@ -717,6 +717,7 @@ class RAGAnythingService:
         self.registry.register_document(
             database_id,
             file_name=path.name,
+            stored_file_name=path.name,
             file_path=str(path),
             sha256=_sha256(path),
             source=source or path.name,

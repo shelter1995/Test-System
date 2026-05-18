@@ -172,6 +172,7 @@ class DatabaseRegistry:
         source: str | None = None,
         status: str = "已导入",
         error: str = "",
+        stored_file_name: str | None = None,
     ) -> None:
         data = self._load()
 
@@ -198,6 +199,7 @@ class DatabaseRegistry:
         documents.append(
             {
                 "file_name": file_name,
+                "stored_file_name": stored_file_name or Path(file_path).name,
                 "file_path": file_path,
                 "sha256": sha256,
                 "source": source or file_name,
@@ -208,6 +210,8 @@ class DatabaseRegistry:
                 "segments_done": 0,
                 "segments_failed": 0,
                 "partial_errors": [],
+                "cleanup_status": "",
+                "rag_doc_ids": [],
                 "imported_at": now,
                 "updated_at": now,
             }

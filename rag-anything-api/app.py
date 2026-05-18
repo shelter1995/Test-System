@@ -665,6 +665,21 @@ async def delete_database(db_id: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
+@app.get("/db/{db_id}/audit")
+async def audit_database(db_id: str):
+    service = _require_service()
+    try:
+        from storage_audit import audit_database_storage
+
+        audit = audit_database_storage(service.registry, db_id)
+        return {"status": "success", "database": db_id, "audit": audit}
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except Exception as e:
+        logger.error("知识库存储审计失败 [%s]: %s", db_id, e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/db/{db_id}/documents")
 async def list_documents(db_id: str):
     service = _require_service()
@@ -1151,7 +1166,15 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
 
     saved_files = []
     for file in files:
-        filename = Path(file.filename or "uploaded_file").name
+        original_name = Path(file.filename or "uploaded_file").name
+        stem = Path(original_name).stem or "uploaded_file"
+        suffix = Path(original_name).suffix
+        candidate = original_name
+        counter = 1
+        while (target_dir / candidate).exists():
+            counter += 1
+            candidate = f"{stem}_{counter:03d}{suffix}"
+        filename = candidate
         target_path = target_dir / filename
 
         try:
@@ -1171,10 +1194,11 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
         sha256 = _sha256(target_path)
         service.registry.register_document(
             db_id,
-            file_name=filename,
+            file_name=original_name,
+            stored_file_name=filename,
             file_path=str(target_path),
             sha256=sha256,
-            source=filename,
+            source=original_name,
             status="processing",
         )
         service.registry.update_document_progress(db_id, sha256, stage="uploaded")

@@ -73,13 +73,14 @@ class FakeRegistry:
             raise KeyError(f"Database '{database_id}' not found")
         return self._databases[database_id].get("documents", [])
 
-    def register_document(self, database_id, file_name, file_path, sha256, source=None, status="已导入", error=""):
+    def register_document(self, database_id, file_name, file_path, sha256, source=None, status="已导入", error="", stored_file_name=None):
         self.register_database(database_id)
         documents = self._databases[database_id].setdefault("documents", [])
         documents[:] = [doc for doc in documents if doc.get("sha256") != sha256]
         documents.append(
             {
                 "file_name": file_name,
+                "stored_file_name": stored_file_name or Path(file_path).name,
                 "file_path": file_path,
                 "sha256": sha256,
                 "source": source or file_name,
@@ -668,3 +669,59 @@ class TestDbListUpdatedFields:
         assert by_id["alpha"]["documents_count"] == 2
         assert by_id["beta"]["description"] == ""
         assert by_id["beta"]["documents_count"] == 0
+
+
+def test_database_audit_endpoint_reports_orphans(monkeypatch, tmp_path):
+    client, service = _make_client(monkeypatch)
+    db = service.registry.register_database(
+        "audit-db",
+        working_dir=str(tmp_path / "audit-db" / "rag_storage"),
+        output_dir=str(tmp_path / "output" / "audit-db"),
+    )
+    db["working_dir"] = str(tmp_path / "audit-db" / "rag_storage")
+    service.registry.register_document(
+        "audit-db",
+        file_name="registered.pdf",
+        file_path=str(tmp_path / "registered.pdf"),
+        sha256="sha-registered",
+        status="已导入",
+    )
+    working_dir = tmp_path / "audit-db" / "rag_storage"
+    working_dir.mkdir(parents=True)
+    (working_dir / "kv_store_text_chunks.json").write_text(
+        json.dumps({"chunk-1": {"content": "x", "file_path": "orphan.pdf"}}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    response = client.get("/db/audit-db/audit")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "success"
+    assert data["audit"]["orphan_sources"] == ["orphan.pdf"]
+    assert data["audit"]["contaminated"] is True
+
+
+def test_upload_same_filename_keeps_distinct_physical_files(monkeypatch, tmp_path):
+    client, service = _make_client(monkeypatch)
+    service.registry.register_database("upload-db")
+    monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+    first = client.post(
+        "/ingest/upload",
+        data={"database": "upload-db"},
+        files={"files": ("same.txt", io.BytesIO(b"first"), "text/plain")},
+    )
+    second = client.post(
+        "/ingest/upload",
+        data={"database": "upload-db"},
+        files={"files": ("same.txt", io.BytesIO(b"second"), "text/plain")},
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    docs = service.registry.list_documents("upload-db")
+    paths = [Path(doc["file_path"]).name for doc in docs]
+    assert len(paths) == 2
+    assert len(set(paths)) == 2
+    assert all(path.startswith("same") for path in paths)
