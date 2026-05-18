@@ -2128,6 +2128,14 @@ body.has-alert #tutorApp .page {
     border-color: #fca5a5;
 }
 
+.btn-retry {
+    color: var(--warning-color);
+}
+
+.btn-retry:hover {
+    background: rgba(245, 158, 11, 0.12);
+}
+
 /* 文件操作按钮 */
 .file-col-actions {
     display: flex;

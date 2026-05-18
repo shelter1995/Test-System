@@ -372,6 +372,28 @@ class TestListDocuments:
         assert doc["stage"] == "interrupted"
 
 
+def test_startup_recovery_marks_uploaded_stage_as_retryable_error(tmp_path):
+    service = FakeService()
+    service.registry.register_database("kb")
+    source = tmp_path / "stuck.pdf"
+    source.write_bytes(b"pdf")
+    service.registry.register_document(
+        "kb",
+        file_name="stuck.pdf",
+        file_path=str(source),
+        sha256="sha-stuck",
+        status="processing",
+    )
+    service.registry.update_document_progress("kb", "sha-stuck", stage="rag_ingest")
+
+    rag_api._recover_interrupted_processing_documents(service)
+
+    doc = service.registry.list_documents("kb")[0]
+    assert doc["status"] == "error"
+    assert doc["stage"] == "interrupted"
+    assert "请删除后重新上传或使用重试" in doc["error"]
+
+
 class TestDeleteDocument:
     def test_delete_document_cleans_lightrag_residue(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)

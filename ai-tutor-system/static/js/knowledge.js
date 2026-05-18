@@ -31,6 +31,12 @@ function getUploadState(dbId) {
     return knowledgeState.uploadStates[key];
 }
 
+function canRetryDocument(doc) {
+    var status = String((doc && doc.status) || '').toLowerCase();
+    var stage = String((doc && doc.stage) || '').toLowerCase();
+    return status === 'error' || status === 'partial_success' || stage === 'interrupted';
+}
+
 function clearDocumentRefreshTimer() {
     if (knowledgeState.documentRefreshTimer) {
         clearTimeout(knowledgeState.documentRefreshTimer);
@@ -635,6 +641,31 @@ function updateLogToggleBadge() {
 }
 
 /**
+ * 重试导入文件
+ */
+async function retryDocument(sha256) {
+    if (!knowledgeState.activeDatabase || !sha256) return;
+    try {
+        const resp = await fetch(
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(knowledgeState.activeDatabase)}/documents/${encodeURIComponent(sha256)}/retry`,
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ strategy: 'markdown_segments', max_chars: 12000 })
+            }
+        );
+        if (!resp.ok) {
+            const data = await resp.json().catch(() => ({}));
+            throw new Error(data.detail || ('HTTP ' + resp.status));
+        }
+        await loadKnowledgeDocuments();
+    } catch (err) {
+        console.error('重试导入失败:', err);
+        alert('重试失败: ' + err.message);
+    }
+}
+
+/**
  * 删除文件
  */
 async function deleteDocument(sha256) {
@@ -709,6 +740,9 @@ function _renderFileRow(item, isUploading) {
         : (isError ? 'status-error'
             : (isPartial ? 'status-partial'
                 : (isStale ? 'status-stale' : 'status-pending')));
+    const retryBtn = sha256 && canRetryDocument(item)
+        ? `<button class="btn-icon-sm btn-retry" onclick="retryDocument('${sha256}')" title="重试">↻</button>`
+        : '';
     const deleteBtn = sha256
         ? `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`
         : '';
@@ -723,7 +757,7 @@ function _renderFileRow(item, isUploading) {
             </span>
         </span>
         <span class="file-col-source">${source}</span>
-        <span class="file-col-actions">${deleteBtn}</span>
+        <span class="file-col-actions">${retryBtn}${deleteBtn}</span>
     </div>`;
 }
 

@@ -400,13 +400,11 @@ async def kb_chat(request: KBChatRequest):
         sources = extract_source_summaries(contexts)
         if contexts:
             prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
-            answer = await service.generate_answer(prompt)
-            answer = str(answer or "").strip()
+            answer = str(await service.generate_answer(prompt) or "").strip()
         else:
             answer = "当前知识库未找到相关资料。"
 
-        if not answer:
-            answer = "当前知识库未找到相关资料。"
+        answer = answer or "当前知识库未找到相关资料。"
 
         return {
             "query": request.query,
