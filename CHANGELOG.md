@@ -1,5 +1,37 @@
 # Change Log
 
+## 2026-05-19
+
+### 传统 RAG 引擎
+
+- 新增传统 RAG 引擎作为默认知识库引擎，基于 SQLite 向量存储和文本分块，无需 GPU 或额外依赖。
+- 支持 `.txt`, `.md`, `.csv`, `.pdf`, `.docx`, `.xlsx` 格式的导入和检索。
+- 知识库列表和文档列表显示引擎类型标签（传统 RAG / RAG-Anything）。
+- 通过 `DEFAULT_RAG_ENGINE` 环境变量可切换默认引擎。
+
+### 模型配置
+
+- 新增「模型设置」Web 页面，支持在线修改推理、嵌入、重排三组模型的供应商、接口地址、模型名和 API Key。
+- 支持 OpenAI-compatible 端点（Ollama、vLLM 等第三方兼容服务）。
+- 模型配置通过 API 持久化，修改后实时生效，无需重启服务。
+
+### 知识库问答
+
+- 新增「知识库问答」页面，支持先选库、多轮问答、展示来源依据。
+- 知识库查询结果包含来源文件名、片段和相关度评分。
+
+### 启动与打包
+
+- `start_services.bat` 增加启动前健康检查，自动检测端口占用和依赖完整性。
+- 新增桌面快捷方式脚本 `packaging/create_shortcut.ps1`。
+- 新增便携打包脚本 `packaging/package_windows.ps1`，产出包含完整虚拟环境的 Windows 便携包。
+- 便携包位于 `dist-portable/Test-System-Portable.zip`。
+
+### 文档
+
+- 更新 README.md，新增知识库引擎、模型配置、桌面快捷方式、便携打包说明。
+- 更新 SETUP.md，新增模型配置、引擎切换、便携打包等章节。
+
 ## 2026-05-14
 
 ### 项目管理

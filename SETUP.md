@@ -89,6 +89,11 @@ RERANK_API_KEY=              # 留空自动复用 SILICONFLOW_API_KEY
 
 # 查询模式：hybrid（推荐 / 向量+图谱融合）
 DEFAULT_QUERY_MODE=hybrid
+
+# 传统 RAG 引擎（默认）
+DEFAULT_RAG_ENGINE=traditional
+TRADITIONAL_CHUNK_SIZE=1200
+TRADITIONAL_CHUNK_OVERLAP=120
 ```
 
 ### 5.3 填写密钥 — `ai-tutor-system/.env`
@@ -166,6 +171,83 @@ INFO:     Uvicorn running on http://0.0.0.0:8002
 ### 浏览器
 
 打开 `http://localhost:8002`，即可使用完整工作台（知识库 + 内容生成 + AI 陪练）。
+
+---
+
+## 7.1 桌面快捷方式
+
+在桌面创建快捷方式，双击即可一键启动所有服务：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\create_shortcut.ps1
+```
+
+快捷方式指向 `start_services.bat`，会自动检测服务是否已在运行，启动后打开浏览器访问 http://localhost:8002。
+
+---
+
+## 7.2 模型配置
+
+### Web 界面配置
+
+启动服务后，打开 http://localhost:8002 切换到「模型设置」页面，可在线修改以下三组模型：
+
+| 模型组 | 配置项 | 说明 |
+|--------|--------|------|
+| 推理模型 | 供应商、接口地址、模型名、API Key | 陪练对话、评分、内容生成 |
+| 嵌入模型 | 供应商、接口地址、模型名、API Key | 文本转向量 |
+| 重排模型 | 供应商、接口地址、模型名、API Key | 检索结果重排序 |
+
+配置修改后实时生效，无需重启服务。
+
+### 自定义 OpenAI-compatible 端点
+
+支持任何兼容 OpenAI 协议的 API 端点。在模型设置页面中：
+
+1. 将「供应商」填写为 `openai`
+2. 「接口地址」填写目标 API 地址（如 `http://localhost:11434/v1`）
+3. 「API Key」填写对应的密钥
+
+适用于本地 Ollama、vLLM、其他第三方兼容服务等场景。
+
+### 环境变量直接配置
+
+也可以直接编辑 `.env` 文件配置模型参数：
+
+```ini
+# rag-anything-api/.env
+MINIMAX_API_KEY=sk-your-key
+MINIMAX_BASE_URL=https://api.minimaxi.com/v1
+MINIMAX_MODEL_M27=MiniMax-M2.7
+
+SILICONFLOW_API_KEY=sk-your-key
+SILICONFLOW_BASE_URL=https://api.siliconflow.cn
+SILICONFLOW_MODEL=BAAI/bge-m3
+EMBEDDING_DIM=1024
+
+# 可选：Rerank
+ENABLE_RERANK=true
+RERANK_MODEL=BAAI/bge-reranker-v2-m3
+```
+
+---
+
+## 7.3 知识库引擎
+
+### 传统 RAG（默认）
+
+新建知识库默认使用「传统 RAG」引擎，基于 SQLite 向量存储和文本分块，无需 GPU 或额外依赖。支持格式：`.txt`, `.md`, `.csv`, `.pdf`, `.docx`, `.xlsx`。
+
+传统 RAG 在知识库列表和文档列表中显示蓝色「传统 RAG」标签。
+
+### 切换到 RAG-Anything
+
+RAG-Anything 提供知识图谱、多模态处理和音视频解析能力。切换方式：
+
+- **新建知识库时**：通过 API `POST /db/register` 传入 `engine: "raganything"`
+- **已有知识库**：通过 API `PUT /db/{db_id}` 修改引擎类型
+
+RAG-Anything 额外支持：`.jpg`, `.png`, `.bmp`, `.mp4`, `.avi`, `.mkv`, `.mp3`, `.wav`, `.flac` 等格式。使用音视频功能需配置 ffmpeg 和 whisper。
 
 ---
 
@@ -251,6 +333,27 @@ Test-System/
 - **培训材料**：输入主题、对象、时长 → 生成讲义 + 测试题 + README
 
 生成产物保存在 `generation_output/` 目录。
+
+---
+
+## 10.1 便携打包
+
+生成可分发的 Windows 便携包（包含虚拟环境和所有依赖）：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
+```
+
+产出：`dist-portable/Test-System-Portable.zip`
+
+### 便携包使用
+
+1. 解压 `Test-System-Portable.zip`
+2. 编辑 `rag-anything-api/.env` 和 `ai-tutor-system/.env`，填入 API Key
+3. 运行 `start_services.bat`
+4. 浏览器自动打开 http://localhost:8002
+
+便携包包含完整的 Python 虚拟环境，无需单独安装 Python 或依赖。
 
 ---
 
