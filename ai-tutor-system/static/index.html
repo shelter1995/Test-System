@@ -35,6 +35,10 @@
                     <span class="nav-icon">🎯</span>
                     <span class="nav-label">陪练系统</span>
                 </a>
+                <a data-nav="model-settings" class="nav-item">
+                    <span class="nav-icon">⚙️</span>
+                    <span class="nav-label">模型设置</span>
+                </a>
             </nav>
         </aside>
 
@@ -422,6 +426,25 @@
                     </div>
                 </section>
 
+                <!-- 6. 模型设置 -->
+                <section id="model-settings-page" class="page-section" data-page="model-settings">
+                    <div class="page-header">
+                        <h2>模型设置</h2>
+                    </div>
+                    <div class="settings-grid">
+                        <form id="model-settings-form" class="settings-panel">
+                            <div id="llm-settings" class="settings-block"></div>
+                            <div id="embedding-settings" class="settings-block"></div>
+                            <div id="rerank-settings" class="settings-block"></div>
+                            <div class="settings-actions">
+                                <button type="button" id="test-model-settings-btn">测试连接</button>
+                                <button type="submit" id="save-model-settings-btn">保存设置</button>
+                            </div>
+                        </form>
+                        <aside id="model-settings-status" class="settings-status"></aside>
+                    </div>
+                </section>
+
             </main>
         </div>
     </div>
@@ -439,6 +462,9 @@
 
     <!-- 内容生成模块 -->
     <script src="/static/js/generation.js"></script>
+
+    <!-- 模型设置模块 -->
+    <script src="/static/js/model-settings.js"></script>
 
     <!-- 原有陪练系统逻辑 -->
     <script src="/static/js/app_with_health_check.js?v=2.1"></script>
