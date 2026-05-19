@@ -16,10 +16,11 @@ powershell -ExecutionPolicy Bypass -File packaging\create_shortcut.ps1
 powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 ```
 
-便携包位于 `dist-portable/Test-System-Portable/`。
+便携包位于 `dist-portable/Test-System-Portable.zip`。
 
-## 注意事项
+### 便携包说明
 
-- 首次使用需要配置 MiniMax 和 SiliconFlow API Key
-- 打开 http://localhost:8002 进入模型设置页面
-- 便携包包含 .venv 虚拟环境，无需额外安装依赖
+- 这是一个 Windows 本地运行包
+- 包含两个本地服务，启动后打开 http://localhost:8002
+- 用户仍需配置有效的 MiniMax 和 SiliconFlow API Key
+- 首版支持便携文件夹/zip，不支持云端部署
