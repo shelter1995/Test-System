@@ -77,7 +77,18 @@
       "mcp__chrome-devtools__handle_dialog",
       "Bash(cd \"C:/Users/shelt/.claude/skills/ui-ux-pro-max\" && python scripts/search.py \"business training tool dashboard compact efficient\" --design-system -p \"AI-Tutor\" -f markdown)",
       "Read(//c/Users/shelt/.agents/skills/ui-ux-pro-max/**)",
-      "Bash(.venv/Scripts/pip install *)"
+      "Bash(.venv/Scripts/pip install *)",
+      "Bash(git check-ignore *)",
+      "Bash(mkdir -p .worktrees)",
+      "Bash(git worktree *)",
+      "Bash(../../.venv/Scripts/python.exe -m pytest rag-anything-api/tests ai-tutor-system/tests -q)",
+      "Bash(../../.venv/Scripts/python.exe *)",
+      "Bash(node *)",
+      "Bash(echo \"exit code: $?\")",
+      "Bash(git checkout *)",
+      "Bash(pytest *)",
+      "Bash(pip list *)",
+      "Bash(../../start_services.bat *)"
     ]
   }
 }
