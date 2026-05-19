@@ -909,9 +909,10 @@ async function handleStart() {
 }
 
 async function handlePause() {
+    if (state.pendingEval) return;
     try {
         elements.pauseBtn.disabled = true;
-        const response = await fetch(`${CONFIG.TUTOR_API}/chat/stream`, {
+        const response = await fetch(`${CONFIG.TUTOR_API}/chat`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -921,25 +922,10 @@ async function handlePause() {
             })
         });
         if (response.ok) {
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                const newlineIdx = buffer.indexOf('\n');
-                if (newlineIdx !== -1) {
-                    const line = buffer.substring(0, newlineIdx).trim();
-                    buffer = buffer.substring(newlineIdx + 1);
-                    if (line.startsWith('data: ')) {
-                        const payload = JSON.parse(line.substring(6));
-                        if (payload.overall_score) {
-                            showEvaluationCard(payload, state.currentRound, state.lastKnowledgeCount);
-                            showToast(`当前评分: ${payload.overall_score}分`, 'info');
-                        }
-                    }
-                }
+            const data = await response.json();
+            if (data.evaluation && data.evaluation.overall_score) {
+                showEvaluationCard(data.evaluation, state.currentRound, state.lastKnowledgeCount);
+                showToast(`当前评分: ${data.evaluation.overall_score}分`, 'info');
             }
         }
     } catch (error) {

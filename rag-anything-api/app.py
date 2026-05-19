@@ -612,10 +612,14 @@ async def list_documents(db_id: str):
 @app.post("/db/{db_id}/documents/{sha256}/retry")
 async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest):
     service = _require_service()
+    if not service.registry.get_database(db_id):
+        raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
     docs = service.registry.list_documents(db_id)
     doc = next((item for item in docs if item.get("sha256") == sha256), None)
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
+    if doc.get("status") == "processing":
+        raise HTTPException(status_code=409, detail="文档正在处理中，请稍后再试")
     if request.strategy != "markdown_segments":
         raise HTTPException(status_code=400, detail="仅支持 markdown_segments")
 

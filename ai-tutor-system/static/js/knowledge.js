@@ -32,8 +32,8 @@ function getUploadState(dbId) {
 }
 
 function canRetryDocument(doc) {
-    var status = String((doc && doc.status) || '').toLowerCase();
-    var stage = String((doc && doc.stage) || '').toLowerCase();
+    const status = String((doc && doc.status) || '').toLowerCase();
+    const stage = String((doc && doc.stage) || '').toLowerCase();
     return status === 'error' || status === 'partial_success' || stage === 'interrupted';
 }
 
@@ -850,8 +850,8 @@ document.addEventListener('DOMContentLoaded', function () {
     // 立即加载知识库数据，供总览和内容生成页面使用
     loadKnowledgeBases();
 
-    var observer = new MutationObserver(function () {
-        var knowledgeSection = document.querySelector('[data-page="knowledge"]');
+    const observer = new MutationObserver(function () {
+        const knowledgeSection = document.querySelector('[data-page="knowledge"]');
         if (knowledgeSection && knowledgeSection.classList.contains('active')) {
             loadKnowledgeBases();
         }

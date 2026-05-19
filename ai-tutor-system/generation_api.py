@@ -79,8 +79,12 @@ async def create_generation_job(request: GenerationRequest):
             detail=f"Invalid type: {request.type}. Must be one of {valid_types}"
         )
 
+    from generation_runner import ContentValidationError
+
     try:
         job_id = create_job(request.model_dump())
+    except ContentValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     return {"job_id": job_id, "status": "running"}

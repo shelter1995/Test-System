@@ -10,6 +10,7 @@ import tutor_backend
 
 def test_pause_evaluation_does_not_append_duplicate(monkeypatch):
     session_id = "session-test"
+    original_sessions = tutor_backend.sessions.copy()
     tutor_backend.sessions[session_id] = {
         "session_id": session_id,
         "scenario": {"name": "测试场景", "ai_role": "客户"},
@@ -37,9 +38,13 @@ def test_pause_evaluation_does_not_append_duplicate(monkeypatch):
         },
     )
 
-    client = TestClient(tutor_backend.app)
-    response = client.post("/chat", json={"session_id": session_id, "message": "", "is_pause": True})
+    try:
+        client = TestClient(tutor_backend.app)
+        response = client.post("/chat", json={"session_id": session_id, "message": "", "is_pause": True})
 
-    assert response.status_code == 200
-    assert response.json()["evaluation"]["overall_score"] == 75
-    assert len(tutor_backend.sessions[session_id]["evaluations"]) == 1
+        assert response.status_code == 200
+        assert response.json()["evaluation"]["overall_score"] == 75
+        assert len(tutor_backend.sessions[session_id]["evaluations"]) == 1
+    finally:
+        tutor_backend.sessions.clear()
+        tutor_backend.sessions.update(original_sessions)

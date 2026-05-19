@@ -72,6 +72,17 @@ else:
     logger.warning("MiniMax AI API Key 未配置")
 
 
+def _find_existing_evaluation(session_data: dict):
+    """查找当前轮次是否已有评分（幂等性检查）。"""
+    return next(
+        (
+            item for item in session_data.get("evaluations", [])
+            if int(item.get("round", session_data["round"])) == int(session_data["round"])
+        ),
+        None,
+    )
+
+
 # ==================== API 端点 ====================
 
 @app.get("/")
@@ -226,17 +237,25 @@ async def chat_stream(chat_message: ChatMessage):
             product = session_data.get("product", "")
             database = session_data.get("database") or rag_service.resolve_database(product)
 
+            existing = _find_existing_evaluation(session_data)
+
             async def pause_eval_stream():
                 from tutor_models import SSEEvent
-                evaluation = await asyncio.to_thread(
-                    ai_service.evaluate,
-                    last_user["content"],
-                    last_ai["content"],
-                    session_data["round"],
-                    session_data["scenario"],
-                    "",
-                    database=database,
-                )
+                if existing:
+                    evaluation = existing
+                else:
+                    evaluation = await asyncio.to_thread(
+                        ai_service.evaluate,
+                        last_user["content"],
+                        last_ai["content"],
+                        session_data["round"],
+                        session_data["scenario"],
+                        "",
+                        database=database,
+                    )
+                    evaluation["round"] = session_data["round"]
+                    session_data.setdefault("evaluations", []).append(evaluation)
+                    SessionManager.save(session_id, session_data)
                 yield SSEEvent.evaluation(evaluation)
 
             return StreamingResponse(
@@ -287,13 +306,7 @@ async def chat(chat_message: ChatMessage):
             product = session_data.get("product", "")
             database = session_data.get("database") or rag_service.resolve_database(product)
 
-            existing = next(
-                (
-                    item for item in session_data.get("evaluations", [])
-                    if int(item.get("round", session_data["round"])) == int(session_data["round"])
-                ),
-                None,
-            )
+            existing = _find_existing_evaluation(session_data)
             if existing:
                 return {
                     "is_pause_response": True,

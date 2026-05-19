@@ -564,6 +564,37 @@ class TestRetryDocument:
         assert response.status_code == 200
         assert response.json()["status"] == "partial_success"
 
+    def test_retry_document_not_found_returns_404(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb")
+
+        response = client.post(
+            "/db/kb/documents/nonexistent/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 404
+        assert "文档不存在" in response.json()["detail"]
+
+    def test_retry_document_processing_returns_409(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb")
+        service.registry.register_document(
+            "kb",
+            file_name="book.pdf",
+            file_path=str(tmp_path / "book.pdf"),
+            sha256="abc",
+            status="processing",
+        )
+
+        response = client.post(
+            "/db/kb/documents/abc/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 409
+        assert "正在处理中" in response.json()["detail"]
+
 
 # ── POST /ingest/upload ──────────────────────────────────────────────────
 

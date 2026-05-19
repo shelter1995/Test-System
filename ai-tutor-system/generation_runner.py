@@ -28,6 +28,14 @@ ARTIFACT_DIRS = ["generation_output"]
 
 MAX_RUNNING_JOBS = int(os.getenv("GENERATION_MAX_RUNNING_JOBS", "1"))
 
+# Lock to protect the check-and-create sequence in create_job
+_create_job_lock = threading.Lock()
+
+
+class ContentValidationError(RuntimeError):
+    """内容验证失败（如 Markdown 过短、缺少标题等），不可重试。"""
+    pass
+
 
 # ==================== 客户端 ====================
 
@@ -94,7 +102,8 @@ def _running_jobs_count() -> int:
     for path in JOBS_DIR.glob("*.json"):
         try:
             job = json.loads(path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning(f"跳过损坏的作业文件 {path.name}: {exc}")
             continue
         if job.get("status") == "running":
             count += 1
@@ -137,9 +146,9 @@ def _search_for_training(database: str, customer_group: str = "") -> dict:
 def _validate_markdown_artifact(content: str, artifact_name: str) -> None:
     text = str(content or "").strip()
     if len(text) < 80:
-        raise RuntimeError(f"{artifact_name} 生成内容过短")
+        raise ContentValidationError(f"{artifact_name} 生成内容过短")
     if "#" not in text:
-        raise RuntimeError(f"{artifact_name} 缺少 Markdown 标题")
+        raise ContentValidationError(f"{artifact_name} 缺少 Markdown 标题")
 
 
 # ==================== RAG 格式化 ====================
@@ -636,7 +645,7 @@ def _run_job(job_id: str) -> None:
         job["result"] = {"type": gen_type, "type_name": _TYPE_NAMES.get(gen_type, gen_type), "files": saved_files}
         job["finished_at"] = _now()
         _save_job(job)
-        return job_id
+        return None
 
     except Exception as e:
         logger.error(f"生成作业 {job_id} 失败: {e}")
@@ -644,20 +653,23 @@ def _run_job(job_id: str) -> None:
         job["stage"] = "error"
         job["error"] = str(e)
         job["error_type"] = e.__class__.__name__
-        job["retryable"] = isinstance(e, (RuntimeError, TimeoutError, ConnectionError))
+        # 只有超时和网络错误是可重试的；内容验证失败和一般 RuntimeError 不可重试
+        job["retryable"] = isinstance(e, (TimeoutError, ConnectionError))
         job["finished_at"] = _now()
         _save_job(job)
 
 
 def create_job(request: dict) -> str:
-    if _running_jobs_count() >= MAX_RUNNING_JOBS:
-        raise RuntimeError(f"已有 {MAX_RUNNING_JOBS} 个生成作业正在运行，请稍后再试")
+    with _create_job_lock:
+        if _running_jobs_count() >= MAX_RUNNING_JOBS:
+            raise RuntimeError(f"已有 {MAX_RUNNING_JOBS} 个生成作业正在运行，请稍后再试")
 
-    job_id = uuid.uuid4().hex[:12]
-    job = {"job_id": job_id, "status": "running", "stage": "init",
-           "created_at": _now(), "request": request, "result": None, "error": None}
-    _save_job(job)
+        job_id = uuid.uuid4().hex[:12]
+        job = {"job_id": job_id, "status": "running", "stage": "init",
+               "created_at": _now(), "request": request, "result": None, "error": None}
+        _save_job(job)
 
+    # 后台线程使用 daemon=True；进程退出时正在运行的作业会被强制中断
     worker = threading.Thread(
         target=_run_job,
         args=(job_id,),
