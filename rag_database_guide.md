@@ -15,7 +15,8 @@
 ## 存储位置
 
 - 上传文件：`rag-anything-api/storage/raganything/files/{数据库ID}/`
-- RAG 存储：`rag-anything-api/storage/raganything/{数据库ID}/rag_storage/`
+- 传统 RAG 存储：`rag-anything-api/storage/traditional_rag/{数据库ID}/traditional.sqlite`
+- RAG-Anything 存储：`rag-anything-api/storage/raganything/{数据库ID}/rag_storage/`
 - MinerU 输出：`rag-anything-api/output/{数据库ID}/`
 - 知识库注册表：`rag-anything-api/storage/databases.json`
 

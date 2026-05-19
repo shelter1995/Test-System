@@ -39,6 +39,8 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 - MiniMax API：用于陪练对话和评分
 - 硅基流动 API：用于 embedding、rerank 等模型调用
 - MinerU：用于 PDF/Office 文档解析，文本导入不依赖它
+- 传统 RAG：默认知识库引擎，用于常见文本、PDF、Word、Excel 文件的快速导入和检索。
+- RAG-Anything：高级引擎，用于复杂 PDF、多模态、音视频和图谱增强场景。
 
 依赖安装和环境配置见 [SETUP.md](SETUP.md)。
 
