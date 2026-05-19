@@ -40,6 +40,14 @@ class TraditionalRAGEngine:
     def _store(self, database_id: str) -> TraditionalVectorStore:
         return TraditionalVectorStore(self.storage_root / database_id / "traditional.sqlite")
 
+    def _embedding_model_name(self) -> str:
+        endpoint = getattr(self.embedding_client, "endpoint", None)
+        return str(getattr(endpoint, "model", "") or "")
+
+    def _rerank_model_name(self) -> str:
+        endpoint = getattr(self.rerank_client, "endpoint", None)
+        return str(getattr(endpoint, "model", "") or "")
+
     async def ingest_file(self, database_id: str, file_path: str | Path, source: str | None = None) -> dict[str, Any]:
         path = Path(file_path)
         loaded = load_document_text(path)
@@ -71,7 +79,7 @@ class TraditionalRAGEngine:
             indexed.append({**chunk, "embedding": embedding})
         inserted = self._store(database_id).upsert_chunks(database_id, document_sha256, indexed)
 
-        return IngestResult(
+        result = IngestResult(
             status="success",
             database=database_id,
             document_sha256=document_sha256,
@@ -80,6 +88,9 @@ class TraditionalRAGEngine:
             chunk_count=inserted,
             message="文档已通过传统 RAG 导入知识库",
         ).to_dict()
+        result["embedding_model"] = self._embedding_model_name()
+        result["rerank_model"] = self._rerank_model_name()
+        return result
 
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:
         text_dir = self.storage_root / database_id / "text_ingest"

@@ -126,8 +126,9 @@ class DatabaseRegistry:
         name: str | None = None,
         description: str | None = None,
         status: str | None = None,
+        engine: str | None = None,
     ) -> dict[str, Any]:
-        """更新已有知识库的 name、description、status 字段。
+        """更新已有知识库的 name、description、status、engine 字段。
 
         Raises:
             KeyError: 当 database_id 不存在时。
@@ -145,9 +146,54 @@ class DatabaseRegistry:
                     item["description"] = description
                 if status is not None:
                     item["status"] = status
+                if engine is not None:
+                    item["engine"] = engine
                 item["updated_at"] = self._now()
                 self._save(data)
                 return item
+
+        raise KeyError(f"Database '{database_id}' not found")
+
+    def update_document_index_metadata(
+        self,
+        database_id: str,
+        sha256: str,
+        *,
+        engine: str | None = None,
+        index_status: str | None = None,
+        chunk_count: int | None = None,
+        embedding_model: str | None = None,
+        rerank_model: str | None = None,
+    ) -> bool:
+        database_id = str(database_id).strip()
+        sha256 = str(sha256).strip()
+        if not database_id:
+            raise ValueError("database_id must not be empty")
+        if not sha256:
+            raise ValueError("sha256 must not be empty")
+
+        data = self._load()
+        for item in data["databases"]:
+            if str(item.get("id", "")).strip() != database_id:
+                continue
+            for doc in item.get("documents", []):
+                if doc.get("sha256") != sha256:
+                    continue
+                if engine is not None:
+                    doc["engine"] = engine
+                if index_status is not None:
+                    doc["index_status"] = index_status
+                if chunk_count is not None:
+                    doc["chunk_count"] = int(chunk_count or 0)
+                if embedding_model is not None:
+                    doc["embedding_model"] = embedding_model
+                if rerank_model is not None:
+                    doc["rerank_model"] = rerank_model
+                doc["updated_at"] = self._now()
+                item["updated_at"] = self._now()
+                self._save(data)
+                return True
+            return False
 
         raise KeyError(f"Database '{database_id}' not found")
 

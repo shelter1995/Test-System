@@ -119,6 +119,13 @@ function renderKnowledgePage() {
                     <label>描述</label>
                     <textarea id="newDbDesc" rows="3" placeholder="简要描述该知识库的用途"></textarea>
                 </div>
+                <div class="form-group">
+                    <label>RAG 引擎</label>
+                    <select id="newDbEngine">
+                        <option value="traditional">传统 RAG（默认，快速处理）</option>
+                        <option value="raganything">RAG-Anything（复杂文档/多模态）</option>
+                    </select>
+                </div>
                 <button class="btn-primary" onclick="createKnowledgeBase()">创建</button>
             </div>
 
@@ -271,10 +278,12 @@ async function createKnowledgeBase() {
     const idInput = document.getElementById('newDbId');
     const nameInput = document.getElementById('newDbName');
     const descInput = document.getElementById('newDbDesc');
+    const engineInput = document.getElementById('newDbEngine');
 
     const id = idInput ? idInput.value.trim() : '';
     const name = nameInput ? nameInput.value.trim() : '';
     const description = descInput ? descInput.value.trim() : '';
+    const engine = engineInput ? engineInput.value.trim() : 'traditional';
 
     if (!id) {
         alert('请输入知识库 ID');
@@ -292,12 +301,13 @@ async function createKnowledgeBase() {
     try {
         await WorkbenchAPI.postJson(
             `${WorkbenchAPI.BASE_URLS.RAG_API}/db/register`,
-            { id, name, description }
+            { id, name, description, engine }
         );
         alert('知识库创建成功！');
         if (idInput) idInput.value = '';
         if (nameInput) nameInput.value = '';
         if (descInput) descInput.value = '';
+        if (engineInput) engineInput.value = 'traditional';
         knowledgeState.activeDatabase = id;
         loadKnowledgeBases();
     } catch (err) {

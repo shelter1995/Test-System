@@ -48,3 +48,22 @@ def test_put_model_settings_rejects_empty_model(client):
     )
 
     assert response.status_code == 400
+
+
+def test_put_model_settings_rebuilds_traditional_engine(client, monkeypatch):
+    created = object()
+    monkeypatch.setattr(rag_api, "create_traditional_engine", lambda: created)
+
+    response = client.put(
+        "/settings/models",
+        json={
+            "embedding": {
+                "provider": "openai-compatible",
+                "base_url": "http://localhost:11434/v1",
+                "model": "custom-embed",
+            }
+        },
+    )
+
+    assert response.status_code == 200
+    assert rag_api.traditional_service is created

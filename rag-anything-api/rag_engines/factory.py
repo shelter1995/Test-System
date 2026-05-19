@@ -3,41 +3,70 @@ from __future__ import annotations
 from typing import Any
 
 import config
+from model_settings import ModelSettingsStore
 from rag_engines.traditional.engine import TraditionalRAGEngine
 from rag_engines.traditional.model_clients import ModelEndpoint, OpenAICompatibleClient
 
 
-def _embedding_client() -> OpenAICompatibleClient:
+def _runtime_settings() -> dict[str, Any]:
+    store = ModelSettingsStore(
+        config.STORAGE_ROOT / "model_settings.json",
+        config.STORAGE_ROOT / "model_settings.local.json",
+    )
+    return store.runtime()
+
+
+def _normalize_provider_base_url(provider: str, base_url: str) -> str:
+    text = str(base_url or "").rstrip("/")
+    if provider in {"siliconflow", "minimax"} and not text.endswith("/v1"):
+        return f"{text}/v1"
+    return text
+
+
+def _endpoint(section: dict[str, Any], default_provider: str, default_model: str, timeout: int) -> ModelEndpoint:
+    provider = str(section.get("provider") or default_provider).strip().lower()
+    return ModelEndpoint(
+        provider=provider,
+        base_url=_normalize_provider_base_url(provider, str(section.get("base_url") or "")),
+        api_key=str(section.get("api_key") or ""),
+        model=str(section.get("model") or default_model),
+        timeout=int(section.get("timeout") or timeout),
+    )
+
+
+def _embedding_client(settings: dict[str, Any]) -> OpenAICompatibleClient:
     return OpenAICompatibleClient(
-        ModelEndpoint(
-            provider="siliconflow",
-            base_url=config._normalize_base_url(config.SILICONFLOW_BASE_URL, "/v1"),
-            api_key=config.SILICONFLOW_API_KEY,
-            model=config.SILICONFLOW_MODEL,
+        _endpoint(
+            settings.get("embedding") or {},
+            default_provider="siliconflow",
+            default_model=config.SILICONFLOW_MODEL,
             timeout=config.EMBEDDING_TIMEOUT,
         )
     )
 
 
-def _rerank_client() -> OpenAICompatibleClient | None:
-    if not config.ENABLE_RERANK or not config.RERANK_API_KEY:
+def _rerank_client(settings: dict[str, Any]) -> OpenAICompatibleClient | None:
+    section = settings.get("rerank") or {}
+    enabled = bool(section.get("enabled", config.ENABLE_RERANK))
+    if not enabled:
         return None
-    return OpenAICompatibleClient(
-        ModelEndpoint(
-            provider="siliconflow",
-            base_url=config.RERANK_BASE_URL,
-            api_key=config.RERANK_API_KEY,
-            model=config.RERANK_MODEL,
-            timeout=config.EMBEDDING_TIMEOUT,
-        )
+    endpoint = _endpoint(
+        section,
+        default_provider="siliconflow",
+        default_model=config.RERANK_MODEL,
+        timeout=config.EMBEDDING_TIMEOUT,
     )
+    if not endpoint.api_key:
+        return None
+    return OpenAICompatibleClient(endpoint)
 
 
 def create_traditional_engine() -> TraditionalRAGEngine:
+    settings = _runtime_settings()
     return TraditionalRAGEngine(
         storage_root=config.TRADITIONAL_RAG_STORAGE_ROOT,
-        embedding_client=_embedding_client(),
-        rerank_client=_rerank_client(),
+        embedding_client=_embedding_client(settings),
+        rerank_client=_rerank_client(settings),
         chunk_size=config.TRADITIONAL_CHUNK_SIZE,
         chunk_overlap=config.TRADITIONAL_CHUNK_OVERLAP,
     )

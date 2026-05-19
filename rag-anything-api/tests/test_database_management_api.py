@@ -58,7 +58,7 @@ class FakeRegistry:
         self._databases[database_id] = db
         return db
 
-    def update_database(self, database_id, name=None, description=None, status=None):
+    def update_database(self, database_id, name=None, description=None, status=None, engine=None):
         if database_id not in self._databases:
             raise KeyError(f"Database '{database_id}' not found")
         db = self._databases[database_id]
@@ -68,6 +68,8 @@ class FakeRegistry:
             db["description"] = description
         if status is not None:
             db["status"] = status
+        if engine is not None:
+            db["engine"] = engine
         return db
 
     def list_documents(self, database_id):
@@ -138,6 +140,32 @@ class FakeRegistry:
                 return True
         return False
 
+    def update_document_index_metadata(
+        self,
+        database_id,
+        sha256,
+        engine=None,
+        index_status=None,
+        chunk_count=None,
+        embedding_model=None,
+        rerank_model=None,
+    ):
+        docs = self.list_documents(database_id)
+        for doc in docs:
+            if doc.get("sha256") == sha256:
+                if engine is not None:
+                    doc["engine"] = engine
+                if index_status is not None:
+                    doc["index_status"] = index_status
+                if chunk_count is not None:
+                    doc["chunk_count"] = int(chunk_count or 0)
+                if embedding_model is not None:
+                    doc["embedding_model"] = embedding_model
+                if rerank_model is not None:
+                    doc["rerank_model"] = rerank_model
+                return True
+        return False
+
     def delete_document(self, database_id, sha256):
         docs = self.list_documents(database_id)
         before = len(docs)
@@ -150,8 +178,10 @@ class FakeRegistry:
 class FakeService:
     def __init__(self):
         self.registry = FakeRegistry()
+        self.ingested = []
 
     async def ingest_file(self, database_id, file_path, source=None):
+        self.ingested.append((database_id, str(file_path)))
         return {"status": "success", "database": database_id, "file": str(file_path)}
 
     def ingest_file_sync(self, database_id, file_path, source=None):
@@ -194,6 +224,16 @@ class TestRegisterDatabase:
         assert data["database"]["id"] == "minimal-db"
         assert data["database"]["name"] == "minimal-db"
         assert data["database"]["description"] == ""
+
+    def test_register_accepts_engine(self, monkeypatch):
+        client, _ = _make_client(monkeypatch)
+        response = client.post(
+            "/db/register",
+            json={"id": "engine-db", "engine": "raganything"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["database"]["engine"] == "raganything"
 
     def test_register_existing_updates(self, monkeypatch):
         """对已存在的 id 再次 register 应更新而非报错。"""
@@ -751,6 +791,93 @@ class TestIngestUpload:
         time.sleep(1.5)
 
         assert observed_stage["stage"] == "rag_ingest"
+
+    def test_traditional_background_upload_marks_document_indexed(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("trad-db", engine="traditional")
+        monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path)
+
+        class FakeTraditionalEngine:
+            async def ingest_file(self, database_id, file_path):
+                return {
+                    "status": "success",
+                    "database": database_id,
+                    "document_sha256": "unused",
+                    "file_name": Path(file_path).name,
+                    "engine": "traditional",
+                    "chunk_count": 3,
+                    "embedding_model": "custom-embedding",
+                    "rerank_model": "custom-rerank",
+                }
+
+        monkeypatch.setattr(rag_api, "traditional_service", FakeTraditionalEngine())
+
+        response = client.post(
+            "/ingest/upload",
+            data={"database": "trad-db"},
+            files={"files": ("guide.md", io.BytesIO("开通说明".encode("utf-8")), "text/markdown")},
+        )
+        assert response.status_code == 200
+
+        import time
+        time.sleep(1.5)
+
+        doc = service.registry.list_documents("trad-db")[0]
+        assert doc["status"] == "已导入"
+        assert doc["stage"] == "done"
+        assert doc["index_status"] == "indexed"
+        assert doc["chunk_count"] == 3
+        assert doc["embedding_model"] == "custom-embedding"
+
+    def test_ingest_path_directory_uses_selected_engine(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("dir-db", engine="raganything")
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "a.txt").write_text("hello", encoding="utf-8")
+
+        response = client.post(
+            "/ingest/path",
+            json={"database": "dir-db", "path": str(source), "recursive": False},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["success_files"] == 1
+        assert service.ingested == [("dir-db", str(source / "a.txt"))]
+
+    def test_ingest_path_file_records_traditional_document(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("path-trad-db", engine="traditional")
+        source = tmp_path / "guide.md"
+        source.write_text("hello", encoding="utf-8")
+
+        class FakeTraditionalEngine:
+            async def ingest_file(self, database_id, file_path):
+                return {
+                    "status": "success",
+                    "database": database_id,
+                    "document_sha256": rag_api._sha256(Path(file_path)),
+                    "file_name": Path(file_path).name,
+                    "engine": "traditional",
+                    "chunk_count": 2,
+                    "embedding_model": "embed-model",
+                }
+
+        monkeypatch.setattr(rag_api, "traditional_service", FakeTraditionalEngine())
+
+        response = client.post(
+            "/ingest/path",
+            json={"database": "path-trad-db", "path": str(source), "recursive": False},
+        )
+
+        assert response.status_code == 200
+        doc = service.registry.list_documents("path-trad-db")[0]
+        assert doc["file_name"] == "guide.md"
+        assert doc["status"] == "已导入"
+        assert doc["index_status"] == "indexed"
+        assert doc["chunk_count"] == 2
 
 
 # ── /db/list includes description and documents_count ────────────────────

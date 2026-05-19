@@ -112,6 +112,15 @@ def _normalize_database_id(text: Optional[str]) -> str:
     return str(text or "").strip()
 
 
+def _normalize_engine_name(text: Optional[str]) -> str | None:
+    engine = str(text or "").strip().lower()
+    if not engine:
+        return None
+    if engine not in {"traditional", "raganything"}:
+        raise HTTPException(status_code=400, detail=f"不支持的 RAG 引擎: {engine}")
+    return engine
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
@@ -129,6 +138,18 @@ def _ensure_registry_seeded() -> None:
     """Seed registry and recover databases that already exist on disk."""
     assert registry is not None
 
+    def register_raganything_database(db_id: str) -> None:
+        kwargs = {
+            "working_dir": str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
+            "output_dir": str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
+        }
+        try:
+            item = registry.register_database(db_id, engine="raganything", **kwargs)
+        except TypeError:
+            item = registry.register_database(db_id, **kwargs)
+            if isinstance(item, dict):
+                item["engine"] = "raganything"
+
     should_discover_existing_dirs = not config.DATABASE_REGISTRY_FILE.exists()
     if should_discover_existing_dirs:
         legacy_file = config.LEGACY_LIGHTRAG_DIR / "databases.json"
@@ -139,20 +160,12 @@ def _ensure_registry_seeded() -> None:
                     for db_id in legacy:
                         db_id = _normalize_database_id(db_id)
                         if db_id:
-                            registry.register_database(
-                                db_id,
-                                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
-                                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
-                            )
+                            register_raganything_database(db_id)
             except (json.JSONDecodeError, OSError):
                 pass
 
         for db_id in config.DEFAULT_DATABASE_IDS:
-            registry.register_database(
-                db_id,
-                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
-                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
-            )
+            register_raganything_database(db_id)
 
         discovered = set()
         for root in (config.RAGANYTHING_STORAGE_ROOT, config.RAGANYTHING_OUTPUT_ROOT):
@@ -166,11 +179,7 @@ def _ensure_registry_seeded() -> None:
                     discovered.add(db_id)
 
         for db_id in sorted(discovered):
-            registry.register_database(
-                db_id,
-                working_dir=str(config.RAGANYTHING_STORAGE_ROOT / db_id / "rag_storage"),
-                output_dir=str(config.RAGANYTHING_OUTPUT_ROOT / db_id),
-            )
+            register_raganything_database(db_id)
 
 
 class SearchRequest(BaseModel):
@@ -210,12 +219,14 @@ class DatabaseRegisterRequest(BaseModel):
     id: str
     name: Optional[str] = None
     description: Optional[str] = ""
+    engine: Optional[str] = None
 
 
 class DatabaseUpdateRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    engine: Optional[str] = None
 
 
 class RetryDocumentRequest(BaseModel):
@@ -283,6 +294,60 @@ def _trim_snippet(text: str, max_chars: int = 220) -> str:
     if len(clean) <= max_chars:
         return clean
     return clean[:max_chars].rstrip() + "..."
+
+
+def _is_success_ingest_status(status: str) -> bool:
+    return str(status or "").strip() in {"success", "已导入"}
+
+
+def _record_traditional_ingest_result(
+    service: Any,
+    db_id: str,
+    file_path: Path,
+    result: dict[str, Any],
+    *,
+    existing_sha256: str | None = None,
+    source_name: str | None = None,
+) -> None:
+    sha256 = str(existing_sha256 or result.get("document_sha256") or _sha256(file_path))
+    status = str(result.get("status") or "").strip()
+    is_success = _is_success_ingest_status(status)
+    registry_status = "已导入" if is_success else "error"
+    error = "" if is_success else str(result.get("error") or result.get("message") or "传统 RAG 导入失败")
+    engine = str(result.get("engine") or "traditional")
+    chunk_count = int(result.get("chunk_count") or 0)
+    embedding_model = str(result.get("embedding_model") or "")
+    rerank_model = str(result.get("rerank_model") or "")
+
+    if existing_sha256:
+        service.registry.update_document_status(db_id, sha256, status=registry_status, error=error)
+        update_index = getattr(service.registry, "update_document_index_metadata", None)
+        if callable(update_index):
+            update_index(
+                db_id,
+                sha256,
+                engine=engine,
+                index_status="indexed" if is_success else "error",
+                chunk_count=chunk_count,
+                embedding_model=embedding_model,
+                rerank_model=rerank_model,
+            )
+        return
+
+    service.registry.register_document(
+        db_id,
+        file_name=source_name or file_path.name,
+        stored_file_name=file_path.name,
+        file_path=str(file_path),
+        sha256=sha256,
+        source=source_name or file_path.name,
+        status=registry_status,
+        error=error,
+        engine=engine,
+        chunk_count=chunk_count,
+        embedding_model=embedding_model,
+        rerank_model=rerank_model,
+    )
 
 
 @app.get("/")
@@ -578,7 +643,10 @@ async def register_database(request: DatabaseRegisterRequest):
     service = _require_service()
     try:
         item = service.registry.register_database(
-            request.id, name=request.name, description=request.description or ""
+            request.id,
+            name=request.name,
+            description=request.description or "",
+            engine=_normalize_engine_name(request.engine),
         )
         return {"status": "success", "database": _database_payload(item)}
     except ValueError as e:
@@ -590,7 +658,11 @@ async def update_database(db_id: str, request: DatabaseUpdateRequest):
     service = _require_service()
     try:
         item = service.registry.update_database(
-            db_id, name=request.name, description=request.description, status=request.status
+            db_id,
+            name=request.name,
+            description=request.description,
+            status=request.status,
+            engine=_normalize_engine_name(request.engine),
         )
         return {"status": "success", "database": _database_payload(item)}
     except KeyError:
@@ -1072,7 +1144,7 @@ async def ingest_text(request: DocumentIngestRequest):
 
 @app.post("/ingest/path")
 async def ingest_path(request: FileIngestRequest):
-    _require_service()
+    service = _require_service()
     db_id = _normalize_database_id(request.database)
     if not db_id:
         raise HTTPException(status_code=400, detail="database 不能为空")
@@ -1081,7 +1153,10 @@ async def ingest_path(request: FileIngestRequest):
     if path.is_file():
         try:
             engine = _engine_for_database(db_id)
-            return await engine.ingest_file(db_id, path)
+            result = await engine.ingest_file(db_id, path)
+            if engine is not service:
+                _record_traditional_ingest_result(service, db_id, path, result)
+            return result
         except Exception as e:
             logger.error(f"文件导入失败: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -1103,9 +1178,12 @@ async def ingest_path(request: FileIngestRequest):
         total = len(files)
         success = 0
         failures = []
+        engine = _engine_for_database(db_id)
         for file_path in files:
             try:
-                await service.ingest_file(db_id, file_path)
+                result = await engine.ingest_file(db_id, file_path)
+                if engine is not service:
+                    _record_traditional_ingest_result(service, db_id, file_path, result)
                 success += 1
             except Exception as e:
                 failures.append({"file": str(file_path), "error": str(e)})
@@ -1195,9 +1273,22 @@ async def _process_uploaded_files(db_id: str, files: list, task_id: str):
             service.registry.update_document_progress(db_id, sha256, stage="rag_ingest")
             progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
             if engine is service:
-                await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
+                result = await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
             else:
-                await engine.ingest_file(db_id, Path(filepath))
+                result = await engine.ingest_file(db_id, Path(filepath))
+                status = str((result or {}).get("status") or "").strip()
+                if _is_success_ingest_status(status):
+                    _record_traditional_ingest_result(
+                        service,
+                        db_id,
+                        Path(filepath),
+                        result or {},
+                        existing_sha256=sha256,
+                        source_name=filename,
+                    )
+                else:
+                    error = str((result or {}).get("error") or (result or {}).get("message") or "传统 RAG 导入失败")
+                    raise RuntimeError(error)
             service.registry.update_document_progress(db_id, sha256, stage="done")
             progress_tracker.emit(task_id, "done", filename, f"{filename} 导入完成")
         except Exception as e:
@@ -1235,8 +1326,11 @@ async def get_model_providers():
 
 @app.put("/settings/models")
 async def update_model_settings(payload: dict[str, Any]):
+    global traditional_service
     try:
-        return settings_store.save(payload)
+        saved = settings_store.save(payload)
+        traditional_service = create_traditional_engine()
+        return saved
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

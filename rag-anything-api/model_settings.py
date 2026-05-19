@@ -40,6 +40,14 @@ ENV_KEYS = {
 }
 
 
+def _env_api_key(section: str) -> str:
+    env_key = ENV_KEYS.get(section, "")
+    value = os.getenv(env_key, "") if env_key else ""
+    if section == "rerank" and not value:
+        value = os.getenv("SILICONFLOW_API_KEY", "")
+    return value
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -66,8 +74,7 @@ def _strip_secret_values(settings: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(item, dict):
             continue
         api_key = str(item.pop("api_key", "") or "")
-        env_key = ENV_KEYS.get(section, "")
-        item["has_api_key"] = bool(api_key or os.getenv(env_key, ""))
+        item["has_api_key"] = bool(api_key or _env_api_key(section))
     return clean
 
 
@@ -98,9 +105,9 @@ class ModelSettingsStore:
         _deep_merge(settings, _read_json(self.local_settings_path))
         if override:
             _deep_merge(settings, override)
-        for section, env_key in ENV_KEYS.items():
+        for section in ENV_KEYS:
             item = settings.setdefault(section, {})
-            item.setdefault("api_key", os.getenv(env_key, ""))
+            item.setdefault("api_key", _env_api_key(section))
         return settings
 
     def save(self, payload: dict[str, Any]) -> dict[str, Any]:

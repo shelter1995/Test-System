@@ -26,3 +26,13 @@ def test_save_non_secret_settings(tmp_path: Path):
 
     assert saved["llm"]["base_url"] == "http://localhost:11434/v1"
     assert "api_key" not in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
+def test_runtime_uses_siliconflow_key_for_rerank_when_specific_key_missing(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("SILICONFLOW_API_KEY", "sf-key")
+    monkeypatch.delenv("RERANK_API_KEY", raising=False)
+    store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
+
+    settings = store.runtime()
+
+    assert settings["rerank"]["api_key"] == "sf-key"

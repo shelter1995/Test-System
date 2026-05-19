@@ -144,3 +144,32 @@ def test_register_document_records_engine_and_chunk_count(tmp_path):
     assert doc["engine"] == "traditional"
     assert doc["chunk_count"] == 4
     assert doc["embedding_model"] == "BAAI/bge-m3"
+
+
+def test_update_document_index_metadata_records_success_details(tmp_path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    registry.register_database("kb", engine="traditional")
+    registry.register_document(
+        "kb",
+        file_name="guide.md",
+        file_path="guide.md",
+        sha256="sha",
+        status="processing",
+        engine="traditional",
+    )
+
+    updated = registry.update_document_index_metadata(
+        "kb",
+        "sha",
+        index_status="indexed",
+        chunk_count=7,
+        embedding_model="custom-embedding",
+        rerank_model="custom-rerank",
+    )
+
+    assert updated is True
+    doc = registry.list_documents("kb")[0]
+    assert doc["index_status"] == "indexed"
+    assert doc["chunk_count"] == 7
+    assert doc["embedding_model"] == "custom-embedding"
+    assert doc["rerank_model"] == "custom-rerank"

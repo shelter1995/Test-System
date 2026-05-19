@@ -47,6 +47,7 @@
         var form = document.getElementById('model-settings-form');
         var formData = new FormData(form);
         var payload = { llm: {}, embedding: {}, rerank: {} };
+        var hasApiKey = false;
         var entries = formData.entries();
         var entry = entries.next();
         while (!entry.done) {
@@ -54,9 +55,16 @@
             var value = entry.value[1];
             var parts = key.split('.');
             if (parts.length === 2 && payload[parts[0]]) {
-                payload[parts[0]][parts[1]] = String(value).trim();
+                var text = String(value).trim();
+                payload[parts[0]][parts[1]] = text;
+                if (parts[1] === 'api_key' && text) {
+                    hasApiKey = true;
+                }
             }
             entry = entries.next();
+        }
+        if (hasApiKey) {
+            payload.persist_api_key = true;
         }
         return payload;
     }
