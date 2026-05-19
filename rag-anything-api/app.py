@@ -32,6 +32,8 @@ from progress import progress_tracker
 from rag_engines.factory import create_traditional_engine, database_engine_name
 from raganything_service import RAGAnythingService
 from kb_answer import build_context_fallback_answer, build_kb_answer_prompt, extract_source_summaries
+from model_settings import ModelSettingsStore
+from rag_engines.traditional.model_clients import ModelEndpoint, OpenAICompatibleClient
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -98,6 +100,11 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+)
+
+settings_store = ModelSettingsStore(
+    config.STORAGE_ROOT / "model_settings.json",
+    config.STORAGE_ROOT / "model_settings.local.json",
 )
 
 
@@ -1211,6 +1218,56 @@ async def ingest_progress(task_id: str):
                 break
             await asyncio.sleep(0.5)
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+@app.get("/settings/models")
+async def get_model_settings():
+    return settings_store.load()
+
+
+@app.get("/settings/providers")
+async def get_model_providers():
+    return {"providers": settings_store.providers()}
+
+
+@app.put("/settings/models")
+async def update_model_settings(payload: dict[str, Any]):
+    try:
+        return settings_store.save(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+def _endpoint_from_settings(section: dict[str, Any]) -> ModelEndpoint:
+    return ModelEndpoint(
+        provider=str(section.get("provider") or "openai-compatible"),
+        base_url=str(section.get("base_url") or "").rstrip("/"),
+        api_key=str(section.get("api_key") or ""),
+        model=str(section.get("model") or ""),
+        timeout=int(section.get("timeout") or 60),
+    )
+
+
+@app.post("/settings/models/test")
+async def test_model_settings(payload: dict[str, Any]):
+    target = str(payload.get("target") or "llm").strip().lower()
+    runtime = settings_store.runtime(payload)
+    try:
+        if target == "embedding":
+            client = OpenAICompatibleClient(_endpoint_from_settings(runtime["embedding"]))
+            vectors = await client.embed(["连接测试"])
+            if not vectors or not vectors[0]:
+                raise RuntimeError("embedding endpoint returned empty vector")
+            return {"status": "success", "target": "embedding", "dimension": len(vectors[0])}
+        if target == "rerank":
+            client = OpenAICompatibleClient(_endpoint_from_settings(runtime["rerank"]))
+            result = await client.rerank("连接测试", ["连接测试文档", "无关文档"], top_n=1)
+            return {"status": "success", "target": "rerank", "items": len(result)}
+        client = OpenAICompatibleClient(_endpoint_from_settings(runtime["llm"]))
+        answer = await client.chat("你是连接测试助手。", "回复 OK")
+        return {"status": "success", "target": "llm", "message": answer[:80]}
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"模型连接测试失败: {exc}")
 
 
 def check_port_available(port: int) -> bool:
