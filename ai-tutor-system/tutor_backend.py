@@ -18,6 +18,7 @@ from tutor_services import (
     AIService,
     SessionManager,
     ReportGenerator,
+    build_rag_context_prompt,
     get_rag_service,
     get_ai_service,
 )
@@ -343,24 +344,17 @@ async def chat(chat_message: ChatMessage):
     product = session_data.get("product", "")
     database = session_data.get("database") or rag_service.resolve_database(product)
 
-    # RAG 检索
-    product_knowledge, sales_knowledge, objection_knowledge = await asyncio.gather(
-        asyncio.to_thread(rag_service.search, f"{product} 产品介绍 功能 价格", database, 3),
-        asyncio.to_thread(
-            rag_service.search,
-            f"{session_data['scenario'].get('name', '')} 应对话术 销售技巧",
-            database,
-            3,
-        ),
-        asyncio.to_thread(rag_service.search, "常见异议处理 价格异议 技术异议", database, 2),
+    # RAG 统一上下文检索
+    context_query = f"{product} {session_data['scenario'].get('name', '')} 产品介绍 应对话术 常见异议处理"
+    context_result = await asyncio.to_thread(
+        rag_service.client.context,
+        context_query,
+        database,
+        5,
     )
+    knowledge_context = build_rag_context_prompt(context_result)
 
-    # 构建知识库上下文和系统提示（复用 streaming 模块的辅助函数）
-    from tutor_streaming import _build_knowledge_context, _build_system_prompt
-
-    knowledge_context = _build_knowledge_context(
-        product_knowledge, sales_knowledge, objection_knowledge
-    )
+    from tutor_streaming import _build_system_prompt
 
     conversation_history = []
     for msg in session_data["messages"][-5:]:
@@ -408,10 +402,7 @@ async def chat(chat_message: ChatMessage):
         "round": session_data["round"],
         "session_id": session_id,
         "debug_info": {
-            "knowledge_found": len(product_knowledge) + len(sales_knowledge) + len(objection_knowledge),
-            "product_knowledge": len(product_knowledge),
-            "sales_knowledge": len(sales_knowledge),
-            "objection_knowledge": len(objection_knowledge),
+            "knowledge_found": len(context_result.get("contexts") or []),
         },
     }
 

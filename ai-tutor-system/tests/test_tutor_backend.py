@@ -48,3 +48,18 @@ def test_pause_evaluation_does_not_append_duplicate(monkeypatch):
     finally:
         tutor_backend.sessions.clear()
         tutor_backend.sessions.update(original_sessions)
+
+
+def test_tutor_prompt_includes_rag_context_sources():
+    from tutor_services import build_rag_context_prompt
+
+    context = {
+        "contexts": [
+            {"text": "产品支持企业欢迎语。", "metadata": {"source": "product.md"}},
+        ]
+    }
+
+    prompt = build_rag_context_prompt(context)
+
+    assert "产品支持企业欢迎语" in prompt
+    assert "product.md" in prompt

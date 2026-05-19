@@ -758,6 +758,23 @@ class ReportGenerator:
         return "较差"
 
 
+# ==================== Context prompt helper ====================
+
+
+def build_rag_context_prompt(context_result: dict) -> str:
+    contexts = context_result.get("contexts") or []
+    if not contexts:
+        return ""
+    lines = ["可参考的知识库资料："]
+    for item in contexts:
+        metadata = item.get("metadata") or {}
+        source = metadata.get("source", "unknown")
+        text = str(item.get("text") or "").strip()
+        if text:
+            lines.append(f"- 来源 {source}: {text}")
+    return "\n".join(lines)
+
+
 # ==================== Convenience singletons ====================
 
 _default_rag: Optional[RAGService] = None
