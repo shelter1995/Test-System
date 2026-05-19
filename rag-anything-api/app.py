@@ -368,12 +368,14 @@ async def context(request: SearchRequest):
         if not db_id:
             raise HTTPException(status_code=400, detail="database 不能为空")
         engine = _engine_for_database(db_id)
-        return await engine.query_context(
+        result = await engine.query_context(
             db_id,
             request.query,
             mode=config.CONTEXT_QUERY_MODE,
             max_chars=config.CONTEXT_MAX_CHARS,
         )
+        result.setdefault("fallback", "")
+        return result
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
     except HTTPException:

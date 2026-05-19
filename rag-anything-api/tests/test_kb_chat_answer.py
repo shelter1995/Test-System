@@ -46,6 +46,7 @@ def test_extract_source_summaries_deduplicates_sources():
             "file_name": "资费说明.pdf",
             "snippet": "商务彩铃基础版 10 元/月/线。",
             "score": 0.9,
+            "engine": "",
         }
     ]
 

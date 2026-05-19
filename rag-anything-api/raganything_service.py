@@ -40,6 +40,12 @@ ZH_GENERIC_TERMS = {
     "一个",
     "这个",
     "那个",
+    "做法",
+    "方法",
+    "步骤",
+    "流程",
+    "内容",
+    "相关",
 }
 
 
@@ -86,6 +92,10 @@ def _query_terms(query: str) -> list[str]:
 def _score_text(text: str, terms: list[str]) -> int:
     haystack = str(text or "").lower()
     if not haystack or not terms:
+        return 0
+
+    content_terms = [term for term in terms if term not in ZH_GENERIC_TERMS]
+    if content_terms and not any(term in haystack for term in content_terms):
         return 0
 
     raw_score = 0.0
@@ -138,6 +148,55 @@ def _trim_snippet(text: str, terms: list[str], max_chars: int) -> str:
     return clean[start:end].strip()
 
 
+def _split_local_markdown(text: str, max_chars: int = 1800) -> list[str]:
+    clean = str(text or "").strip()
+    if not clean:
+        return []
+
+    sections: list[str] = []
+    current: list[str] = []
+    for line in clean.splitlines():
+        if line.lstrip().startswith("#") and current:
+            section = "\n".join(current).strip()
+            if section:
+                sections.append(section)
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        section = "\n".join(current).strip()
+        if section:
+            sections.append(section)
+
+    if not sections:
+        sections = [clean]
+
+    chunks: list[str] = []
+    for section in sections:
+        if len(section) <= max_chars:
+            chunks.append(section)
+            continue
+        start = 0
+        while start < len(section):
+            chunks.append(section[start : start + max_chars].strip())
+            start += max_chars
+    return [chunk for chunk in chunks if chunk]
+
+
+def _is_no_context_response(text: str) -> bool:
+    normalized = str(text or "").strip().lower()
+    if not normalized:
+        return True
+    markers = (
+        "[no-context]",
+        "no relevant document chunks found",
+        "no relevant",
+        "未找到相关",
+        "没有找到相关",
+    )
+    return any(marker in normalized for marker in markers)
+
+
 class RAGAnythingService:
     def __init__(
         self,
@@ -165,6 +224,38 @@ class RAGAnythingService:
 
     def _db_output_dir(self, database_id: str) -> Path:
         return self.output_root / database_id
+
+    def _registered_source_stems(self, database_id: str) -> set[str]:
+        database = self.registry.get_database(database_id) or {}
+        stems: set[str] = set()
+        for doc in database.get("documents", []):
+            for key in ("file_name", "source", "stored_file_name"):
+                value = str(doc.get(key) or "").strip()
+                if not value:
+                    continue
+                path = Path(value)
+                stems.add(path.name)
+                stems.add(path.stem)
+        return {stem for stem in stems if stem}
+
+    def _matches_registered_source(self, database_id: str, source: str) -> bool:
+        registered = self._registered_source_stems(database_id)
+        if not registered:
+            return True
+
+        candidate = Path(str(source or "")).name.strip()
+        if not candidate:
+            return False
+        candidate_stem = Path(candidate).stem
+        for registered_name in registered:
+            registered_stem = Path(registered_name).stem
+            if candidate == registered_name or candidate_stem == registered_stem:
+                return True
+            if registered_stem and candidate_stem.startswith(f"{registered_stem}_part_"):
+                return True
+            if registered_stem and candidate_stem.startswith(registered_stem):
+                return True
+        return False
 
     def _current_loop_id(self) -> int | None:
         try:
@@ -456,7 +547,8 @@ class RAGAnythingService:
 
         def add_item(text: str, source: str, kind: str):
             text = str(text or "").strip()
-            if not text:
+            source = str(source or "").strip()
+            if not text or not self._matches_registered_source(database_id, source):
                 return
             key = (source, text[:200])
             if key in seen:
@@ -499,7 +591,8 @@ class RAGAnythingService:
         if output_dir.exists():
             for path in output_dir.rglob("*.md"):
                 try:
-                    add_item(path.read_text(encoding="utf-8"), path.name, "mineru_markdown")
+                    for chunk in _split_local_markdown(path.read_text(encoding="utf-8")):
+                        add_item(chunk, path.name, "mineru_markdown")
                 except OSError as exc:
                     logger.warning("Local fallback failed reading %s: %s", path, exc)
 
@@ -523,6 +616,7 @@ class RAGAnythingService:
                 copy = dict(item)
                 copy["metadata"] = dict(item.get("metadata", {}))
                 copy["metadata"]["fallback_reason"] = "rag_query_unavailable"
+                copy["metadata"].setdefault("engine", "raganything")
                 copy["score"] = float(score or 1)
                 copy["text"] = _trim_snippet(item["text"], terms, max_chars)
                 ranked.append(copy)
@@ -544,7 +638,13 @@ class RAGAnythingService:
         rag = self.get_rag(database_id, create_if_missing=False)
         init_result = await rag._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
-            raise RuntimeError(f"RAG 引擎初始化失败: {(init_result or {}).get('error', 'unknown')}")
+            logger.warning(
+                "RAG query initialization failed for database=%s query=%r: %s; using local fallback",
+                database_id,
+                query,
+                (init_result or {}).get("error", "unknown"),
+            )
+            return self._local_search(database_id, query, n_results=n_results)
 
         aquery_kwargs = {"mode": mode}
         if enable_rerank is not None:
@@ -651,7 +751,27 @@ class RAGAnythingService:
         rag = self.get_rag(database_id, create_if_missing=False)
         init_result = await rag._ensure_lightrag_initialized()
         if not init_result or not init_result.get("success"):
-            raise RuntimeError(f"RAG 引擎初始化失败: {(init_result or {}).get('error', 'unknown')}")
+            logger.warning(
+                "RAG context initialization failed for database=%s query=%r: %s; using local fallback",
+                database_id,
+                query,
+                (init_result or {}).get("error", "unknown"),
+            )
+            result = self._local_search(
+                database_id,
+                query,
+                n_results=5,
+                max_chars=max(500, max_chars // 2),
+            )
+            contexts = result.get("contexts", [])
+            return {
+                "query": query,
+                "database": database_id,
+                "contexts": contexts,
+                "total_found": len(contexts),
+                "fallback": "local_text",
+                "fallback_reason": "rag_init_failed",
+            }
 
         try:
             context = await asyncio.wait_for(
@@ -685,6 +805,21 @@ class RAGAnythingService:
                 "fallback": "local_text",
             }
         text = str(context).strip()
+        if _is_no_context_response(text):
+            result = self._local_search(
+                database_id,
+                query,
+                n_results=5,
+                max_chars=max(500, max_chars // 2),
+            )
+            contexts = result.get("contexts", [])
+            return {
+                "query": query,
+                "database": database_id,
+                "contexts": contexts,
+                "total_found": len(contexts),
+                "fallback": "local_text" if contexts else "no_context",
+            }
         if max_chars > 0:
             text = text[:max_chars]
 
@@ -693,7 +828,7 @@ class RAGAnythingService:
             contexts.append(
                 {
                     "text": text,
-                    "metadata": {"source": database_id, "database": database_id, "mode": mode},
+                    "metadata": {"source": database_id, "database": database_id, "mode": mode, "engine": "raganything"},
                     "score": 1.0,
                 }
             )

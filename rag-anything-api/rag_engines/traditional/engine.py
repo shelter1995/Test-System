@@ -129,7 +129,11 @@ class TraditionalRAGEngine:
             if remaining and len(text) > remaining:
                 text = text[:remaining]
             if text:
-                contexts.append({**item, "text": text})
+                enriched = {**item, "text": text}
+                meta = dict(enriched.get("metadata") or {})
+                meta.setdefault("engine", self.name)
+                enriched["metadata"] = meta
+                contexts.append(enriched)
                 remaining -= len(text)
             if remaining <= 0:
                 break

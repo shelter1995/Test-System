@@ -28,11 +28,33 @@ def extract_source_summaries(contexts: list[dict[str, Any]], max_items: int = 8)
                 "file_name": file_name,
                 "snippet": snippet,
                 "score": float(ctx.get("score") or 0),
+                "engine": str(meta.get("engine") or "").strip(),
             }
         )
         if len(sources) >= max_items:
             break
     return sources
+
+
+def build_context_fallback_answer(query: str, contexts: list[dict[str, Any]], max_items: int = 3) -> str:
+    snippets = []
+    for ctx in contexts[:max_items]:
+        if not isinstance(ctx, dict):
+            continue
+        text = _trim(str(ctx.get("text") or ""), 450)
+        if text:
+            snippets.append(text)
+
+    if not snippets:
+        return "当前知识库未找到相关资料。"
+
+    lines = [
+        "当前知识库检索到了相关资料，但答案生成服务暂时不可用。",
+        "以下是可核对的原文片段：",
+    ]
+    for index, snippet in enumerate(snippets, start=1):
+        lines.append(f"{index}. {snippet}")
+    return "\n".join(lines)
 
 
 def build_kb_answer_prompt(

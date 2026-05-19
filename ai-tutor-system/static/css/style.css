@@ -2709,6 +2709,42 @@ body.has-alert #tutorApp .page {
     padding: 2rem 1rem;
 }
 
+.kbchat-source-meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.kbchat-source-score {
+    font-size: 0.75rem;
+    color: #64748b;
+    background: #f1f5f9;
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+}
+
+.kbchat-source-engine {
+    font-size: 0.7rem;
+    color: #475569;
+    background: #e2e8f0;
+    padding: 0.15rem 0.45rem;
+    border-radius: 3px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.kbchat-sources-fallback {
+    font-size: 0.8rem;
+    color: #92400e;
+    background: #fef3c7;
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-md);
+    padding: 0.5rem 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
 @media (max-width: 1200px) {
     .kbchat-page {
         grid-template-columns: 1fr;

@@ -8,6 +8,7 @@
         activeDatabase: '',
         messages: [],
         latestSources: [],
+        latestFallback: '',
         pending: false,
         turns: [],
         maxTurns: 4,
@@ -138,11 +139,27 @@
             return;
         }
 
-        box.innerHTML = list.map(function (item) {
+        var fallbackWarning = '';
+        if (state.latestFallback) {
+            fallbackWarning = '<div class="kbchat-sources-fallback">本次使用本地文本兜底检索，请核对来源</div>';
+        }
+
+        box.innerHTML = fallbackWarning + list.map(function (item) {
+            var scoreText = item.score ? (Math.round(item.score * 100) / 100).toFixed(2) : '';
+            var scoreHtml = scoreText
+                ? '<span class="kbchat-source-score">相关度 ' + esc(scoreText) + '</span>'
+                : '';
+            var engineLabel = item.engine
+                ? '<span class="kbchat-source-engine">' + esc(item.engine) + '</span>'
+                : '';
+            var metaHtml = (scoreHtml || engineLabel)
+                ? '<div class="kbchat-source-meta">' + engineLabel + scoreHtml + '</div>'
+                : '';
             return '' +
                 '<div class="kbchat-source-item">' +
                     '<div class="kbchat-source-file">' + esc(item.fileName || '知识库资料') + '</div>' +
                     '<div class="kbchat-source-snippet">' + esc(item.snippet || '已命中该来源，未返回可展示片段。') + '</div>' +
+                    metaHtml +
                 '</div>';
         }).join('');
     }
@@ -171,6 +188,7 @@
     function resetSession(withSystemMessage) {
         state.messages = [];
         state.latestSources = [];
+        state.latestFallback = '';
         state.turns = [];
         if (withSystemMessage) {
             addMessage('system', withSystemMessage);
@@ -215,16 +233,21 @@
                     return {
                         fileName: String((item && item.file_name) || '').trim() || '知识库资料',
                         snippet: String((item && item.snippet) || '').trim() || '已命中该来源，未返回可展示片段。',
+                        score: typeof item.score === 'number' ? item.score : 0,
+                        engine: String((item && item.engine) || '').trim(),
                     };
                 })
                 : [];
 
             var fallback = String((data && data.fallback) || '').trim();
-            var note = fallback
+            var sourcesFallback = String((data && data.sources_fallback) || '').trim();
+            var effectiveFallback = fallback || sourcesFallback;
+            var note = effectiveFallback
                 ? '\n\n（提示：本次使用本地文本兜底检索，答案可信度取决于召回片段，请核对来源。）'
                 : '';
             addMessage('assistant', (answer || '当前知识库未找到相关资料。') + note, sources);
             state.latestSources = sources;
+            state.latestFallback = effectiveFallback;
 
             state.turns.push({
                 q: question,
@@ -236,6 +259,7 @@
         } catch (err) {
             addMessage('system', '查询失败，请稍后重试或联系管理员检查知识库服务。');
             state.latestSources = [];
+            state.latestFallback = '';
             console.error('知识库问答请求失败:', err);
         } finally {
             renderMessages();
