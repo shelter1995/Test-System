@@ -2300,6 +2300,26 @@ body.has-alert #tutorApp .page {
     color: #9f1239;
 }
 
+/* 引擎标签 */
+.engine-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    vertical-align: middle;
+}
+
+.engine-traditional {
+    background: #dbeafe;
+    color: #1e40af;
+}
+
+.engine-raganything {
+    background: #fef3c7;
+    color: #92400e;
+}
+
 /* 空状态 */
 .empty-state {
     display: flex;

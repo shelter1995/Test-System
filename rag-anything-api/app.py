@@ -520,6 +520,7 @@ async def list_databases():
             "name": item.get("name", item.get("id")),
             "description": item.get("description", ""),
             "status": item.get("status", "active"),
+            "engine": item.get("engine", "raganything"),
             "documents_count": len(item.get("documents", [])),
         }
         for item in data

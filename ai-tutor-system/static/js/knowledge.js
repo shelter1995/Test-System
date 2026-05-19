@@ -9,6 +9,11 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function renderEngineBadge(engine) {
+    const label = engine === 'raganything' ? 'RAG-Anything' : '传统 RAG';
+    return `<span class="engine-badge engine-${engine || 'traditional'}">${label}</span>`;
+}
+
 const knowledgeState = {
     databases: [],
     activeDatabase: '',
@@ -155,13 +160,14 @@ function renderDatabaseList() {
     return knowledgeState.databases.map(db => {
         const id = typeof db === 'string' ? db : db.id;
         const name = typeof db === 'string' ? db : (db.name || db.id);
+        const engine = typeof db === 'string' ? '' : (db.engine || '');
         const isActive = id === knowledgeState.activeDatabase;
         return `
             <div class="db-item ${isActive ? 'active' : ''}" data-db-id="${escapeHtml(id)}" onclick="selectDatabase(this.dataset.dbId)">
                 <span class="db-item-icon">📚</span>
                 <div class="db-item-info">
                     <div class="db-item-name">${escapeHtml(name)}</div>
-                    <div class="db-item-id">${escapeHtml(id)}</div>
+                    <div class="db-item-id">${escapeHtml(id)}${engine ? ' ' + renderEngineBadge(engine) : ''}</div>
                 </div>
                 <div class="db-item-actions">
                     <button class="btn-icon-sm btn-edit" onclick="event.stopPropagation();editDatabase('${escapeHtml(id)}')" title="编辑">✏️</button>
@@ -694,6 +700,7 @@ async function deleteDocument(sha256) {
  */
 function _renderFileRow(item, isUploading) {
     const fileName = escapeHtml(item.file_name || item.name || '-');
+    const engine = !isUploading ? (item.engine || '') : '';
     const sha256 = isUploading ? '' : escapeHtml(item.sha256 || '');
     const statusMap = {
         'imported': '已导入',
@@ -749,7 +756,7 @@ function _renderFileRow(item, isUploading) {
     return `
     <div class="file-row">
         <span class="file-col-name" title="${fileName}">
-            ${isUploading ? '⏳' : '📄'} ${fileName}
+            ${isUploading ? '⏳' : '📄'} ${fileName}${engine ? ' ' + renderEngineBadge(engine) : ''}
         </span>
         <span class="file-col-status">
             <span class="status-text ${statusClass}" title="${titleText}">

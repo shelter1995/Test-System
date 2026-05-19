@@ -41,13 +41,15 @@ class FakeRegistry:
                 db["name"] = name
             if description is not None:
                 db["description"] = description
+            if kwargs.get("engine"):
+                db["engine"] = kwargs["engine"]
             return db
         db = {
             "id": database_id,
             "name": name or database_id,
             "description": description or "",
             "status": "active",
-            "engine": "raganything",
+            "engine": kwargs.get("engine", "raganything"),
             "documents": [],
             "working_dir": "",
             "output_dir": "",
@@ -287,6 +289,27 @@ class TestListDocuments:
         client, _ = _make_client(monkeypatch)
         response = client.get("/db/no-such-db/documents")
         assert response.status_code == 404
+
+    def test_documents_include_engine_and_index_status(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb", engine="traditional")
+        service.registry.register_document(
+            "kb",
+            "guide.md",
+            "guide.md",
+            "sha",
+            engine="traditional",
+            chunk_count=2,
+            embedding_model="BAAI/bge-m3",
+        )
+
+        response = client.get("/db/kb/documents")
+
+        assert response.status_code == 200
+        doc = response.json()["documents"][0]
+        assert doc["engine"] == "traditional"
+        assert doc["chunk_count"] == 2
+        assert doc["embedding_model"] == "BAAI/bge-m3"
 
     def test_list_documents_reconciles_failed_lightrag_status(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)
@@ -751,6 +774,17 @@ class TestDbListUpdatedFields:
         assert by_id["alpha"]["documents_count"] == 2
         assert by_id["beta"]["description"] == ""
         assert by_id["beta"]["documents_count"] == 0
+
+    def test_list_includes_engine_field(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("trad-kb", engine="traditional")
+        service.registry.register_database("rag-kb")
+
+        response = client.get("/db/list")
+        assert response.status_code == 200
+        by_id = {d["id"]: d for d in response.json()["databases"]}
+        assert by_id["trad-kb"]["engine"] == "traditional"
+        assert by_id["rag-kb"]["engine"] == "raganything"
 
 
 def test_database_audit_endpoint_reports_orphans(monkeypatch, tmp_path):
