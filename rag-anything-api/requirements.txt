@@ -7,3 +7,7 @@ requests>=2.31.0
 pydantic>=2.0.0
 mineru[core]
 openai-whisper>=20250625
+numpy>=1.26.0
+pypdf>=4.0.0
+python-docx>=1.1.0
+openpyxl>=3.1.0
