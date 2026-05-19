@@ -153,6 +153,18 @@ def _validate_markdown_artifact(content: str, artifact_name: str) -> None:
 
 # ==================== RAG 格式化 ====================
 
+def build_context_block(context_result: dict) -> str:
+    """将 /context API 返回结果格式化为带来源标注的文本块。"""
+    lines = []
+    for index, item in enumerate(context_result.get("contexts") or [], start=1):
+        metadata = item.get("metadata") or {}
+        source = metadata.get("source", "unknown")
+        text = str(item.get("text") or "").strip()
+        if text:
+            lines.append(f"[资料 {index} | 来源: {source}]\n{text}")
+    return "\n\n".join(lines)
+
+
 def _format_rag_results(rag_results: dict) -> str:
     if not rag_results:
         return '（知识库暂无相关内容，请基于专业知识生成。）'

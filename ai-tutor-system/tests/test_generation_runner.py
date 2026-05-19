@@ -65,6 +65,23 @@ def test_create_job_rejects_when_running_limit_reached(monkeypatch, tmp_path):
         raise AssertionError("expected running job limit error")
 
 
+def test_generation_uses_context_texts(monkeypatch):
+    from generation_runner import build_context_block
+
+    context = {
+        "contexts": [
+            {"text": "资料一", "metadata": {"source": "a.md"}},
+            {"text": "资料二", "metadata": {"source": "b.md"}},
+        ]
+    }
+
+    block = build_context_block(context)
+
+    assert "资料一" in block
+    assert "来源: a.md" in block
+    assert "资料二" in block
+
+
 def test_training_job_saves_stage_outputs(monkeypatch, tmp_path):
     import generation_runner
 

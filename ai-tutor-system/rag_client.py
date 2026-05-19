@@ -42,6 +42,21 @@ class RAGClient:
         data = resp.json()
         return data.get("results", [])
 
+    def context(self, query: str, database: str, n_results: int = 5, enable_rerank: bool = True) -> dict:
+        """POST /context → 统一上下文检索结果"""
+        resp = self._session.post(
+            f"{self.base_url}/context",
+            json={
+                "query": query,
+                "n_results": n_results,
+                "database": database,
+                "enable_rerank": enable_rerank,
+            },
+            timeout=self.timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def ai_enhanced_search(self, query: str, database: str, n_results: int = 10) -> List[dict]:
         """POST /ai_enhanced_search → AI 增强检索结果"""
         resp = self._session.post(
