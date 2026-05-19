@@ -56,6 +56,10 @@ def main() -> None:
         ("dotenv", "python-dotenv"),
         ("httpx", "httpx"),
         ("pydantic", "pydantic"),
+        ("numpy", "numpy"),
+        ("pypdf", "pypdf"),
+        ("docx", "python-docx"),
+        ("openpyxl", "openpyxl"),
     ]
 
     missing = []
