@@ -170,6 +170,19 @@ CONTEXT_LOCAL_FIRST = _safe_bool(os.getenv("CONTEXT_LOCAL_FIRST"), True)
 MAX_RAG_INSTANCES = _safe_int(os.getenv("MAX_RAG_INSTANCES", "3"), 3)
 
 
+# 传统 RAG 引擎配置
+DEFAULT_RAG_ENGINE = os.getenv("DEFAULT_RAG_ENGINE", "traditional").strip().lower() or "traditional"
+TRADITIONAL_RAG_STORAGE_ROOT = STORAGE_ROOT / "traditional_rag"
+TRADITIONAL_RAG_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
+TRADITIONAL_SUPPORTED_EXTENSIONS = {
+    item.strip().lower()
+    for item in os.getenv("TRADITIONAL_SUPPORTED_EXTENSIONS", ".txt,.md,.csv,.pdf,.docx,.xlsx").split(",")
+    if item.strip()
+}
+TRADITIONAL_CHUNK_SIZE = _safe_int(os.getenv("TRADITIONAL_CHUNK_SIZE", "1200"), 1200)
+TRADITIONAL_CHUNK_OVERLAP = _safe_int(os.getenv("TRADITIONAL_CHUNK_OVERLAP", "120"), 120)
+
+
 # 初始数据库 ID（仅用于第一次无 registry 文件时兼容）
 DEFAULT_DATABASE_IDS = [
     "商务彩铃",

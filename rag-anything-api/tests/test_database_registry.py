@@ -21,7 +21,7 @@ def test_register_database_and_document(tmp_path: Path):
     databases = registry.list_databases()
     assert len(databases) == 1
     assert databases[0]["id"] == "商务彩铃"
-    assert databases[0]["engine"] == "raganything"
+    assert databases[0]["engine"] == "traditional"
     assert databases[0]["documents"][0]["file_name"] == "介绍.png"
 
 
@@ -115,3 +115,32 @@ def test_update_document_status_preserves_progress_metadata(tmp_path: Path):
     assert doc["stage"] == "graph_enrichment"
     assert doc["segments_total"] == 3
     assert doc["error"] == "1 segment failed"
+
+
+def test_register_database_accepts_engine(tmp_path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+
+    item = registry.register_database("kb", engine="traditional")
+
+    assert item["engine"] == "traditional"
+    assert registry.get_database("kb")["engine"] == "traditional"
+
+
+def test_register_document_records_engine_and_chunk_count(tmp_path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    registry.register_database("kb", engine="traditional")
+
+    registry.register_document(
+        "kb",
+        file_name="guide.md",
+        file_path="guide.md",
+        sha256="sha",
+        engine="traditional",
+        chunk_count=4,
+        embedding_model="BAAI/bge-m3",
+    )
+
+    doc = registry.list_documents("kb")[0]
+    assert doc["engine"] == "traditional"
+    assert doc["chunk_count"] == 4
+    assert doc["embedding_model"] == "BAAI/bge-m3"

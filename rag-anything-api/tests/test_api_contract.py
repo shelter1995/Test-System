@@ -5,11 +5,11 @@ import app as rag_api
 
 class FakeRegistry:
     def list_databases(self):
-        return [{"id": "商务彩铃", "name": "商务彩铃", "status": "active", "documents": []}]
+        return [{"id": "商务彩铃", "name": "商务彩铃", "status": "active", "engine": "raganything", "documents": []}]
 
     def get_database(self, db_id):
         if db_id == "商务彩铃":
-            return {"id": "商务彩铃", "name": "商务彩铃", "status": "active", "documents": []}
+            return {"id": "商务彩铃", "name": "商务彩铃", "status": "active", "engine": "raganything", "documents": []}
         return None
 
 
@@ -67,6 +67,11 @@ class FakeService:
         }
 
 
+class FailingAnswerService(FakeService):
+    async def generate_answer(self, prompt):
+        raise TimeoutError("LLM timeout")
+
+
 def test_db_list_contract(monkeypatch):
     monkeypatch.setattr(rag_api, "rag_service", FakeService())
     monkeypatch.setattr(rag_api, "startup_error", None)
@@ -119,3 +124,20 @@ def test_kb_chat_contract(monkeypatch):
     assert "10 元/月/线" in data["answer"]
     assert data["answer"] != data["sources"][0]["snippet"]
     assert data["fallback"] in (None, "local_text")
+
+
+def test_kb_chat_falls_back_to_context_summary_when_answer_generation_fails(monkeypatch):
+    monkeypatch.setattr(rag_api, "rag_service", FailingAnswerService())
+    monkeypatch.setattr(rag_api, "startup_error", None)
+    client = TestClient(rag_api.app)
+
+    response = client.post(
+        "/kb/chat",
+        json={"query": "坐椅子时如何摆拍照姿势", "database": "商务彩铃"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["fallback"] == "answer_generation_failed"
+    assert "答案生成服务暂时不可用" in data["answer"]
+    assert "坐前缘" in data["answer"]

@@ -83,6 +83,10 @@ class FakeRegistry:
         status="已导入",
         error="",
         stored_file_name=None,
+        engine=None,
+        chunk_count=0,
+        embedding_model="",
+        rerank_model="",
     ):
         from datetime import datetime, timezone
         self.register_database(database_id)
@@ -105,6 +109,11 @@ class FakeRegistry:
                 "partial_errors": [],
                 "cleanup_status": "",
                 "rag_doc_ids": [],
+                "engine": engine or self._databases.get(database_id, {}).get("engine", "traditional"),
+                "index_status": "indexed" if status in {"已导入", "success"} else "",
+                "chunk_count": int(chunk_count or 0),
+                "embedding_model": embedding_model,
+                "rerank_model": rerank_model,
                 "imported_at": now,
                 "updated_at": now,
             }

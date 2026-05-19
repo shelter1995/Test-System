@@ -81,6 +81,7 @@ class DatabaseRegistry:
         description: str | None = None,
         working_dir: str | None = None,
         output_dir: str | None = None,
+        engine: str | None = None,
     ) -> dict[str, Any]:
         database_id = str(database_id).strip()
         if not database_id:
@@ -96,6 +97,8 @@ class DatabaseRegistry:
                     item["working_dir"] = working_dir
                 if output_dir:
                     item["output_dir"] = output_dir
+                if engine:
+                    item["engine"] = engine
                 item["updated_at"] = self._now()
                 self._save(data)
                 return item
@@ -106,7 +109,7 @@ class DatabaseRegistry:
             "name": name or database_id,
             "description": description or "",
             "status": "active",
-            "engine": "raganything",
+            "engine": engine or "traditional",
             "created_at": now,
             "updated_at": now,
             "working_dir": working_dir or "",
@@ -173,6 +176,10 @@ class DatabaseRegistry:
         status: str = "已导入",
         error: str = "",
         stored_file_name: str | None = None,
+        engine: str | None = None,
+        chunk_count: int = 0,
+        embedding_model: str = "",
+        rerank_model: str = "",
     ) -> None:
         data = self._load()
 
@@ -212,6 +219,11 @@ class DatabaseRegistry:
                 "partial_errors": [],
                 "cleanup_status": "",
                 "rag_doc_ids": [],
+                "engine": engine or database.get("engine", "traditional"),
+                "index_status": "indexed" if status in {"已导入", "success"} else "",
+                "chunk_count": int(chunk_count or 0),
+                "embedding_model": embedding_model,
+                "rerank_model": rerank_model,
                 "imported_at": now,
                 "updated_at": now,
             }

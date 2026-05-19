@@ -29,8 +29,9 @@ sys.path.insert(0, os.path.dirname(__file__))
 import config
 from database_registry import DatabaseRegistry
 from progress import progress_tracker
+from rag_engines.factory import create_traditional_engine, database_engine_name
 from raganything_service import RAGAnythingService
-from kb_answer import build_kb_answer_prompt, extract_source_summaries
+from kb_answer import build_context_fallback_answer, build_kb_answer_prompt, extract_source_summaries
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -49,12 +50,13 @@ class UTF8JSONResponse(JSONResponse):
 
 
 rag_service: Optional[RAGAnythingService] = None
+traditional_service = None
 registry: Optional[DatabaseRegistry] = None
 startup_error: Optional[str] = None
 
 
 async def initialize_service() -> None:
-    global rag_service, registry, startup_error
+    global rag_service, traditional_service, registry, startup_error
     try:
         registry = DatabaseRegistry(config.DATABASE_REGISTRY_FILE)
         _ensure_registry_seeded()
@@ -64,10 +66,12 @@ async def initialize_service() -> None:
             registry=registry,
         )
         _recover_interrupted_processing_documents(rag_service)
+        traditional_service = create_traditional_engine()
         startup_error = None
         logger.info("RAG-Anything 服务初始化完成")
     except Exception as e:
         rag_service = None
+        traditional_service = None
         startup_error = str(e)
         logger.error(f"RAG-Anything 服务初始化失败: {e}")
 
@@ -235,6 +239,17 @@ def _require_service() -> RAGAnythingService:
     return rag_service
 
 
+def _engine_for_database(db_id: str):
+    service = _require_service()
+    item = service.registry.get_database(db_id)
+    engine = database_engine_name(item)
+    if engine == "traditional":
+        if traditional_service is None:
+            raise HTTPException(status_code=503, detail="传统 RAG 引擎未初始化")
+        return traditional_service
+    return service
+
+
 def _to_legacy_query_response(result: dict, include_context: bool = False) -> dict:
     payload = {
         "query": result.get("query", ""),
@@ -308,7 +323,8 @@ async def search(request: SearchRequest):
         db_id = _normalize_database_id(request.database)
         kwargs = _build_query_kwargs(request)
         if db_id:
-            result = await service.query(db_id, request.query, **kwargs)
+            engine = _engine_for_database(db_id)
+            result = await engine.query(db_id, request.query, **kwargs)
         else:
             result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result)
@@ -344,7 +360,8 @@ async def context(request: SearchRequest):
         db_id = _normalize_database_id(request.database)
         if not db_id:
             raise HTTPException(status_code=400, detail="database 不能为空")
-        return await service.query_context(
+        engine = _engine_for_database(db_id)
+        return await engine.query_context(
             db_id,
             request.query,
             mode=config.CONTEXT_QUERY_MODE,
@@ -366,7 +383,8 @@ async def query(request: SearchRequest):
         db_id = _normalize_database_id(request.database)
         kwargs = _build_query_kwargs(request)
         if db_id:
-            result = await service.query(db_id, request.query, **kwargs)
+            engine = _engine_for_database(db_id)
+            result = await engine.query(db_id, request.query, **kwargs)
         else:
             result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result, include_context=True)
@@ -389,7 +407,8 @@ async def kb_chat(request: KBChatRequest):
         if not query_text:
             raise HTTPException(status_code=400, detail="query 不能为空")
 
-        context_result = await service.query_context(
+        engine = _engine_for_database(db_id)
+        context_result = await engine.query_context(
             db_id,
             request.query,
             mode=config.CONTEXT_QUERY_MODE,
@@ -398,11 +417,18 @@ async def kb_chat(request: KBChatRequest):
 
         contexts = context_result.get("contexts") or []
         sources = extract_source_summaries(contexts)
+        answer_fallback = context_result.get("fallback")
         if contexts:
             prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
-            answer = str(await service.generate_answer(prompt) or "").strip()
+            try:
+                answer = str(await service.generate_answer(prompt) or "").strip()
+            except Exception as exc:
+                logger.warning("知识库答案生成失败，改用上下文摘要兜底: %s", exc)
+                answer = build_context_fallback_answer(request.query, contexts)
+                answer_fallback = "answer_generation_failed"
         else:
             answer = "当前知识库未找到相关资料。"
+            answer_fallback = answer_fallback or "no_result"
 
         answer = answer or "当前知识库未找到相关资料。"
 
@@ -412,7 +438,8 @@ async def kb_chat(request: KBChatRequest):
             "answer": answer,
             "sources": sources,
             "total_sources": len(sources),
-            "fallback": context_result.get("fallback"),
+            "fallback": answer_fallback,
+            "sources_fallback": context_result.get("fallback"),
         }
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
@@ -978,8 +1005,15 @@ async def delete_document(db_id: str, sha256: str):
             except OSError:
                 pass
         if target:
-            _cleanup_lightrag_document_residue(db_id, service, target)
-            _cleanup_mineru_output(db_id, service, target)
+            engine = _engine_for_database(db_id)
+            if engine is service:
+                _cleanup_lightrag_document_residue(db_id, service, target)
+                _cleanup_mineru_output(db_id, service, target)
+            else:
+                try:
+                    await engine.delete_document(db_id, sha256)
+                except Exception as exc:
+                    logger.warning("传统 RAG 文档清理失败 [%s/%s]: %s", db_id, sha256, exc)
         return {"status": "success", "message": "文档已删除"}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
@@ -1009,11 +1043,12 @@ async def multi_database_search(request: MultiSearchRequest):
 
 @app.post("/ingest/text")
 async def ingest_text(request: DocumentIngestRequest):
-    service = _require_service()
+    _require_service()
     database = _normalize_database_id(request.database) or "default"
 
     try:
-        result = await service.ingest_text(database, request.text, source=request.source or "manual")
+        engine = _engine_for_database(database)
+        result = await engine.ingest_text(database, request.text, source=request.source or "manual")
         return {
             "status": result.get("status", "success"),
             "database": database,
@@ -1027,7 +1062,7 @@ async def ingest_text(request: DocumentIngestRequest):
 
 @app.post("/ingest/path")
 async def ingest_path(request: FileIngestRequest):
-    service = _require_service()
+    _require_service()
     db_id = _normalize_database_id(request.database)
     if not db_id:
         raise HTTPException(status_code=400, detail="database 不能为空")
@@ -1035,7 +1070,8 @@ async def ingest_path(request: FileIngestRequest):
     path = Path(request.path)
     if path.is_file():
         try:
-            return await service.ingest_file(db_id, path)
+            engine = _engine_for_database(db_id)
+            return await engine.ingest_file(db_id, path)
         except Exception as e:
             logger.error(f"文件导入失败: {e}")
             raise HTTPException(status_code=500, detail=str(e))
@@ -1114,6 +1150,8 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
             file.file.close()
 
         sha256 = _sha256(target_path)
+        db_item = service.registry.get_database(db_id) or {}
+        engine_name = database_engine_name(db_item)
         service.registry.register_document(
             db_id,
             file_name=original_name,
@@ -1122,6 +1160,7 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
             sha256=sha256,
             source=original_name,
             status="processing",
+            engine=engine_name,
         )
         service.registry.update_document_progress(db_id, sha256, stage="uploaded")
         saved_files.append((filename, str(target_path), sha256))
@@ -1140,11 +1179,15 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
 
 async def _process_uploaded_files(db_id: str, files: list, task_id: str):
     service = _require_service()
+    engine = _engine_for_database(db_id)
     for filename, filepath, sha256 in files:
         try:
             service.registry.update_document_progress(db_id, sha256, stage="rag_ingest")
             progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
-            await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
+            if engine is service:
+                await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
+            else:
+                await engine.ingest_file(db_id, Path(filepath))
             service.registry.update_document_progress(db_id, sha256, stage="done")
             progress_tracker.emit(task_id, "done", filename, f"{filename} 导入完成")
         except Exception as e:
