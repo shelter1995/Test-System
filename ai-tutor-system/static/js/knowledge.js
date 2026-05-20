@@ -9,11 +9,6 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-function renderEngineBadge(engine) {
-    const label = engine === 'raganything' ? 'RAG-Anything' : '传统 RAG';
-    return `<span class="engine-badge engine-${engine || 'traditional'}">${label}</span>`;
-}
-
 const knowledgeState = {
     databases: [],
     activeDatabase: '',
@@ -27,11 +22,6 @@ function getActiveDatabaseItem() {
         const id = typeof db === 'string' ? db : db.id;
         return id === knowledgeState.activeDatabase;
     }) || null;
-}
-
-function getActiveEngine() {
-    const db = getActiveDatabaseItem();
-    return typeof db === 'string' ? 'traditional' : (db && db.engine) || 'traditional';
 }
 
 function formatBeijingTime(value) {
@@ -52,15 +42,15 @@ function formatBeijingTime(value) {
 
 function normalizeUploadMessage(data, dbId) {
     const message = String(data.error || data.message || '');
-    const engine = String(data.engine || '').toLowerCase();
-    if (data.type === 'parsing' && !engine && /正在\s*RAG\s*解析/.test(message)) {
-        const db = knowledgeState.databases.find(item => {
-            const id = typeof item === 'string' ? item : item.id;
-            return id === dbId;
-        });
-        const dbEngine = typeof db === 'string' ? 'traditional' : (db && db.engine) || 'traditional';
-        if (dbEngine !== 'raganything') {
-            return message.replace(/正在\s*RAG\s*解析[:：]?/, '正在传统 RAG 分块索引:');
+    if (data.type === 'parsing') {
+        if (!message) {
+            return '正在解析并索引';
+        }
+        if (/正在/.test(message) && /(RAG|解析|分块|索引|图谱)/i.test(message)) {
+            return '正在解析并索引';
+        }
+        if (/(RAG|解析|分块|索引|图谱)/i.test(message)) {
+            return `正在解析并索引：${message}`;
         }
     }
     return message;
@@ -173,13 +163,6 @@ function renderKnowledgePage() {
                     <label>描述</label>
                     <textarea id="newDbDesc" rows="3" placeholder="简要描述该知识库的用途"></textarea>
                 </div>
-                <div class="form-group">
-                    <label>RAG 引擎</label>
-                    <select id="newDbEngine">
-                        <option value="traditional">传统 RAG（默认，快速处理）</option>
-                        <option value="raganything">RAG-Anything（复杂文档/多模态）</option>
-                    </select>
-                </div>
                 <button class="btn-primary" onclick="createKnowledgeBase()">创建</button>
             </div>
 
@@ -250,14 +233,13 @@ function renderDatabaseList() {
     return knowledgeState.databases.map(db => {
         const id = typeof db === 'string' ? db : db.id;
         const name = typeof db === 'string' ? db : (db.name || db.id);
-        const engine = typeof db === 'string' ? '' : (db.engine || '');
         const isActive = id === knowledgeState.activeDatabase;
         return `
             <div class="db-item ${isActive ? 'active' : ''}" data-db-id="${escapeHtml(id)}" onclick="selectDatabase(this.dataset.dbId)">
                 <span class="db-item-icon">📚</span>
                 <div class="db-item-info">
                     <div class="db-item-name">${escapeHtml(name)}</div>
-                    <div class="db-item-id">${escapeHtml(id)}${engine ? ' ' + renderEngineBadge(engine) : ''}</div>
+                    <div class="db-item-id">${escapeHtml(id)}</div>
                 </div>
                 <div class="db-item-actions">
                     <button class="btn-icon-sm btn-edit" onclick="event.stopPropagation();editDatabase('${escapeHtml(id)}')" title="编辑">✏️</button>
@@ -273,14 +255,8 @@ function renderDatabaseList() {
  * 渲染上传区域（支持多文件选择）
  */
 function renderUploadSection() {
-    const engine = getActiveEngine();
-    const isTraditional = engine !== 'raganything';
-    const accept = isTraditional
-        ? '.pdf,.docx,.txt,.md,.xlsx,.csv'
-        : '.pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json,.mp4,.avi,.mkv,.mov,.webm,.mp3,.wav,.flac,.aac,.ogg,.m4a';
-    const hint = isTraditional
-        ? '支持格式：PDF、Word(.docx)、TXT、Markdown、Excel(.xlsx)、CSV（传统 RAG，快速分块索引）'
-        : '支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON、音频、视频（RAG-Anything，多模态解析）';
+    const accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.md,.markdown,.csv,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.mp3,.wav,.flac,.aac,.ogg,.m4a,.mp4,.avi,.mkv,.mov,.webm,.mpeg,.mpg,.m4v';
+    const hint = '支持格式：PDF、Word(.doc/.docx)、Excel(.xls/.xlsx)、PPT(.ppt/.pptx)、TXT、Markdown、CSV、图片(.png/.jpg/.jpeg/.bmp/.tiff/.webp)、音频、视频';
     return `
         <div class="upload-row">
             <input type="file" id="uploadFileInput" multiple
@@ -369,12 +345,10 @@ async function createKnowledgeBase() {
     const idInput = document.getElementById('newDbId');
     const nameInput = document.getElementById('newDbName');
     const descInput = document.getElementById('newDbDesc');
-    const engineInput = document.getElementById('newDbEngine');
 
     const id = idInput ? idInput.value.trim() : '';
     const name = nameInput ? nameInput.value.trim() : '';
     const description = descInput ? descInput.value.trim() : '';
-    const engine = engineInput ? engineInput.value.trim() : 'traditional';
 
     if (!id) {
         alert('请输入知识库 ID');
@@ -392,13 +366,12 @@ async function createKnowledgeBase() {
     try {
         await WorkbenchAPI.postJson(
             `${WorkbenchAPI.BASE_URLS.RAG_API}/db/register`,
-            { id, name, description, engine }
+            { id, name, description }
         );
         alert('知识库创建成功！');
         if (idInput) idInput.value = '';
         if (nameInput) nameInput.value = '';
         if (descInput) descInput.value = '';
-        if (engineInput) engineInput.value = 'traditional';
         knowledgeState.activeDatabase = id;
         loadKnowledgeBases();
     } catch (err) {
@@ -666,7 +639,6 @@ function closeUploadSSE(dbId) {
 function appendLogEntry(data, dbId) {
     const uploadState = getUploadState(dbId);
     let icon, cssClass;
-    const eventEngine = String(data.engine || '').toLowerCase();
     switch (data.type) {
         case 'parsing':
             icon = '⏳';
@@ -692,7 +664,7 @@ function appendLogEntry(data, dbId) {
     entry.innerHTML = `
         <span class="log-icon">${icon}</span>
         <span class="log-file">${escapeHtml(data.file || '')}</span>
-        <span class="log-msg">${escapeHtml(message)}${eventEngine ? ' · ' + renderEngineBadge(eventEngine) : ''}</span>
+        <span class="log-msg">${escapeHtml(message)}</span>
     `;
 
     const wrapper = document.createElement('div');
@@ -855,7 +827,6 @@ async function deleteDocument(sha256) {
  */
 function _renderFileRow(item, isUploading) {
     const fileName = escapeHtml(item.file_name || item.name || '-');
-    const engine = !isUploading ? (item.engine || '') : '';
     const sha256 = isUploading ? '' : escapeHtml(item.sha256 || '');
     const statusMap = {
         'imported': '已导入',
@@ -870,8 +841,8 @@ function _renderFileRow(item, isUploading) {
         'queued': '排队中',
         'uploaded': '已上传',
         'indexing': '索引构建中',
-        'rag_ingest': engine === 'traditional' ? '索引构建中' : 'RAG 解析中',
-        'graph_enrichment': '图谱处理中',
+        'rag_ingest': '解析并索引中',
+        'graph_enrichment': '解析并索引中',
         'interrupted': '已中断',
         'done': '已完成',
         'error': '失败'
@@ -917,7 +888,7 @@ function _renderFileRow(item, isUploading) {
     return `
     <div class="file-row" data-doc-sha="${sha256}" data-file-name="${fileName}">
         <span class="file-col-name" title="${fileName}">
-            ${isUploading ? '⏳' : '📄'} ${fileName}${engine ? ' ' + renderEngineBadge(engine) : ''}
+            ${isUploading ? '⏳' : '📄'} ${fileName}
         </span>
         <span class="file-col-status">
             <span class="status-text ${statusClass}" title="${titleText}">

@@ -247,20 +247,36 @@
             fallbackWarning = '<div class="kbchat-sources-fallback">本次使用本地文本兜底检索，请核对来源</div>';
         }
 
+        function formatSourceLabel(item, index) {
+            var raw = item && item.sourceId;
+            if (typeof raw === 'number' && Number.isFinite(raw)) {
+                return '来源 ' + raw;
+            }
+            var text = String(raw || '').trim();
+            return text || ('来源 ' + (index + 1));
+        }
+
         box.innerHTML = fallbackWarning + list.map(function (item, index) {
             var scoreText = item.score ? (Math.round(item.score * 100) / 100).toFixed(2) : '';
             var scoreHtml = scoreText
                 ? '<span class="kbchat-source-score">相关度 ' + esc(scoreText) + '</span>'
                 : '';
-            var engineLabel = item.engine
-                ? '<span class="kbchat-source-engine">' + esc(item.engine) + '</span>'
+            var rerankScoreText = (typeof item.rerankScore === 'number' && Number.isFinite(item.rerankScore))
+                ? (Math.round(item.rerankScore * 100) / 100).toFixed(2)
                 : '';
-            var metaHtml = (scoreHtml || engineLabel)
-                ? '<div class="kbchat-source-meta">' + engineLabel + scoreHtml + '</div>'
+            var rerankScoreHtml = rerankScoreText
+                ? '<span class="kbchat-source-score">重排分 ' + esc(rerankScoreText) + '</span>'
+                : '';
+            var sourceIdLabel = formatSourceLabel(item, index);
+            var sourceIdHtml = sourceIdLabel
+                ? '<span class="kbchat-source-engine">' + esc(sourceIdLabel) + '</span>'
+                : '';
+            var metaHtml = (sourceIdHtml || scoreHtml || rerankScoreHtml)
+                ? '<div class="kbchat-source-meta">' + sourceIdHtml + scoreHtml + rerankScoreHtml + '</div>'
                 : '';
             return '' +
                 '<div class="kbchat-source-item">' +
-                    '<div class="kbchat-source-file"><span class="kbchat-source-number">来源 ' + (index + 1) + '</span>' + esc(item.fileName || '知识库资料') + '</div>' +
+                    '<div class="kbchat-source-file"><span class="kbchat-source-number">' + esc(sourceIdLabel) + '</span>' + esc(item.fileName || '知识库资料') + '</div>' +
                     '<div class="kbchat-source-snippet">' + esc(item.snippet || '已命中该来源，未返回可展示片段。') + '</div>' +
                     metaHtml +
                 '</div>';
@@ -338,10 +354,11 @@
             const sources = Array.isArray(data && data.sources)
                 ? data.sources.map(function (item) {
                     return {
+                        sourceId: String((item && item.source_id) || '').trim(),
                         fileName: String((item && item.file_name) || '').trim() || '知识库资料',
                         snippet: String((item && item.snippet) || '').trim() || '已命中该来源，未返回可展示片段。',
                         score: typeof item.score === 'number' ? item.score : 0,
-                        engine: String((item && item.engine) || '').trim(),
+                        rerankScore: typeof item.rerank_score === 'number' ? item.rerank_score : null,
                     };
                 })
                 : [];
