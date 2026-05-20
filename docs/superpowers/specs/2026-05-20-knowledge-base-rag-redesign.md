@@ -47,7 +47,7 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 2. 创建知识库时不再发送用户选择的 engine，后端默认传统 RAG。
 3. 知识库列表和文档列表不再展示“传统 RAG / RAG-Anything”标签。
 4. 上传提示统一为：
-   `支持格式：PDF、Word(.doc/.docx)、Excel(.xls/.xlsx)、PPT(.ppt/.pptx)、TXT、Markdown、CSV、音频、视频`
+   `支持格式：PDF、Word(.doc/.docx)、Excel(.xls/.xlsx)、PPT(.ppt/.pptx)、TXT、Markdown、CSV、图片(.png/.jpg/.jpeg/.bmp/.tiff/.webp)、音频、视频`
 5. 上传日志统一展示“正在解析并索引”，不暴露 RAG-Anything 术语。
 
 ### 知识库问答
