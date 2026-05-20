@@ -135,7 +135,7 @@ EMBEDDING_RETRY_ATTEMPTS = _safe_int(os.getenv("EMBEDDING_RETRY_ATTEMPTS", "3"),
 EMBEDDING_RETRY_BASE_DELAY = _safe_float(os.getenv("EMBEDDING_RETRY_BASE_DELAY", "30"), 30.0)
 
 
-# RAG-Anything 引擎配置（通过 pip install raganything 安装，无需本地 clone）
+# 历史 RAG-Anything 兼容配置（通过 pip install raganything 安装，无需本地 clone）
 PARSER = os.getenv("PARSER", "mineru")
 PARSE_METHOD = os.getenv("PARSE_METHOD", "auto")
 MINERU_BACKEND = os.getenv("MINERU_BACKEND", "pipeline")
@@ -208,7 +208,13 @@ TRADITIONAL_RAG_STORAGE_ROOT = STORAGE_ROOT / "traditional_rag"
 TRADITIONAL_RAG_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 TRADITIONAL_SUPPORTED_EXTENSIONS = {
     item.strip().lower()
-    for item in os.getenv("TRADITIONAL_SUPPORTED_EXTENSIONS", ".txt,.md,.csv,.pdf,.docx,.xlsx").split(",")
+    for item in os.getenv(
+        "TRADITIONAL_SUPPORTED_EXTENSIONS",
+        ".txt,.md,.csv,.pdf,.docx,.xlsx,.pptx,.doc,.xls,.ppt,"
+        ".png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,"
+        ".mp3,.wav,.m4a,.aac,.flac,.ogg,.wma,"
+        ".mp4,.mov,.mkv,.avi,.wmv,.webm,.m4v",
+    ).split(",")
     if item.strip()
 }
 TRADITIONAL_CHUNK_SIZE = _safe_int(os.getenv("TRADITIONAL_CHUNK_SIZE", "1200"), 1200)

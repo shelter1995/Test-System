@@ -18,7 +18,7 @@ MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 
 # ==================== 服务配置 ====================
 # RAG 服务地址
-# 统一使用 RAG-Anything 系统（LightRAG + 知识图谱）
+# 用户可见知识库统一使用传统 RAG；历史 RAG-Anything 数据仅由 RAG 服务内部兼容。
 RAG_SERVICE_URL = os.getenv("RAG_SERVICE_URL", "http://localhost:8003")  # RAG知识库服务地址
 DEFAULT_RAG_DATABASE = os.getenv("DEFAULT_RAG_DATABASE", "")
 TUTOR_SERVICE_HOST = os.getenv("TUTOR_SERVICE_HOST", "0.0.0.0")
@@ -185,7 +185,7 @@ SCORE_LEVELS = {
 # ==================== RAG检索配置 ====================
 RAG_TOP_K = 5  # 每次检索的知识条数
 RAG_SIMILARITY_THRESHOLD = 0.6  # 相似度阈值
-RAG_REQUEST_TIMEOUT = int(os.getenv("RAG_REQUEST_TIMEOUT", "90"))  # RAG-Anything 查询可能较慢
+RAG_REQUEST_TIMEOUT = int(os.getenv("RAG_REQUEST_TIMEOUT", "90"))
 
 # ==================== 对话配置 ====================
 MAX_SESSION_ROUNDS = 20  # 最大对话轮数

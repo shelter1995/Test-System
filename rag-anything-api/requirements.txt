@@ -1,13 +1,23 @@
 fastapi>=0.104.0
-httpx>=0.27.0
-lightrag-hku>=1.0.0
 uvicorn>=0.24.0
+python-multipart>=0.0.9
 python-dotenv>=1.0.0
-requests>=2.31.0
 pydantic>=2.0.0
-mineru[core]
-openai-whisper>=20250625
+requests>=2.31.0
+httpx>=0.27.0
+
+# RAG and model clients
+lightrag-hku>=1.0.0
 numpy>=1.26.0
+
+# Traditional RAG document parsing
 pypdf>=4.0.0
 python-docx>=1.1.0
 openpyxl>=3.1.0
+python-pptx>=0.6.23
+
+# OCR, rich document parsing, and media transcription
+mineru[core]>=3.0.0
+openai-whisper>=20250625
+Pillow>=10.0.0
+reportlab>=4.0.0

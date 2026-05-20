@@ -16,18 +16,41 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 
 ## 快速启动
 
-1. 配置环境变量：
+1. 创建并激活虚拟环境：
+
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\activate
+   ```
+
+2. 安装运行依赖：
+
+   ```powershell
+   python -m pip install --upgrade pip
+   pip install -r rag-anything-api\requirements.txt
+   pip install -r ai-tutor-system\requirements_tutor.txt
+   ```
+
+   如需运行测试，可改装开发依赖：
+
+   ```powershell
+   pip install -r requirements-dev.txt
+   ```
+
+3. 复制并配置环境变量：
 
    - `rag-anything-api/.env`
    - `ai-tutor-system/.env`
 
-2. 在项目根目录运行：
+   可从对应目录的 `.env.example` 复制生成。
+
+4. 在项目根目录运行：
 
    ```bat
    start_services.bat
    ```
 
-3. 浏览器访问：
+5. 浏览器访问：
 
    - 陪练系统：http://localhost:8002
    - RAG API 文档：http://localhost:8003/docs
@@ -54,8 +77,8 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 
 - 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
 - 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
-- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
-- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
 传统 RAG 默认使用硅基流动嵌入和重排模型，并内置批量嵌入与 429 限流重试。长文本批量上传时，可通过 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_BATCH_INTERVAL`、`EMBEDDING_RETRY_ATTEMPTS` 和 `EMBEDDING_RETRY_BASE_DELAY` 调整吞吐与稳定性。
 
@@ -100,6 +123,7 @@ Test-System/
 ├── README.md
 ├── CHANGELOG.md
 ├── SETUP.md
+├── requirements-dev.txt
 ├── start_services.bat
 ├── ai-tutor-system/
 │   ├── tutor_backend.py
@@ -119,7 +143,7 @@ Test-System/
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest rag-anything-api\tests -q
-python -m pytest ai-tutor-system\tests -q
+.\.venv\Scripts\python.exe -m pytest ai-tutor-system\tests -q
 ```
 
 编译检查：

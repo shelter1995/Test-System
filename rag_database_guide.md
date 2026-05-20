@@ -12,7 +12,10 @@
 - `POST /db/{db_id}/documents/{sha256}/retry`：重试失败文档。
 - `POST /search`：在指定知识库中检索。
 - `POST /context`：获取生成和对练使用的知识库上下文。
+- `POST /query`：检索并生成知识库问答。
+- `POST /kb/chat`：知识库多轮问答。
 - `GET /settings/models`：读取模型配置。
+- `GET /settings/providers`：读取模型供应商和候选模型。
 - `PUT /settings/models`：保存模型配置。
 - `POST /settings/models/test`：测试当前或已保存模型配置。
 
@@ -27,8 +30,8 @@
 
 - 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
 - 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
-- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
-- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
 传统 RAG 使用硅基流动嵌入和重排模型时，默认按 10 条文本一批提交嵌入请求，并在批次之间等待 1 秒。遇到 429 TPM 限流时，系统会按服务端 `Retry-After` 或退避策略重试。
 
@@ -38,6 +41,10 @@
 - `EMBEDDING_BATCH_INTERVAL`
 - `EMBEDDING_RETRY_ATTEMPTS`
 - `EMBEDDING_RETRY_BASE_DELAY`
+- `KB_QUERY_REWRITE_ENABLED`
+- `KB_RETRIEVAL_CANDIDATES`
+- `KB_FINAL_CONTEXTS`
+- `KB_MIN_SCORE`
 
 ## 存储位置
 

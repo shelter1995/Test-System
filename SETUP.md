@@ -21,7 +21,7 @@
 | MinerU | `pip install -U "mineru[core]"` | 扫描 PDF、复杂 PDF、图片 OCR 解析 |
 | LibreOffice | 系统安装（`soffice` 可执行） | `.doc/.xls/.ppt` 老 Office 格式转换 |
 | ffmpeg | 系统安装（`ffmpeg` 可执行） | 视频抽取音轨 |
-| openai-whisper | `pip install openai-whisper` | 音频/视频语音转写 |
+| openai-whisper | 随 RAG requirements 安装 | 音频/视频语音转写 |
 
 ---
 
@@ -50,18 +50,22 @@ source .venv/bin/activate
 
 ## 4. 安装依赖
 
-```bash
+```powershell
+python -m pip install --upgrade pip
+
 # RAG 服务依赖
 pip install -r rag-anything-api/requirements.txt
 
-# MinerU（推荐）
-pip install -U "mineru[core]"
-
-# Whisper（音视频转写）
-pip install openai-whisper
-
 # Tutor 服务依赖
 pip install -r ai-tutor-system/requirements_tutor.txt
+```
+
+`rag-anything-api/requirements.txt` 已包含 FastAPI、传统 RAG 解析、MinerU 和 Whisper 等 Python 运行依赖。LibreOffice 与 ffmpeg 是系统级可执行程序，需要单独安装并确保命令可在 `PATH` 中找到，或在 `.env` 中配置 `LIBREOFFICE_PATH`、`MINERU_CLI_PATH`。
+
+如果需要运行测试，直接安装开发依赖：
+
+```powershell
+pip install -r requirements-dev.txt
 ```
 
 > 系统内部仍兼容历史 RAG-Anything 数据目录和索引结构，用于旧数据平滑迁移与读取，但该兼容能力不作为用户操作选项暴露。
@@ -93,17 +97,20 @@ VLM_BASE_URL=https://api.minimaxi.com
 ENABLE_RERANK=true
 RERANK_API_KEY=              # 留空自动复用 SILICONFLOW_API_KEY
 
-# 查询模式：hybrid（推荐 / 向量+图谱融合）
+# 查询模式：hybrid（推荐）
 DEFAULT_QUERY_MODE=hybrid
 
 # 传统 RAG 引擎（默认）
 DEFAULT_RAG_ENGINE=traditional
+TRADITIONAL_SUPPORTED_EXTENSIONS=.txt,.md,.csv,.pdf,.docx,.xlsx,.pptx,.doc,.xls,.ppt,.png,.jpg,.jpeg,.bmp,.tiff,.tif,.webp,.mp3,.wav,.m4a,.aac,.flac,.ogg,.wma,.mp4,.mov,.mkv,.avi,.wmv,.webm,.m4v
 TRADITIONAL_CHUNK_SIZE=1200
 TRADITIONAL_CHUNK_OVERLAP=120
 EMBEDDING_BATCH_SIZE=10
 EMBEDDING_BATCH_INTERVAL=1.0
 EMBEDDING_RETRY_ATTEMPTS=3
 EMBEDDING_RETRY_BASE_DELAY=30
+LIBREOFFICE_PATH=
+MINERU_CLI_PATH=
 ```
 
 ### 5.3 填写密钥 — `ai-tutor-system/.env`
@@ -112,6 +119,9 @@ EMBEDDING_RETRY_BASE_DELAY=30
 MINIMAX_API_KEY=你的MiniMax_API_Key
 MINIMAX_MODEL=MiniMax-M2.7
 RAG_SERVICE_URL=http://localhost:8003
+RAG_REQUEST_TIMEOUT=90
+DEFAULT_RAG_DATABASE=
+GENERATION_MAX_RUNNING_JOBS=1
 ```
 
 ### 5.4 密钥获取地址
@@ -148,8 +158,8 @@ curl -X POST http://localhost:8003/ingest/path \
 
 - 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
 - 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
-- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
-- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
 ---
 
@@ -261,8 +271,8 @@ RERANK_MODEL=BAAI/bge-reranker-v2-m3
 
 - 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
 - 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
-- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
-- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
 传统 RAG 嵌入请求默认按 10 条一批提交，并在批次之间等待 1 秒。如果硅基流动返回 429 TPM 限流，系统会按 `Retry-After` 或退避策略重试。可通过 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_BATCH_INTERVAL`、`EMBEDDING_RETRY_ATTEMPTS` 和 `EMBEDDING_RETRY_BASE_DELAY` 调整。
 
@@ -279,7 +289,7 @@ curl -s http://localhost:8003/health
 
 # RAG 服务完整状态
 curl -s http://localhost:8003/status | python -m json.tool
-# 检查：engine=ready, vlm.enabled=true, rerank.enabled=true, query.default_mode=hybrid
+# 检查：engine=ready，parser_dependencies 展示 MinerU、LibreOffice、ffmpeg、Whisper 检测结果
 
 # Tutor 服务健康检查
 curl -s http://localhost:8002/

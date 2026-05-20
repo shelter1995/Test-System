@@ -21,7 +21,11 @@ $Include = @(
     "packaging",
     "README.md",
     "SETUP.md",
+    "CHANGELOG.md",
+    "使用说明.md",
+    "部署说明.md",
     "rag_database_guide.md",
+    "requirements-dev.txt",
     "start_services.bat"
 )
 

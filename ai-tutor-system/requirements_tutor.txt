@@ -1,18 +1,10 @@
-# AI话术陪练系统 - Python依赖包
+# AI 话术陪练系统运行依赖
 
-# Web框架
-fastapi>=0.68.0
-uvicorn>=0.15.0
-python-multipart>=0.0.5
+# Web 服务和静态前端托管
+fastapi>=0.104.0
+uvicorn>=0.24.0
 
-# HTTP请求（MiniMax API调用需要）
-requests>=2.26.0
-
-# 文本向量化
-sentence-transformers>=2.2.0
-
-# 数据处理
-pydantic>=1.8.0
-
-# 日志
-python-dotenv>=0.19.0
+# API 客户端、配置和数据模型
+requests>=2.31.0
+pydantic>=2.0.0
+python-dotenv>=1.0.0
