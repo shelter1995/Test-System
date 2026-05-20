@@ -36,3 +36,51 @@ def test_runtime_uses_siliconflow_key_for_rerank_when_specific_key_missing(tmp_p
     settings = store.runtime()
 
     assert settings["rerank"]["api_key"] == "sf-key"
+
+
+def test_providers_include_model_catalog(tmp_path: Path):
+    store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
+
+    providers = store.providers()
+
+    assert "MiniMax-M2.7" in providers["models"]["llm"]["minimax"]
+    assert "BAAI/bge-m3" in providers["models"]["embedding"]["siliconflow"]
+    assert "BAAI/bge-reranker-v2-m3" in providers["models"]["rerank"]["siliconflow"]
+
+
+def test_save_ignores_runtime_test_target(tmp_path: Path):
+    store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
+
+    store.save({"target": "embedding", "embedding": {"model": "BAAI/bge-m3"}})
+
+    assert "target" not in (tmp_path / "settings.json").read_text(encoding="utf-8")
+
+
+def test_runtime_override_blank_api_key_keeps_saved_secret(tmp_path: Path):
+    store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
+    store.save(
+        {
+            "persist_api_key": True,
+            "embedding": {
+                "provider": "siliconflow",
+                "base_url": "https://api.siliconflow.cn/v1",
+                "model": "BAAI/bge-m3",
+                "api_key": "saved-key",
+            },
+        }
+    )
+
+    runtime = store.runtime(
+        {
+            "target": "embedding",
+            "embedding": {
+                "provider": "siliconflow",
+                "base_url": "https://api.siliconflow.cn/v1",
+                "model": "Pro/BAAI/bge-m3",
+                "api_key": "",
+            },
+        }
+    )
+
+    assert runtime["embedding"]["api_key"] == "saved-key"
+    assert runtime["embedding"]["model"] == "Pro/BAAI/bge-m3"

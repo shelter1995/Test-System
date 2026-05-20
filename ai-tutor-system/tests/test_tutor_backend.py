@@ -63,3 +63,30 @@ def test_tutor_prompt_includes_rag_context_sources():
 
     assert "产品支持企业欢迎语" in prompt
     assert "product.md" in prompt
+
+
+def test_history_list_tolerates_legacy_sessions_without_created_at(tmp_path, monkeypatch):
+    import json
+    import tutor_config
+    from tutor_services import SessionManager
+
+    monkeypatch.setattr(tutor_config, "SESSIONS_DIR", str(tmp_path))
+    (tmp_path / "legacy.json").write_text(
+        json.dumps(
+            {
+                "session_id": "legacy",
+                "scenario": {"name": "测试场景"},
+                "round": 2,
+                "status": "active",
+                "messages": [{"role": "user", "content": "你好"}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    history = SessionManager.list_all()
+
+    assert history[0]["session_id"] == "legacy"
+    assert history[0]["scenario"] == "测试场景"
+    assert history[0]["created_at"]

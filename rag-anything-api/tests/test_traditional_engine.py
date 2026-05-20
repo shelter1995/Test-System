@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from rag_engines.traditional.engine import TraditionalRAGEngine
+from rag_engines.traditional.document_loader import UnsupportedDocumentType, load_document_text
 
 
 class FakeEmbeddingClient:
@@ -57,3 +58,13 @@ async def test_query_context_respects_max_chars(tmp_path: Path):
 
     assert result["total_found"] == 1
     assert len(result["contexts"][0]["text"]) <= 12
+
+
+def test_xls_error_explains_xlsx_requirement(tmp_path: Path):
+    source = tmp_path / "old.xls"
+    source.write_bytes(b"legacy")
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(source)
+
+    assert ".xlsx" in str(exc.value)

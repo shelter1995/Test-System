@@ -27,9 +27,11 @@ from __future__ import annotations
 import os
 import platform
 import hashlib
+import html
 import json
 import argparse
 import base64
+import re
 import subprocess
 import tempfile
 import logging
@@ -166,6 +168,12 @@ class Parser:
     def __init__(self) -> None:
         """Initialize the base parser."""
         pass
+
+    @staticmethod
+    def _escape_reportlab_text(text: str) -> str:
+        """Escape user text before passing it to ReportLab Paragraph."""
+        clean = re.sub(r"(?i)<br\s*/?>", " ", str(text or ""))
+        return html.escape(clean, quote=False)
 
     @staticmethod
     def _unique_output_dir(
@@ -483,6 +491,7 @@ class Parser:
                             level = len(line) - len(line.lstrip("#"))
                             header_text = line.lstrip("#").strip()
                             if header_text:
+                                header_text = cls._escape_reportlab_text(header_text)
                                 header_style = ParagraphStyle(
                                     name=f"Heading{level}",
                                     parent=heading_style,
@@ -493,7 +502,7 @@ class Parser:
                                 story.append(Paragraph(header_text, header_style))
                         else:
                             # Regular text
-                            story.append(Paragraph(line, normal_style))
+                            story.append(Paragraph(cls._escape_reportlab_text(line), normal_style))
                             story.append(Spacer(1, 6))
                 else:
                     # Handle plain text files (.txt)
@@ -516,11 +525,7 @@ class Parser:
 
                         # Regular text lines
                         # Escape special characters for ReportLab
-                        safe_line = (
-                            line.replace("&", "&amp;")
-                            .replace("<", "&lt;")
-                            .replace(">", "&gt;")
-                        )
+                        safe_line = cls._escape_reportlab_text(line)
 
                         # Create paragraph
                         story.append(Paragraph(safe_line, normal_style))

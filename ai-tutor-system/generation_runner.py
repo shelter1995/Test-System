@@ -91,6 +91,16 @@ def _update_job_stage(job_id: str, stage: str) -> None:
         _save_job(job)
 
 
+def _update_job_warnings(job_id: str, warnings: list[str]) -> None:
+    if not warnings:
+        return
+    job = get_job(job_id)
+    if job:
+        existing = job.get("warnings") if isinstance(job.get("warnings"), list) else []
+        job["warnings"] = existing + [item for item in warnings if item not in existing]
+        _save_job(job)
+
+
 def _safe_filename(text: str) -> str:
     text = str(text or "").strip()
     safe = re.sub(r'[^\w一-鿿._\-]', '_', text)
@@ -170,6 +180,8 @@ def _format_rag_results(rag_results: dict) -> str:
         return '（知识库暂无相关内容，请基于专业知识生成。）'
     blocks = []
     for query, results in rag_results.items():
+        if str(query).startswith("_"):
+            continue
         if not results:
             continue
         blocks.append(f"\n### {query}")
@@ -184,6 +196,11 @@ def _format_rag_results(rag_results: dict) -> str:
             score = r.get("score", 0)
             blocks.append(f"\n片段{i} [来源：{source_label} 相关度:{score:.0%}]\n{content}\n")
     return "\n".join(blocks) if blocks else "（检索完成但无有效内容。）"
+
+
+def _rag_warnings(rag_results: dict) -> list[str]:
+    warnings = rag_results.get("_warnings") if isinstance(rag_results, dict) else []
+    return warnings if isinstance(warnings, list) else []
 
 
 # ==================== MiniMax 调用 ====================
@@ -568,6 +585,8 @@ def _generate_solution(request: dict, job_id: str = None) -> dict:
     client_unit = request.get("client_unit") or "客户"
 
     rag_results = _search_for_solution(db_name)
+    if job_id:
+        _update_job_warnings(job_id, _rag_warnings(rag_results))
     prompt = _build_solution_prompt(request, rag_results)
 
     if job_id:
@@ -587,6 +606,8 @@ def _generate_training(request: dict, job_id: str = None) -> dict:
 
     # RAG 检索（只需一次）
     rag_results = _search_for_training(db_name, customer_group)
+    if job_id:
+        _update_job_warnings(job_id, _rag_warnings(rag_results))
 
     # 第1次：生成讲义
     if job_id:

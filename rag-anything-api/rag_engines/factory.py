@@ -31,6 +31,10 @@ def _endpoint(section: dict[str, Any], default_provider: str, default_model: str
         api_key=str(section.get("api_key") or ""),
         model=str(section.get("model") or default_model),
         timeout=int(section.get("timeout") or timeout),
+        batch_size=int(section.get("batch_size") or config.EMBEDDING_BATCH_SIZE),
+        batch_interval=float(section.get("batch_interval") or config.EMBEDDING_BATCH_INTERVAL),
+        retry_attempts=int(section.get("retry_attempts") or config.EMBEDDING_RETRY_ATTEMPTS),
+        retry_base_delay=float(section.get("retry_base_delay") or config.EMBEDDING_RETRY_BASE_DELAY),
     )
 
 

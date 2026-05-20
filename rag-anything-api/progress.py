@@ -24,7 +24,7 @@ class ProgressTracker:
         return task_id
 
     def emit(self, task_id: str, event_type: str, file_name: str,
-             message: str = "", error: str = ""):
+             message: str = "", error: str = "", **extra):
         if task_id not in self._tasks:
             return
         event = {
@@ -34,6 +34,7 @@ class ProgressTracker:
             "error": error,
             "timestamp": time.time(),
         }
+        event.update(extra)
         task = self._tasks[task_id]
         task["events"].append(event)
         if event_type == "done":

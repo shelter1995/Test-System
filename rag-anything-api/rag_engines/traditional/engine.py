@@ -74,6 +74,8 @@ class TraditionalRAGEngine:
             return result.to_dict()
 
         embeddings = await self.embedding_client.embed([chunk["text"] for chunk in chunks])
+        if len(embeddings) != len(chunks):
+            raise RuntimeError(f"Embedding 返回数量不匹配：期望 {len(chunks)}，实际 {len(embeddings)}")
         indexed = []
         for chunk, embedding in zip(chunks, embeddings):
             indexed.append({**chunk, "embedding": embedding})

@@ -78,7 +78,19 @@ class RAGClient:
             {query_string: [result_dict, ...], ...}
         """
         results: Dict[str, List[dict]] = {}
-        search_fn = self.ai_enhanced_search if use_enhanced else self.search
+        warnings: List[str] = []
+
+        def search_fn(query: str, db: str, top_k: int):
+            if not use_enhanced:
+                return self.search(query, db, top_k)
+            data = self.context(query, db, top_k, enable_rerank=True)
+            contexts = data.get("contexts", [])
+            fallback = data.get("fallback") or data.get("fallback_reason")
+            if fallback:
+                warnings.append(
+                    f"查询「{query}」使用本地文本兜底检索（{fallback}），生成内容请核对来源。"
+                )
+            return contexts
 
         with ThreadPoolExecutor(max_workers=min(len(queries), 5)) as executor:
             future_to_query = {executor.submit(search_fn, q, database, n_results): q for q in queries}
@@ -90,6 +102,8 @@ class RAGClient:
                     logger.warning(f"RAG 检索失败 '{query}': {e}")
                     results[query] = []
 
+        if warnings:
+            results["_warnings"] = warnings
         return results
 
 

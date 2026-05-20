@@ -157,13 +157,13 @@ def test_recover_file_from_markdown_segments_updates_partial_status(tmp_path: Pa
 
     calls = []
 
-    def fake_ingest(database_id, file_path, source=None):
+    async def fake_ingest(database_id, file_path, source=None):
         calls.append(Path(file_path).name)
         if Path(file_path).name.endswith("002.md"):
             raise RuntimeError("segment timeout")
         return {"status": "success"}
 
-    service.ingest_file_sync = fake_ingest
+    service.ingest_file = fake_ingest
 
     result = service.recover_from_mineru_markdown("kb", source, "abc", max_chars=10)
 
@@ -174,6 +174,36 @@ def test_recover_file_from_markdown_segments_updates_partial_status(tmp_path: Pa
     assert doc["segments_total"] == 2
     assert doc["segments_done"] == 1
     assert doc["segments_failed"] == 1
+
+
+def test_recover_file_from_markdown_segments_uses_one_event_loop(tmp_path: Path):
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    service = RAGAnythingService(
+        storage_root=tmp_path / "storage",
+        output_root=tmp_path / "output",
+        registry=registry,
+    )
+    registry.register_database("kb")
+    source = tmp_path / "book.pdf"
+    source.write_bytes(b"pdf")
+    registry.register_document("kb", "book.pdf", str(source), "abc", status="processing")
+    mineru_dir = tmp_path / "output" / "kb" / "book_12345678"
+    mineru_dir.mkdir(parents=True)
+    (mineru_dir / "book.md").write_text("# A\nhello\n# B\nworld", encoding="utf-8")
+
+    loops = []
+
+    async def fake_ingest(database_id, file_path, source=None):
+        loops.append(asyncio.get_running_loop())
+        return {"status": "success"}
+
+    service.ingest_file = fake_ingest
+
+    result = service.recover_from_mineru_markdown("kb", source, "abc", max_chars=10)
+
+    assert result["status"] == "已导入"
+    assert len(loops) == 2
+    assert loops[0] is loops[1]
 
 
 def test_recover_file_from_nested_markdown_path(tmp_path: Path):
@@ -193,11 +223,11 @@ def test_recover_file_from_nested_markdown_path(tmp_path: Path):
 
     calls = []
 
-    def fake_ingest(database_id, file_path, source=None):
+    async def fake_ingest(database_id, file_path, source=None):
         calls.append(Path(file_path).name)
         return {"status": "success"}
 
-    service.ingest_file_sync = fake_ingest
+    service.ingest_file = fake_ingest
 
     result = service.recover_from_mineru_markdown("kb", source, "abc", max_chars=10)
 
@@ -220,7 +250,7 @@ def test_recover_file_does_not_leave_segment_docs_in_registry(tmp_path: Path):
     mineru_dir.mkdir(parents=True)
     (mineru_dir / "book.md").write_text("# A\nhello", encoding="utf-8")
 
-    def fake_ingest(database_id, file_path, source=None):
+    async def fake_ingest(database_id, file_path, source=None):
         segment_path = Path(file_path)
         import hashlib
         digest = hashlib.sha256(segment_path.read_bytes()).hexdigest()
@@ -233,7 +263,7 @@ def test_recover_file_does_not_leave_segment_docs_in_registry(tmp_path: Path):
         )
         return {"status": "success"}
 
-    service.ingest_file_sync = fake_ingest
+    service.ingest_file = fake_ingest
     service.recover_from_mineru_markdown("kb", source, "abc", max_chars=10)
 
     docs = registry.list_documents("kb")
@@ -265,11 +295,11 @@ def test_recover_file_skips_newer_part_output_dirs(tmp_path: Path):
 
     calls = []
 
-    def fake_ingest(database_id, file_path, source=None):
+    async def fake_ingest(database_id, file_path, source=None):
         calls.append(Path(file_path).name)
         return {"status": "success"}
 
-    service.ingest_file_sync = fake_ingest
+    service.ingest_file = fake_ingest
     result = service.recover_from_mineru_markdown("kb", source, "abc", max_chars=10)
 
     assert result["status"] == "已导入"

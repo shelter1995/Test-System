@@ -883,6 +883,22 @@ class RAGAnythingService:
         sha256: str,
         max_chars: int = 12000,
     ) -> dict[str, Any]:
+        return asyncio.run(
+            self.recover_from_mineru_markdown_async(
+                database_id,
+                file_path,
+                sha256,
+                max_chars=max_chars,
+            )
+        )
+
+    async def recover_from_mineru_markdown_async(
+        self,
+        database_id: str,
+        file_path: str | Path,
+        sha256: str,
+        max_chars: int = 12000,
+    ) -> dict[str, Any]:
         source_path = Path(file_path)
         output_dir = self._db_output_dir(database_id)
         if not output_dir.exists():
@@ -937,7 +953,7 @@ class RAGAnythingService:
 
         for segment in segment_files:
             try:
-                self.ingest_file_sync(database_id, segment, source=source_path.name)
+                await self.ingest_file(database_id, segment, source=source_path.name)
                 # 分段文件是中间产物，不应作为独立文档出现在知识库清单中。
                 self.registry.delete_document(database_id, _sha256(segment))
                 done += 1

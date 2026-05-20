@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>统一工作台</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=2.2">
+    <link rel="stylesheet" href="/static/css/style.css?v=2.4">
 </head>
 <body>
     <div class="app-shell">
@@ -437,6 +437,11 @@
                             <div id="embedding-settings" class="settings-block"></div>
                             <div id="rerank-settings" class="settings-block"></div>
                             <div class="settings-actions">
+                                <select id="model-test-target" class="settings-test-target">
+                                    <option value="llm">测试推理模型</option>
+                                    <option value="embedding">测试嵌入模型</option>
+                                    <option value="rerank">测试重排模型</option>
+                                </select>
                                 <button type="button" id="test-model-settings-btn">测试连接</button>
                                 <button type="submit" id="save-model-settings-btn">保存设置</button>
                             </div>
@@ -455,10 +460,10 @@
     <script src="/static/js/health.js"></script>
 
     <!-- 知识库管理模块 -->
-    <script src="/static/js/knowledge.js"></script>
+    <script src="/static/js/knowledge.js?v=2.3"></script>
 
     <!-- 知识库问答模块 -->
-    <script src="/static/js/knowledge-chat.js"></script>
+    <script src="/static/js/knowledge-chat.js?v=2.4"></script>
 
     <!-- 内容生成模块 -->
     <script src="/static/js/generation.js"></script>

@@ -414,7 +414,8 @@ async def ai_enhanced_search(request: SearchRequest):
         db_id = _normalize_database_id(request.database)
         kwargs = _build_query_kwargs(request)
         if db_id:
-            result = await service.query(db_id, request.query, **kwargs)
+            engine = _engine_for_database(db_id)
+            result = await engine.query(db_id, request.query, **kwargs)
         else:
             result = await service.query_all(request.query, **kwargs)
         return _to_legacy_query_response(result)
@@ -728,17 +729,78 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
     if doc.get("status") == "processing":
-        raise HTTPException(status_code=409, detail="文档正在处理中，请稍后再试")
+        updated_at = str(doc.get("updated_at") or "")
+        is_stale = False
+        try:
+            from datetime import datetime, timezone
+
+            updated = datetime.fromisoformat(updated_at)
+            if updated.tzinfo is None:
+                updated = updated.replace(tzinfo=timezone.utc)
+            is_stale = (datetime.now(timezone.utc) - updated).total_seconds() > 10 * 60
+        except Exception:
+            is_stale = False
+        if not is_stale:
+            raise HTTPException(status_code=409, detail="文档正在处理中，请稍后再试")
+        service.registry.update_document_status(db_id, sha256, status="error", error="处理超时，已改为重试。")
+        service.registry.update_document_progress(db_id, sha256, stage="interrupted")
+
+    engine = _engine_for_database(db_id)
+    if engine is not service:
+        file_path = Path(doc["file_path"])
+        service.registry.update_document_status(db_id, sha256, status="processing", error="")
+        service.registry.update_document_progress(db_id, sha256, stage="indexing")
+        try:
+            result = await engine.ingest_file(db_id, file_path)
+            status = str((result or {}).get("status") or "").strip()
+            if not _is_success_ingest_status(status):
+                raise RuntimeError(str((result or {}).get("error") or (result or {}).get("message") or "传统 RAG 重试失败"))
+            _record_traditional_ingest_result(
+                service,
+                db_id,
+                file_path,
+                result or {},
+                existing_sha256=sha256,
+                source_name=doc.get("file_name") or file_path.name,
+            )
+            service.registry.update_document_progress(db_id, sha256, stage="done")
+            return {"status": "success", "message": "传统 RAG 文档已重新索引", "result": result}
+        except Exception as exc:
+            service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
+            service.registry.update_document_progress(db_id, sha256, stage="error")
+            raise HTTPException(status_code=500, detail=str(exc))
+
     if request.strategy != "markdown_segments":
         raise HTTPException(status_code=400, detail="仅支持 markdown_segments")
 
-    return await asyncio.to_thread(
-        service.recover_from_mineru_markdown,
-        db_id,
-        Path(doc["file_path"]),
-        sha256,
-        request.max_chars,
-    )
+    file_path = Path(doc["file_path"])
+    try:
+        return await asyncio.to_thread(
+            service.recover_from_mineru_markdown,
+            db_id,
+            file_path,
+            sha256,
+            request.max_chars,
+        )
+    except Exception as recovery_exc:
+        logger.info(
+            "MinerU markdown 分段恢复失败，改用完整重试 [%s/%s]: %s",
+            db_id,
+            sha256,
+            recovery_exc,
+        )
+
+    service.registry.update_document_status(db_id, sha256, status="processing", error="")
+    service.registry.update_document_progress(db_id, sha256, stage="rag_ingest")
+    try:
+        result = await asyncio.to_thread(service.ingest_file_sync, db_id, file_path)
+        service.registry.update_document_status(db_id, sha256, status="已导入", error="")
+        service.registry.update_document_progress(db_id, sha256, stage="done")
+        return {"status": "success", "message": "RAG-Anything 文档已重新处理", "result": result}
+    except Exception as exc:
+        service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
+        service.registry.update_document_progress(db_id, sha256, stage="error")
+        raise HTTPException(status_code=500, detail=str(exc))
 
 
 def _doc_status_path(db_id: str, service: Any) -> Path:
@@ -1268,11 +1330,15 @@ async def ingest_upload(database: str = Form(...), files: List[UploadFile] = Fil
 async def _process_uploaded_files(db_id: str, files: list, task_id: str):
     service = _require_service()
     engine = _engine_for_database(db_id)
+    is_raganything = engine is service
     for filename, filepath, sha256 in files:
         try:
-            service.registry.update_document_progress(db_id, sha256, stage="rag_ingest")
-            progress_tracker.emit(task_id, "parsing", filename, f"正在 RAG 解析: {filename}")
-            if engine is service:
+            stage = "rag_ingest" if is_raganything else "indexing"
+            message = f"正在 RAG-Anything 解析: {filename}" if is_raganything else f"正在传统 RAG 分块索引: {filename}"
+            event_engine = "raganything" if is_raganything else "traditional"
+            service.registry.update_document_progress(db_id, sha256, stage=stage)
+            progress_tracker.emit(task_id, "parsing", filename, message, engine=event_engine)
+            if is_raganything:
                 result = await asyncio.to_thread(service.ingest_file_sync, db_id, Path(filepath))
             else:
                 result = await engine.ingest_file(db_id, Path(filepath))

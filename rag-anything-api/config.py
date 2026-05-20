@@ -28,6 +28,14 @@ def _safe_int(value: str, default: int) -> int:
         return default
 
 
+def _safe_float(value: str, default: float) -> float:
+    """安全的浮点数转换，失败时返回默认值"""
+    try:
+        return float(value)
+    except (ValueError, TypeError):
+        return default
+
+
 def _safe_bool(value: str, default: bool) -> bool:
     """安全的布尔转换，失败时返回默认值"""
     if value is None:
@@ -120,7 +128,10 @@ EMBEDDING_MAX_TOKENS = _safe_int(os.getenv("EMBEDDING_MAX_TOKENS", "5000"), 5000
 LLM_TIMEOUT_M27 = _safe_int(os.getenv("LLM_TIMEOUT_M27", "120"), 120)
 LLM_TIMEOUT_M25 = _safe_int(os.getenv("LLM_TIMEOUT_M25", "90"), 90)
 EMBEDDING_TIMEOUT = _safe_int(os.getenv("EMBEDDING_TIMEOUT", "30"), 30)
-EMBEDDING_BATCH_SIZE = _safe_int(os.getenv("EMBEDDING_BATCH_SIZE", "20"), 20)
+EMBEDDING_BATCH_SIZE = _safe_int(os.getenv("EMBEDDING_BATCH_SIZE", "10"), 10)
+EMBEDDING_BATCH_INTERVAL = _safe_float(os.getenv("EMBEDDING_BATCH_INTERVAL", "1.0"), 1.0)
+EMBEDDING_RETRY_ATTEMPTS = _safe_int(os.getenv("EMBEDDING_RETRY_ATTEMPTS", "3"), 3)
+EMBEDDING_RETRY_BASE_DELAY = _safe_float(os.getenv("EMBEDDING_RETRY_BASE_DELAY", "30"), 30.0)
 
 
 # RAG-Anything 引擎配置（通过 pip install raganything 安装，无需本地 clone）

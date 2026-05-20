@@ -5,6 +5,7 @@
 (function () {
     var _initialized = false;
     var _sessionStartTime = Date.now();
+    var _activeJob = null;
 
     // ==================== 类型配置 ====================
 
@@ -176,6 +177,62 @@
         document.getElementById('genSubmitBtn').addEventListener('click', function () {
             startGenerationJob(type);
         });
+        restoreActiveJobUi(type);
+    }
+
+    function jobProgress(stage, status) {
+        if (status === 'completed') return 100;
+        if (status === 'failed') return 100;
+        var map = {
+            init: 8,
+            searching: 22,
+            generating: 55,
+            generating_manual: 42,
+            generating_exam: 68,
+            generating_readme: 86,
+        };
+        return map[stage] || 12;
+    }
+
+    function renderJobStatus(job) {
+        var statusEl = document.getElementById('genStatus');
+        var btnEl = document.getElementById('genSubmitBtn');
+        if (!statusEl || !job) return;
+
+        var stage = job.stage || 'init';
+        var stageMessages = {
+            'init': '⏳ 初始化...',
+            'searching': '🔍 检索知识库...',
+            'generating': '✍️ AI 生成中...',
+            'generating_manual': '📖 正在生成培训讲义...',
+            'generating_exam': '📝 正在生成考试试题...',
+            'generating_readme': '📋 正在生成使用说明...',
+            'done': '✅ 生成完成',
+            'error': '❌ 生成失败',
+        };
+        var msg = stageMessages[stage] || ('⏳ ' + stage);
+        var stageClass = stage.startsWith('generating') ? 'stage-generating' :
+                         stage === 'searching' ? 'stage-searching' :
+                         job.status === 'failed' ? 'stage-error' :
+                         job.status === 'completed' ? 'stage-done' : 'stage-init';
+        var progress = jobProgress(stage, job.status);
+        var warnings = Array.isArray(job.warnings) && job.warnings.length
+            ? '<div class="gen-warning">' + escapeHtml(job.warnings[0]) + '</div>'
+            : '';
+        statusEl.innerHTML =
+            '<span class="gen-job-stage ' + stageClass + '">' + msg + '</span>' +
+            '<span class="gen-progress"><span style="width:' + progress + '%"></span></span>' +
+            warnings;
+        if (btnEl) {
+            var running = job.status === 'running';
+            btnEl.disabled = running;
+            btnEl.textContent = running ? '生成中...' : '开始生成';
+        }
+    }
+
+    function restoreActiveJobUi(type) {
+        if (!_activeJob || _activeJob.type !== type || _activeJob.status !== 'running') return;
+        renderJobStatus(_activeJob);
     }
 
     function renderGenerationPage() {
@@ -323,17 +380,20 @@
 
         // UI 禁用
         if (btnEl) { btnEl.disabled = true; btnEl.textContent = '生成中...'; }
-        if (statusEl) statusEl.innerHTML = '<span class="gen-job-stage stage-init">⏳ 初始化...</span>';
+        _activeJob = { job_id: '', type: type, status: 'running', stage: 'init' };
+        renderJobStatus(_activeJob);
 
         WorkbenchAPI.postJson(
             WorkbenchAPI.BASE_URLS.TUTOR_API + '/generation/jobs',
             payload
         ).then(function (data) {
-            if (statusEl) statusEl.innerHTML = '<span class="gen-job-stage stage-searching">🔍 检索知识库...</span>';
+            _activeJob = { job_id: data.job_id, type: type, status: 'running', stage: 'searching' };
+            renderJobStatus(_activeJob);
             pollJobStatus(data.job_id, type);
         }).catch(function (err) {
             if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-color)">生成失败: ' + err.message + '</span>';
             if (btnEl) { btnEl.disabled = false; btnEl.textContent = '开始生成'; }
+            _activeJob = null;
         });
     };
 
@@ -353,21 +413,8 @@
                 WorkbenchAPI.requestJson(
                     WorkbenchAPI.BASE_URLS.TUTOR_API + '/generation/jobs/' + jobId
                 ).then(function (job) {
-                    // 更新阶段显示
-                    var stage = job.stage || '';
-                    var stageMessages = {
-                        'searching': '🔍 检索知识库...',
-                        'generating': '✍️ AI 生成中...',
-                        'generating_manual': '📖 正在生成培训讲义...',
-                        'generating_exam': '📝 正在生成考试试题...',
-                        'generating_readme': '📋 正在生成使用说明...',
-                    };
-                    var msg = stageMessages[stage] || ('⏳ ' + stage);
-                    var stageClass = stage.startsWith('generating') ? 'stage-generating' :
-                                     stage === 'searching' ? 'stage-searching' : '';
-                    if (statusEl) {
-                        statusEl.innerHTML = '<span class="gen-job-stage ' + stageClass + '">' + msg + '</span>';
-                    }
+                    _activeJob = Object.assign({}, job, { type: type });
+                    renderJobStatus(_activeJob);
 
                     if (job.status === 'completed') {
                         var files = (job.result && job.result.files) || [];
@@ -375,10 +422,12 @@
                         var msg = '✅ 生成完成！共 ' + fileCount + ' 个文件';
                         if (statusEl) statusEl.innerHTML = '<span style="color:var(--success-color)">' + msg + '</span>';
                         if (btnEl) { btnEl.disabled = false; btnEl.textContent = '开始生成'; }
+                        _activeJob = null;
                         loadGenerationArtifacts();
                     } else if (job.status === 'failed') {
                         if (statusEl) statusEl.innerHTML = '<span style="color:var(--accent-color)" title="' + escapeHtml(job.error || '') + '">❌ 生成失败: ' + escapeHtml(job.error || '未知错误').substring(0, 60) + '</span>';
                         if (btnEl) { btnEl.disabled = false; btnEl.textContent = '开始生成'; }
+                        _activeJob = null;
                     } else {
                         check();
                     }

@@ -266,6 +266,8 @@ body {
 .content {
     flex: 1;
     overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-gutter: stable;
     background: var(--bg-content);
     padding: 1.5rem;
 }
@@ -1959,14 +1961,39 @@ body.has-alert #tutorApp .page {
 /* ==================== 知识库管理页面 ==================== */
 .content-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: minmax(280px, 0.9fr) minmax(460px, 1.6fr);
     gap: 1.25rem;
+    align-items: start;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+}
+
+.knowledge-grid {
+    grid-template-columns: 360px minmax(0, 1fr);
+    overflow: hidden;
+}
+
+.knowledge-grid > .panel-card {
+    min-width: 0;
+    max-width: 100%;
 }
 
 @media (max-width: 900px) {
-    .content-grid {
+    .content-grid,
+    .knowledge-grid {
         grid-template-columns: 1fr;
     }
+}
+
+#knowledgeApp,
+#dbListContainer,
+#uploadSectionContainer,
+#uploadLogContainer,
+#fileListContainer {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .panel-card {
@@ -1974,6 +2001,8 @@ body.has-alert #tutorApp .page {
     border-radius: var(--radius-lg);
     box-shadow: var(--shadow-sm);
     transition: box-shadow 0.2s;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .panel-card:hover {
@@ -1992,6 +2021,8 @@ body.has-alert #tutorApp .page {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    min-width: 0;
+    flex-wrap: wrap;
 }
 
 .badge {
@@ -2009,6 +2040,10 @@ body.has-alert #tutorApp .page {
     background: #e0e7ff;
     color: #3730a3;
     font-size: 0.8rem;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     padding: 0.2rem 0.6rem;
     border-radius: 999px;
     font-weight: 500;
@@ -2136,6 +2171,16 @@ body.has-alert #tutorApp .page {
     background: rgba(245, 158, 11, 0.12);
 }
 
+.btn-retry.retrying,
+.btn-retry:disabled {
+    opacity: 0.65;
+    cursor: wait;
+}
+
+.btn-retry.retrying {
+    animation: icon-pulse 1.2s ease-in-out infinite;
+}
+
 /* 文件操作按钮 */
 .file-col-actions {
     display: flex;
@@ -2186,6 +2231,8 @@ body.has-alert #tutorApp .page {
     background: var(--bg-primary);
     border-radius: var(--radius-md);
     border: 2px dashed var(--border-color);
+    min-width: 0;
+    max-width: 100%;
 }
 
 .upload-row input[type="file"] {
@@ -2216,7 +2263,7 @@ body.has-alert #tutorApp .page {
 /* 文件列表 */
 .file-list-header {
     display: grid;
-    grid-template-columns: 2fr 1fr 2fr 2.5rem;
+    grid-template-columns: minmax(0, 2fr) minmax(130px, 0.85fr) minmax(0, 1.7fr) 2.5rem;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
     background: var(--bg-accent);
@@ -2225,17 +2272,21 @@ body.has-alert #tutorApp .page {
     font-size: 0.85rem;
     color: var(--text-secondary);
     margin-bottom: 0.5rem;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .file-row {
     display: grid;
-    grid-template-columns: 2fr 1fr 2fr 2.5rem;
+    grid-template-columns: minmax(0, 2fr) minmax(130px, 0.85fr) minmax(0, 1.7fr) 2.5rem;
     gap: 0.5rem;
     padding: 0.75rem 1rem;
     border-bottom: 1px solid var(--border-color);
     font-size: 0.9rem;
     align-items: center;
     transition: background 0.2s;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .file-row:hover {
@@ -2256,6 +2307,18 @@ body.has-alert #tutorApp .page {
 
 .file-col-status {
     text-align: center;
+    min-width: 0;
+}
+
+.file-status-detail {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    color: var(--text-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
 }
 
 .file-col-source {
@@ -2308,6 +2371,10 @@ body.has-alert #tutorApp .page {
     font-size: 12px;
     font-weight: 500;
     vertical-align: middle;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .engine-traditional {
@@ -2348,6 +2415,8 @@ body.has-alert #tutorApp .page {
     border: 1px solid var(--border-color);
     border-radius: var(--radius-md);
     overflow: hidden;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .upload-log-header {
@@ -2361,6 +2430,7 @@ body.has-alert #tutorApp .page {
     font-size: 0.85rem;
     font-weight: 600;
     color: var(--text-primary);
+    min-width: 0;
 }
 
 .upload-log-body {
@@ -2377,6 +2447,8 @@ body.has-alert #tutorApp .page {
     gap: 0.5rem;
     padding: 0.3rem 0.75rem;
     border-bottom: 1px solid #f0f0f0;
+    min-width: 0;
+    max-width: 100%;
 }
 
 .log-entry:last-child {
@@ -2403,6 +2475,9 @@ body.has-alert #tutorApp .page {
     flex: 1;
     color: var(--text-secondary);
     min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    overflow-wrap: anywhere;
 }
 
 .log-entry.log-parsing .log-file {
@@ -2485,6 +2560,8 @@ body.has-alert #tutorApp .page {
     gap: 0.75rem;
     padding: 0.9rem 1rem;
     border-bottom: 1px solid var(--border-color);
+    position: relative;
+    overflow: visible;
 }
 
 .kbchat-toolbar-title {
@@ -2494,10 +2571,94 @@ body.has-alert #tutorApp .page {
     margin-right: auto;
 }
 
-.kbchat-db-select {
+.kbchat-db-picker {
+    position: relative;
+    flex: 0 1 360px;
     min-width: 240px;
     max-width: 360px;
+    z-index: 30;
+}
+
+.kbchat-db-button {
     width: 100%;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.55rem 0.8rem;
+    border: 1px solid #cfd8e3;
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--text-primary);
+    font: inherit;
+    cursor: pointer;
+    text-align: left;
+}
+
+.kbchat-db-button:focus {
+    outline: none;
+    border-color: #7aa9d8;
+    box-shadow: 0 0 0 3px rgba(122, 169, 216, 0.16);
+}
+
+.kbchat-db-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+#kbChatDbButtonText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kbchat-db-caret {
+    flex-shrink: 0;
+    color: var(--text-secondary);
+}
+
+.kbchat-db-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid #cfd8e3;
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    z-index: 1000;
+}
+
+.kbchat-db-picker.open .kbchat-db-menu {
+    display: block;
+}
+
+.kbchat-db-option {
+    width: 100%;
+    display: block;
+    padding: 0.55rem 0.65rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kbchat-db-option:hover,
+.kbchat-db-option.active {
+    background: #e8f2ff;
+    color: #0f4c81;
 }
 
 .kbchat-btn {
@@ -2546,13 +2707,20 @@ body.has-alert #tutorApp .page {
 }
 
 .kbchat-msg {
-    max-width: 88%;
+    flex: 0 0 auto;
+    max-width: min(88%, 760px);
+    min-width: 0;
     border-radius: 10px;
     padding: 0.7rem 0.85rem;
     font-size: 0.92rem;
     line-height: 1.55;
-    white-space: pre-wrap;
     word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.kbchat-msg.user,
+.kbchat-msg.system {
+    white-space: pre-wrap;
 }
 
 .kbchat-msg.user {
@@ -2567,6 +2735,8 @@ body.has-alert #tutorApp .page {
     background: #ffffff;
     border: 1px solid #e2e8f0;
     color: var(--text-primary);
+    padding: 0;
+    overflow: visible;
 }
 
 .kbchat-msg.system {
@@ -2579,9 +2749,75 @@ body.has-alert #tutorApp .page {
 }
 
 .kbchat-msg-meta {
-    margin-top: 0.5rem;
+    margin-top: 0;
+    padding: 0.45rem 0.85rem;
     font-size: 0.78rem;
     color: var(--text-secondary);
+    background: #f8fafc;
+    border-top: 1px solid #edf2f7;
+}
+
+.kbchat-answer-label {
+    padding: 0.45rem 0.85rem 0;
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #0f4c81;
+    letter-spacing: 0;
+}
+
+.kbchat-msg.assistant .kbchat-markdown {
+    padding: 0.35rem 0.85rem 0.75rem;
+    overflow-wrap: anywhere;
+}
+
+.kbchat-msg-warning {
+    margin: 0 0.85rem 0.75rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid #fcd34d;
+    border-radius: var(--radius-sm);
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 0.8rem;
+    line-height: 1.5;
+}
+
+.kbchat-markdown p {
+    margin: 0 0 0.55rem;
+}
+
+.kbchat-markdown p:last-child,
+.kbchat-markdown ul:last-child {
+    margin-bottom: 0;
+}
+
+.kbchat-markdown ul {
+    margin: 0 0 0.55rem 1.2rem;
+}
+
+.kbchat-markdown h3,
+.kbchat-markdown h4,
+.kbchat-markdown h5,
+.kbchat-markdown h6 {
+    margin: 0.2rem 0 0.45rem;
+    font-size: 0.95rem;
+    color: #0f4c81;
+}
+
+.kbchat-markdown code {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 0.05rem 0.25rem;
+}
+
+.kbchat-markdown pre {
+    margin: 0.5rem 0;
+    padding: 0.65rem;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: var(--radius-sm);
+    overflow-x: auto;
+    white-space: pre;
 }
 
 .kbchat-input-wrap {
@@ -2693,6 +2929,16 @@ body.has-alert #tutorApp .page {
     text-overflow: ellipsis;
 }
 
+.kbchat-source-number {
+    display: inline-block;
+    margin-right: 0.45rem;
+    padding: 0.1rem 0.38rem;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #075985;
+    font-size: 0.7rem;
+}
+
 .kbchat-source-snippet {
     font-size: 0.84rem;
     color: #334155;
@@ -2770,7 +3016,7 @@ body.has-alert #tutorApp .page {
         margin-right: 0;
     }
 
-    .kbchat-db-select {
+    .kbchat-db-picker {
         min-width: 0;
         max-width: none;
         flex: 1;
@@ -2779,9 +3025,14 @@ body.has-alert #tutorApp .page {
 
 /* ==================== 内容生成 — 标签页布局 ==================== */
 
+#generationApp {
+    max-width: 1080px;
+    margin: 0 auto;
+}
+
 /* 页面头部 */
 .gen-page-header {
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
 }
 .gen-page-title {
     font-size: 1.5rem;
@@ -2799,7 +3050,7 @@ body.has-alert #tutorApp .page {
 .gen-tab-bar {
     display: flex;
     gap: 0;
-    margin-bottom: 1.25rem;
+    margin-bottom: 1rem;
     border-bottom: 2px solid var(--border-color);
 }
 .gen-tab {
@@ -2834,12 +3085,12 @@ body.has-alert #tutorApp .page {
 .gen-form-panel {
     background: #fff;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     overflow: hidden;
 }
 .gen-form-inner {
-    padding: 1.5rem;
+    padding: 1.25rem;
 }
 .gen-form-actions {
     display: flex;
@@ -2858,14 +3109,15 @@ body.has-alert #tutorApp .page {
     font-size: 0.85rem;
     color: var(--text-secondary);
     min-height: 1.2rem;
+    flex: 1;
 }
 
 /* 产物列表区域（本次会话） */
 .gen-results-section {
-    margin-top: 1.5rem;
+    margin-top: 1rem;
     background: #fff;
     border: 1px solid var(--border-color);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-md);
     box-shadow: 0 1px 3px rgba(0,0,0,0.06);
     overflow: hidden;
 }
@@ -3055,6 +3307,29 @@ body.has-alert #tutorApp .page {
     gap: 0.3rem;
 }
 
+.gen-progress {
+    display: block;
+    height: 5px;
+    margin-top: 0.35rem;
+    width: min(360px, 100%);
+    background: #e2e8f0;
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.gen-progress span {
+    display: block;
+    height: 100%;
+    background: var(--secondary-color);
+    transition: width 0.25s ease;
+}
+
+.gen-warning {
+    margin-top: 0.35rem;
+    color: #92400e;
+    font-size: 0.78rem;
+}
+
 .stage-init { color: var(--text-secondary); }
 .stage-searching { color: var(--info-color); }
 .stage-generating { color: var(--secondary-color); }
@@ -3122,13 +3397,15 @@ body.has-alert #tutorApp .page {
 
 .settings-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
+    grid-template-columns: minmax(0, 1fr) 320px;
     gap: 16px;
+    align-items: start;
 }
 
 .settings-panel {
     display: grid;
     gap: 14px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .settings-block {
@@ -3141,6 +3418,10 @@ body.has-alert #tutorApp .page {
 .settings-block h3 {
     margin: 0 0 12px;
     font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
 }
 
 .settings-field {
@@ -3154,18 +3435,36 @@ body.has-alert #tutorApp .page {
     color: #4b5563;
 }
 
-.settings-field input {
+.settings-field input,
+.settings-field select,
+.settings-test-target {
     width: 100%;
     min-height: 36px;
     padding: 8px 10px;
     border: 1px solid #cfd6e4;
     border-radius: 6px;
+    background: #fff;
 }
 
 .settings-actions {
     display: flex;
     gap: 10px;
     justify-content: flex-end;
+    grid-column: 1 / -1;
+}
+
+.settings-key-state {
+    font-size: 12px;
+    color: #166534;
+    background: #dcfce7;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+.settings-key-state.muted {
+    color: #64748b;
+    background: #f1f5f9;
 }
 
 .settings-status {
@@ -3174,10 +3473,28 @@ body.has-alert #tutorApp .page {
     padding: 14px;
     background: #f8fafc;
     min-height: 80px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.settings-status.success {
+    border-color: #bbf7d0;
+    background: #f0fdf4;
+    color: #166534;
+}
+
+.settings-status.error {
+    border-color: #fecaca;
+    background: #fef2f2;
+    color: #991b1b;
 }
 
 @media (max-width: 860px) {
     .settings-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .settings-panel {
         grid-template-columns: 1fr;
     }
 }

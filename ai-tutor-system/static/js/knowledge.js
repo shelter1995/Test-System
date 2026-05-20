@@ -18,8 +18,62 @@ const knowledgeState = {
     databases: [],
     activeDatabase: '',
     uploadStates: {},      // 按知识库隔离上传日志、SSE 和处理中队列
+    retryingDocuments: new Set(),
     documentRefreshTimer: null,
 };
+
+function getActiveDatabaseItem() {
+    return knowledgeState.databases.find(db => {
+        const id = typeof db === 'string' ? db : db.id;
+        return id === knowledgeState.activeDatabase;
+    }) || null;
+}
+
+function getActiveEngine() {
+    const db = getActiveDatabaseItem();
+    return typeof db === 'string' ? 'traditional' : (db && db.engine) || 'traditional';
+}
+
+function formatBeijingTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    });
+}
+
+function normalizeUploadMessage(data, dbId) {
+    const message = String(data.error || data.message || '');
+    const engine = String(data.engine || '').toLowerCase();
+    if (data.type === 'parsing' && !engine && /正在\s*RAG\s*解析/.test(message)) {
+        const db = knowledgeState.databases.find(item => {
+            const id = typeof item === 'string' ? item : item.id;
+            return id === dbId;
+        });
+        const dbEngine = typeof db === 'string' ? 'traditional' : (db && db.engine) || 'traditional';
+        if (dbEngine !== 'raganything') {
+            return message.replace(/正在\s*RAG\s*解析[:：]?/, '正在传统 RAG 分块索引:');
+        }
+    }
+    return message;
+}
+
+function isStaleProcessing(doc) {
+    const status = String((doc && doc.status) || '').toLowerCase();
+    const updatedAt = (doc && (doc.updated_at || doc.imported_at)) || '';
+    const updatedAtMs = updatedAt ? Date.parse(updatedAt) : NaN;
+    return status === 'processing'
+        && Number.isFinite(updatedAtMs)
+        && Date.now() - updatedAtMs > 10 * 60 * 1000;
+}
 
 function getUploadState(dbId) {
     const key = String(dbId || knowledgeState.activeDatabase || '').trim();
@@ -39,7 +93,7 @@ function getUploadState(dbId) {
 function canRetryDocument(doc) {
     const status = String((doc && doc.status) || '').toLowerCase();
     const stage = String((doc && doc.stage) || '').toLowerCase();
-    return status === 'error' || status === 'partial_success' || stage === 'interrupted';
+    return status === 'error' || status === 'partial_success' || stage === 'interrupted' || isStaleProcessing(doc);
 }
 
 function clearDocumentRefreshTimer() {
@@ -103,7 +157,7 @@ function renderKnowledgePage() {
     if (!container) return;
 
     container.innerHTML = `
-        <div class="content-grid">
+        <div class="content-grid knowledge-grid">
             <!-- 左侧：创建知识库 -->
             <div class="panel-card panel-pad">
                 <h3 class="panel-card-title">创建知识库</h3>
@@ -136,12 +190,14 @@ function renderKnowledgePage() {
                     ${renderDatabaseList()}
                 </div>
 
-                <h3 class="panel-card-title" style="margin-top: 1.5rem;">
+                <h3 class="panel-card-title knowledge-files-title" style="margin-top: 1.5rem;">
                     文件管理
                     ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
                     <button class="btn-log-toggle" id="logToggleBtn" onclick="toggleUploadLog()" title="上传日志">📋</button>
                 </h3>
-                ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
+                <div id="uploadSectionContainer">
+                    ${knowledgeState.activeDatabase ? renderUploadSection() : '<div class="empty-state"><p>请先选择一个知识库</p></div>'}
+                </div>
                 <div id="uploadLogContainer"></div>
                 <div id="fileListContainer" style="margin-top: 0.75rem;">
                     <div class="empty-state"><p>加载中...</p></div>
@@ -151,6 +207,33 @@ function renderKnowledgePage() {
     `;
 
     // 恢复之前的上传日志
+    if (getUploadState().uploadLogState) {
+        restoreUploadLog();
+    }
+}
+
+function refreshKnowledgeSelection() {
+    const dbList = document.getElementById('dbListContainer');
+    if (dbList) dbList.innerHTML = renderDatabaseList();
+
+    const title = document.querySelector('.knowledge-files-title');
+    if (title) {
+        title.innerHTML = `
+            文件管理
+            ${knowledgeState.activeDatabase ? `<span class="badge-light">当前: ${escapeHtml(knowledgeState.activeDatabase)}</span>` : ''}
+            <button class="btn-log-toggle" id="logToggleBtn" onclick="toggleUploadLog()" title="上传日志">📋</button>
+        `;
+    }
+
+    const uploadSection = document.getElementById('uploadSectionContainer');
+    if (uploadSection) {
+        uploadSection.innerHTML = knowledgeState.activeDatabase
+            ? renderUploadSection()
+            : '<div class="empty-state"><p>请先选择一个知识库</p></div>';
+    }
+
+    const logContainer = document.getElementById('uploadLogContainer');
+    if (logContainer) logContainer.innerHTML = '';
     if (getUploadState().uploadLogState) {
         restoreUploadLog();
     }
@@ -190,15 +273,23 @@ function renderDatabaseList() {
  * 渲染上传区域（支持多文件选择）
  */
 function renderUploadSection() {
+    const engine = getActiveEngine();
+    const isTraditional = engine !== 'raganything';
+    const accept = isTraditional
+        ? '.pdf,.docx,.txt,.md,.xlsx,.csv'
+        : '.pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json,.mp4,.avi,.mkv,.mov,.webm,.mp3,.wav,.flac,.aac,.ogg,.m4a';
+    const hint = isTraditional
+        ? '支持格式：PDF、Word(.docx)、TXT、Markdown、Excel(.xlsx)、CSV（传统 RAG，快速分块索引）'
+        : '支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON、音频、视频（RAG-Anything，多模态解析）';
     return `
         <div class="upload-row">
             <input type="file" id="uploadFileInput" multiple
-                accept=".pdf,.doc,.docx,.txt,.md,.xlsx,.xls,.pptx,.ppt,.csv,.html,.json,.mp4,.avi,.mkv,.mov,.webm,.mp3,.wav,.flac,.aac,.ogg,.m4a"
+                accept="${accept}"
                 onchange="updateFileSelection()" />
             <button class="btn-primary" id="uploadBtn" onclick="uploadKnowledgeFiles()">上传并导入</button>
         </div>
         <div id="selectedFiles" class="selected-files"></div>
-        <p class="upload-hint">支持格式：PDF、Word、TXT、Markdown、Excel、PPT、CSV、HTML、JSON、音频、视频（可多选）</p>
+        <p class="upload-hint">${hint}</p>
     `;
 }
 
@@ -209,7 +300,7 @@ function selectDatabase(dbId) {
     // 保存当前上传日志状态
     saveUploadLogState();
     knowledgeState.activeDatabase = dbId;
-    renderKnowledgePage();
+    refreshKnowledgeSelection();
     loadKnowledgeDocuments();
 }
 
@@ -462,6 +553,37 @@ function showUploadLog(files, dbId) {
     }
 }
 
+function ensureUploadLog(dbId, title = '处理日志') {
+    const uploadState = getUploadState(dbId);
+    const isActiveDb = dbId === knowledgeState.activeDatabase;
+    if (uploadState.uploadLogState) {
+        if (isActiveDb && !document.getElementById('uploadLog')) {
+            restoreUploadLog();
+        }
+        return;
+    }
+
+    const html = `
+        <div class="upload-log" id="uploadLog">
+            <div class="upload-log-header">
+                <span>${escapeHtml(title)}</span>
+                <span id="uploadLogSummary">处理中</span>
+                <button class="btn-log-clear" onclick="clearUploadLog()">关闭</button>
+            </div>
+            <div class="upload-log-body" id="uploadLogBody"></div>
+        </div>
+    `;
+    uploadState.uploadLogState = { html };
+
+    if (isActiveDb) {
+        const logContainer = document.getElementById('uploadLogContainer');
+        if (logContainer) logContainer.innerHTML = html;
+        const logEl = document.getElementById('uploadLog');
+        if (logEl) logEl.style.display = 'block';
+        updateLogToggleBadge();
+    }
+}
+
 /**
  * 连接 SSE 进度推送
  */
@@ -544,6 +666,7 @@ function closeUploadSSE(dbId) {
 function appendLogEntry(data, dbId) {
     const uploadState = getUploadState(dbId);
     let icon, cssClass;
+    const eventEngine = String(data.engine || '').toLowerCase();
     switch (data.type) {
         case 'parsing':
             icon = '⏳';
@@ -565,10 +688,11 @@ function appendLogEntry(data, dbId) {
 
     const entry = document.createElement('div');
     entry.className = `log-entry ${cssClass}`;
+    const message = normalizeUploadMessage(data, dbId);
     entry.innerHTML = `
         <span class="log-icon">${icon}</span>
         <span class="log-file">${escapeHtml(data.file || '')}</span>
-        <span class="log-msg">${escapeHtml(data.error || data.message || '')}</span>
+        <span class="log-msg">${escapeHtml(message)}${eventEngine ? ' · ' + renderEngineBadge(eventEngine) : ''}</span>
     `;
 
     const wrapper = document.createElement('div');
@@ -659,11 +783,23 @@ function updateLogToggleBadge() {
 /**
  * 重试导入文件
  */
-async function retryDocument(sha256) {
+async function retryDocument(sha256, buttonEl) {
     if (!knowledgeState.activeDatabase || !sha256) return;
+    const dbId = knowledgeState.activeDatabase;
+    const retryKey = `${dbId}|${sha256}`;
+    if (knowledgeState.retryingDocuments.has(retryKey)) return;
+
+    const row = buttonEl && buttonEl.closest ? buttonEl.closest('.file-row') : null;
+    const fileName = row ? (row.getAttribute('data-file-name') || '文件') : '文件';
+    knowledgeState.retryingDocuments.add(retryKey);
+    ensureUploadLog(dbId, '重试日志');
+    appendLogEntry({ type: 'parsing', file: fileName, message: '已提交重试，正在重新导入...' }, dbId);
+    if (typeof showToast === 'function') showToast('已提交重试，正在处理...', 'info');
+    await loadKnowledgeDocuments();
+
     try {
         const resp = await fetch(
-            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(knowledgeState.activeDatabase)}/documents/${encodeURIComponent(sha256)}/retry`,
+            `${WorkbenchAPI.BASE_URLS.RAG_API}/db/${encodeURIComponent(dbId)}/documents/${encodeURIComponent(sha256)}/retry`,
             {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -674,10 +810,19 @@ async function retryDocument(sha256) {
             const data = await resp.json().catch(() => ({}));
             throw new Error(data.detail || ('HTTP ' + resp.status));
         }
+        appendLogEntry({ type: 'done', file: fileName, message: '重试完成，已刷新文件状态' }, dbId);
+        if (typeof showToast === 'function') showToast('重试完成', 'success');
         await loadKnowledgeDocuments();
     } catch (err) {
         console.error('重试导入失败:', err);
-        alert('重试失败: ' + err.message);
+        appendLogEntry({ type: 'error', file: fileName, message: '重试失败: ' + err.message, error: err.message }, dbId);
+        if (typeof showToast === 'function') showToast('重试失败: ' + err.message, 'error');
+        else alert('重试失败: ' + err.message);
+    } finally {
+        knowledgeState.retryingDocuments.delete(retryKey);
+        if (dbId === knowledgeState.activeDatabase) {
+            await loadKnowledgeDocuments();
+        }
     }
 }
 
@@ -724,7 +869,8 @@ function _renderFileRow(item, isUploading) {
     const stageMap = {
         'queued': '排队中',
         'uploaded': '已上传',
-        'rag_ingest': '解析/入库中',
+        'indexing': '索引构建中',
+        'rag_ingest': engine === 'traditional' ? '索引构建中' : 'RAG 解析中',
         'graph_enrichment': '图谱处理中',
         'interrupted': '已中断',
         'done': '已完成',
@@ -733,38 +879,43 @@ function _renderFileRow(item, isUploading) {
     const rawStatus = isUploading ? 'processing' : (item.status || '已导入');
     const rawStage = isUploading ? 'queued' : (item.stage || '');
     const updatedAt = item.updated_at || item.imported_at || '';
-    const updatedAtMs = updatedAt ? Date.parse(updatedAt) : NaN;
-    const isStale = !isUploading
-        && rawStatus === 'processing'
-        && Number.isFinite(updatedAtMs)
-        && Date.now() - updatedAtMs > 10 * 60 * 1000;
+    const isStale = !isUploading && isStaleProcessing(item);
+    const retryKey = `${knowledgeState.activeDatabase}|${sha256}`;
+    const isRetrying = !isUploading && knowledgeState.retryingDocuments.has(retryKey);
     const statusText = escapeHtml(isStale
         ? '疑似卡住'
+        : (isRetrying
+            ? '重试中'
         : (rawStatus === 'processing' && rawStage
             ? (stageMap[rawStage] || rawStage)
-            : (statusMap[rawStatus] || rawStatus)));
+            : (statusMap[rawStatus] || rawStatus))));
     const progressText = item.segments_total
         ? `分段: ${item.segments_done || 0}/${item.segments_total}, 失败: ${item.segments_failed || 0}`
         : '';
+    const indexText = item.chunk_count
+        ? `分块: ${item.chunk_count} · 索引: ${item.index_status || 'indexed'}`
+        : (item.index_status ? `索引: ${item.index_status}` : '');
     const stageText = rawStage ? `阶段: ${stageMap[rawStage] || rawStage}` : '';
-    const updatedText = updatedAt ? `最后更新: ${updatedAt}` : '';
-    const titleText = escapeHtml([stageText, updatedText, progressText, item.error || ''].filter(Boolean).join(' | '));
+    const updatedText = updatedAt ? `最后更新: ${formatBeijingTime(updatedAt)}` : '';
+    const titleText = escapeHtml([stageText, updatedText, progressText, indexText, item.error || ''].filter(Boolean).join(' | '));
+    const detailText = escapeHtml([indexText, progressText, updatedText].filter(Boolean).join(' · '));
     const source = isUploading ? '—' : escapeHtml(item.source || item.file_path || '-');
     const isDone = !isUploading && (rawStatus === 'completed' || rawStatus === 'ready' || rawStatus === '已导入' || rawStatus === 'imported');
     const isError = !isUploading && rawStatus === 'error';
     const isPartial = !isUploading && rawStatus === 'partial_success';
-    const statusClass = isDone ? 'status-success'
+    const statusClass = isRetrying ? 'status-pending'
+        : (isDone ? 'status-success'
         : (isError ? 'status-error'
             : (isPartial ? 'status-partial'
-                : (isStale ? 'status-stale' : 'status-pending')));
+                : (isStale ? 'status-stale' : 'status-pending'))));
     const retryBtn = sha256 && canRetryDocument(item)
-        ? `<button class="btn-icon-sm btn-retry" onclick="retryDocument('${sha256}')" title="重试">↻</button>`
+        ? `<button class="btn-icon-sm btn-retry ${isRetrying ? 'retrying' : ''}" onclick="retryDocument('${sha256}', this)" title="${isRetrying ? '重试中' : '重试'}" ${isRetrying ? 'disabled' : ''}>↻</button>`
         : '';
     const deleteBtn = sha256
         ? `<button class="btn-icon-sm btn-delete" onclick="deleteDocument('${sha256}')" title="删除">🗑️</button>`
         : '';
     return `
-    <div class="file-row">
+    <div class="file-row" data-doc-sha="${sha256}" data-file-name="${fileName}">
         <span class="file-col-name" title="${fileName}">
             ${isUploading ? '⏳' : '📄'} ${fileName}${engine ? ' ' + renderEngineBadge(engine) : ''}
         </span>
@@ -772,6 +923,7 @@ function _renderFileRow(item, isUploading) {
             <span class="status-text ${statusClass}" title="${titleText}">
                 ${statusText}
             </span>
+            ${detailText ? `<span class="file-status-detail">${detailText}</span>` : ''}
         </span>
         <span class="file-col-source">${source}</span>
         <span class="file-col-actions">${retryBtn}${deleteBtn}</span>

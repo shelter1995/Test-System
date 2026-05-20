@@ -491,16 +491,31 @@ class SessionManager:
         sessions_dir = Path(config.SESSIONS_DIR)
         history = []
         for session_file in sessions_dir.glob("*.json"):
-            with open(session_file, "r", encoding="utf-8") as f:
-                session_data = json.load(f)
+            try:
+                with open(session_file, "r", encoding="utf-8") as f:
+                    session_data = json.load(f)
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("Skip invalid session file %s: %s", session_file.name, exc)
+                continue
             report = session_data.get("report", {})
+            scenario = session_data.get("scenario") if isinstance(session_data.get("scenario"), dict) else {}
+            messages = session_data.get("messages") if isinstance(session_data.get("messages"), list) else []
+            created_at = (
+                session_data.get("created_at")
+                or (messages[0].get("timestamp") if messages and isinstance(messages[0], dict) else "")
+            )
+            if not created_at:
+                try:
+                    created_at = datetime.fromtimestamp(session_file.stat().st_mtime).isoformat()
+                except OSError:
+                    created_at = ""
             history.append(
                 {
-                    "session_id": session_data["session_id"],
-                    "scenario": session_data["scenario"]["name"],
-                    "rounds": session_data["round"],
-                    "status": session_data["status"],
-                    "created_at": session_data["created_at"],
+                    "session_id": session_data.get("session_id", session_file.stem),
+                    "scenario": scenario.get("name", "未命名场景"),
+                    "rounds": session_data.get("round", 0),
+                    "status": session_data.get("status", "unknown"),
+                    "created_at": created_at,
                     "client_unit": session_data.get("client_unit", ""),
                     "product": session_data.get("product", ""),
                     "score": report.get("total_score"),

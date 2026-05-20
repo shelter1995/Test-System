@@ -89,6 +89,8 @@ def load_document_text(path: str | Path) -> LoadedDocument:
         text = _read_docx(file_path)
     elif extension == ".xlsx":
         text = _read_xlsx(file_path)
+    elif extension == ".xls":
+        raise UnsupportedDocumentType(f"{file_path.name} 是旧版 .xls 格式；传统 RAG 仅支持 .xlsx，请另存为 .xlsx 后上传，或使用 RAG-Anything 高级解析。")
     else:
         raise UnsupportedDocumentType(f"{file_path.name} 不支持传统 RAG 直接处理，请使用 RAG-Anything 高级解析。")
 

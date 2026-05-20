@@ -1,5 +1,41 @@
 # Change Log
 
+## 2026-05-20
+
+### 人工测试修复
+
+- 修复知识库页面切换不同知识库时右侧列表宽度抖动、页面闪烁的问题。
+- 修复知识库问答页面的知识库选择框错位问题，改为自定义下拉组件。
+- 修复知识库问答回答卡片高度被压缩导致内容显示不完整的问题。
+- 优化查询内容与回答内容的视觉区分，降低长文本和来源依据重叠风险。
+- 点击失败文档「重试」时增加前端状态反馈和上传日志提示，避免无响应感。
+
+### 模型设置
+
+- 调整模型设置的保存和测试逻辑：保存后刷新可恢复配置，测试连接优先使用当前表单内容，未填写的新密钥则使用已保存密钥。
+- 模型设置保存后会刷新后端运行时配置，其他页面重试、上传和查询可读取最新模型状态。
+- 模型下拉框补充常用模型选项，同时保留手动填写模型名称能力。
+
+### 传统 RAG
+
+- 传统 RAG 嵌入请求支持批量大小、批次间隔和 429 限流重试配置，降低一次性上传多篇长文时的 TPM 限流失败率。
+- 默认嵌入批量大小调整为 10，批次间隔为 1 秒，429 响应会按 `Retry-After` 或退避策略重试。
+- 明确旧版 `.xls` 不属于传统 RAG 直接支持格式，需另存为 `.xlsx` 或改用 RAG-Anything 高级解析。
+
+### RAG-Anything
+
+- 修复 RAG-Anything 分段恢复重试时每个分段创建独立 event loop 的问题，避免 LightRAG 共享锁报 `bound to a different event loop`。
+- RAG-Anything 的 MinerU Markdown 分段恢复现在在同一个 async 流程中顺序入库，减少长 PDF 重试时的图谱合并失败。
+
+### 验证
+
+- `.\.venv\Scripts\python.exe -m pytest rag-anything-api\tests\test_database_management_api.py rag-anything-api\tests\test_raganything_service.py -q`
+- `.\.venv\Scripts\python.exe -m compileall rag-anything-api`
+- `.\.venv\Scripts\python.exe -m pytest rag-anything-api\tests -q`
+- `.\.venv\Scripts\python.exe -m pytest ai-tutor-system\tests -q`
+- `node --check ai-tutor-system\static\js\knowledge.js`
+- `node --check ai-tutor-system\static\js\knowledge-chat.js`
+
 ## 2026-05-19
 
 ### 传统 RAG 引擎

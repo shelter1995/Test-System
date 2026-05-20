@@ -13,6 +13,7 @@
         turns: [],
         maxTurns: 4,
         mounted: false,
+        dropdownOpen: false,
     };
 
     function esc(text) {
@@ -22,6 +23,75 @@
         const div = document.createElement('div');
         div.textContent = text || '';
         return div.innerHTML;
+    }
+
+    function renderInlineMarkdown(text) {
+        return esc(text)
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/`([^`]+)`/g, '<code>$1</code>');
+    }
+
+    function renderMarkdown(text) {
+        const lines = String(text || '').replace(/\r/g, '').split('\n');
+        const html = [];
+        let inList = false;
+        let inCode = false;
+        let codeLines = [];
+
+        function closeList() {
+            if (inList) {
+                html.push('</ul>');
+                inList = false;
+            }
+        }
+
+        lines.forEach(function (line) {
+            if (/^\s*```/.test(line)) {
+                if (inCode) {
+                    html.push('<pre><code>' + esc(codeLines.join('\n')) + '</code></pre>');
+                    codeLines = [];
+                    inCode = false;
+                } else {
+                    closeList();
+                    inCode = true;
+                }
+                return;
+            }
+            if (inCode) {
+                codeLines.push(line);
+                return;
+            }
+
+            const trimmed = line.trim();
+            if (!trimmed) {
+                closeList();
+                return;
+            }
+            const heading = trimmed.match(/^(#{1,4})\s+(.+)$/);
+            if (heading) {
+                closeList();
+                const level = Math.min(heading[1].length + 2, 6);
+                html.push('<h' + level + '>' + renderInlineMarkdown(heading[2]) + '</h' + level + '>');
+                return;
+            }
+            const bullet = trimmed.match(/^[-*]\s+(.+)$/);
+            if (bullet) {
+                if (!inList) {
+                    html.push('<ul>');
+                    inList = true;
+                }
+                html.push('<li>' + renderInlineMarkdown(bullet[1]) + '</li>');
+                return;
+            }
+            closeList();
+            html.push('<p>' + renderInlineMarkdown(trimmed) + '</p>');
+        });
+
+        if (inCode) {
+            html.push('<pre><code>' + esc(codeLines.join('\n')) + '</code></pre>');
+        }
+        closeList();
+        return html.join('');
     }
 
     function getContainer() {
@@ -63,7 +133,13 @@
                 '<div class="kbchat-card kbchat-main">' +
                     '<div class="kbchat-toolbar">' +
                         '<span class="kbchat-toolbar-title">知识库问答</span>' +
-                        '<select id="kbChatDbSelect" class="form-control kbchat-db-select"></select>' +
+                        '<div id="kbChatDbPicker" class="kbchat-db-picker">' +
+                            '<button id="kbChatDbButton" class="kbchat-db-button" type="button" aria-haspopup="listbox" aria-expanded="false">' +
+                                '<span id="kbChatDbButtonText">选择知识库</span>' +
+                                '<span class="kbchat-db-caret">⌄</span>' +
+                            '</button>' +
+                            '<div id="kbChatDbMenu" class="kbchat-db-menu" role="listbox"></div>' +
+                        '</div>' +
                         '<button id="kbChatNewSessionBtn" class="kbchat-btn" type="button">新会话</button>' +
                     '</div>' +
                     '<div id="kbChatMessages" class="kbchat-messages"></div>' +
@@ -87,20 +163,39 @@
         bindEvents();
     }
 
+    function getActiveDatabaseName() {
+        const active = state.databases.find(function (db) { return db.id === state.activeDatabase; });
+        return active ? active.name : '';
+    }
+
+    function setDropdownOpen(open) {
+        state.dropdownOpen = Boolean(open);
+        const picker = document.getElementById('kbChatDbPicker');
+        const button = document.getElementById('kbChatDbButton');
+        if (picker) picker.classList.toggle('open', state.dropdownOpen);
+        if (button) button.setAttribute('aria-expanded', state.dropdownOpen ? 'true' : 'false');
+    }
+
     function renderDatabaseOptions() {
-        const select = document.getElementById('kbChatDbSelect');
-        if (!select) return;
+        const button = document.getElementById('kbChatDbButton');
+        const buttonText = document.getElementById('kbChatDbButtonText');
+        const menu = document.getElementById('kbChatDbMenu');
+        if (!button || !buttonText || !menu) return;
         if (!state.databases.length) {
-            select.innerHTML = '<option value="">暂无可用知识库</option>';
-            select.value = '';
+            buttonText.textContent = '暂无可用知识库';
+            button.disabled = true;
+            menu.innerHTML = '';
+            setDropdownOpen(false);
             return;
         }
-        select.innerHTML = state.databases
+        button.disabled = false;
+        buttonText.textContent = getActiveDatabaseName() || '选择知识库';
+        menu.innerHTML = state.databases
             .map(function (db) {
-                return '<option value="' + esc(db.id) + '">' + esc(db.name) + '</option>';
+                const selected = db.id === state.activeDatabase;
+                return '<button class="kbchat-db-option ' + (selected ? 'active' : '') + '" type="button" role="option" aria-selected="' + (selected ? 'true' : 'false') + '" data-db-id="' + esc(db.id) + '">' + esc(db.name) + '</button>';
             })
             .join('');
-        select.value = state.activeDatabase;
     }
 
     function renderMessages() {
@@ -121,7 +216,15 @@
             const sourceMeta = msg.role === 'assistant' && Array.isArray(msg.sources) && msg.sources.length
                 ? '<div class="kbchat-msg-meta">来源 ' + msg.sources.length + ' 条</div>'
                 : '';
-            return '<div class="' + klass + '">' + esc(msg.text) + sourceMeta + '</div>';
+            const fallbackHint = msg.role === 'assistant' && msg.fallback
+                ? '<div class="kbchat-msg-warning">提示：本次使用本地文本兜底检索，答案可信度取决于召回片段，请核对右侧来源。</div>'
+                : '';
+            const body = msg.role === 'assistant'
+                ? '<div class="kbchat-answer-label">回答</div>' +
+                  '<div class="kbchat-markdown">' + renderMarkdown(msg.text) + '</div>' +
+                  fallbackHint
+                : esc(msg.text);
+            return '<div class="' + klass + '">' + body + sourceMeta + '</div>';
         }).join('');
         box.scrollTop = box.scrollHeight;
     }
@@ -144,7 +247,7 @@
             fallbackWarning = '<div class="kbchat-sources-fallback">本次使用本地文本兜底检索，请核对来源</div>';
         }
 
-        box.innerHTML = fallbackWarning + list.map(function (item) {
+        box.innerHTML = fallbackWarning + list.map(function (item, index) {
             var scoreText = item.score ? (Math.round(item.score * 100) / 100).toFixed(2) : '';
             var scoreHtml = scoreText
                 ? '<span class="kbchat-source-score">相关度 ' + esc(scoreText) + '</span>'
@@ -157,7 +260,7 @@
                 : '';
             return '' +
                 '<div class="kbchat-source-item">' +
-                    '<div class="kbchat-source-file">' + esc(item.fileName || '知识库资料') + '</div>' +
+                    '<div class="kbchat-source-file"><span class="kbchat-source-number">来源 ' + (index + 1) + '</span>' + esc(item.fileName || '知识库资料') + '</div>' +
                     '<div class="kbchat-source-snippet">' + esc(item.snippet || '已命中该来源，未返回可展示片段。') + '</div>' +
                     metaHtml +
                 '</div>';
@@ -169,19 +272,23 @@
         const sendBtn = document.getElementById('kbChatSendBtn');
         const input = document.getElementById('kbChatInput');
         const newSessionBtn = document.getElementById('kbChatNewSessionBtn');
+        const dbButton = document.getElementById('kbChatDbButton');
         if (sendBtn) {
             sendBtn.disabled = pending || !state.activeDatabase;
             sendBtn.textContent = pending ? '查询中...' : '发送';
         }
         if (input) input.disabled = pending || !state.activeDatabase;
         if (newSessionBtn) newSessionBtn.disabled = pending;
+        if (dbButton) dbButton.disabled = pending || !state.databases.length;
+        if (pending) setDropdownOpen(false);
     }
 
-    function addMessage(role, text, sources) {
+    function addMessage(role, text, sources, meta) {
         state.messages.push({
             role: role,
             text: String(text || '').trim() || '（空）',
             sources: Array.isArray(sources) ? sources : [],
+            fallback: Boolean(meta && meta.fallback),
         });
     }
 
@@ -242,10 +349,7 @@
             var fallback = String((data && data.fallback) || '').trim();
             var sourcesFallback = String((data && data.sources_fallback) || '').trim();
             var effectiveFallback = fallback || sourcesFallback;
-            var note = effectiveFallback
-                ? '\n\n（提示：本次使用本地文本兜底检索，答案可信度取决于召回片段，请核对来源。）'
-                : '';
-            addMessage('assistant', (answer || '当前知识库未找到相关资料。') + note, sources);
+            addMessage('assistant', answer || '当前知识库未找到相关资料。', sources, { fallback: Boolean(effectiveFallback) });
             state.latestSources = sources;
             state.latestFallback = effectiveFallback;
 
@@ -270,18 +374,46 @@
     }
 
     function bindEvents() {
-        const select = document.getElementById('kbChatDbSelect');
+        const dbButton = document.getElementById('kbChatDbButton');
+        const dbMenu = document.getElementById('kbChatDbMenu');
+        const dbPicker = document.getElementById('kbChatDbPicker');
         const sendBtn = document.getElementById('kbChatSendBtn');
         const input = document.getElementById('kbChatInput');
         const newSessionBtn = document.getElementById('kbChatNewSessionBtn');
 
-        if (select) {
-            select.addEventListener('change', function () {
-                state.activeDatabase = String(select.value || '').trim();
-                resetSession('已切换知识库：' + (state.activeDatabase || '未选择'));
+        if (dbButton) {
+            dbButton.addEventListener('click', function () {
+                if (!state.databases.length || state.pending) return;
+                setDropdownOpen(!state.dropdownOpen);
+            });
+        }
+
+        if (dbMenu) {
+            dbMenu.addEventListener('click', function (event) {
+                const option = event.target.closest('.kbchat-db-option');
+                if (!option) return;
+                const nextDb = String(option.dataset.dbId || '').trim();
+                if (!nextDb) return;
+                state.activeDatabase = nextDb;
+                setDropdownOpen(false);
+                renderDatabaseOptions();
+                resetSession('已切换知识库：' + (getActiveDatabaseName() || state.activeDatabase || '未选择'));
                 setPending(false);
             });
         }
+
+        document.addEventListener('click', function (event) {
+            if (!state.dropdownOpen || !dbPicker) return;
+            if (!dbPicker.contains(event.target)) {
+                setDropdownOpen(false);
+            }
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape' && state.dropdownOpen) {
+                setDropdownOpen(false);
+            }
+        });
 
         if (sendBtn) {
             sendBtn.addEventListener('click', askQuestion);
@@ -316,7 +448,7 @@
         const container = getContainer();
         if (!container) return;
 
-        if (!state.mounted) {
+        if (!state.mounted || !document.getElementById('kbChatMessages')) {
             renderShell();
             state.mounted = true;
         }
