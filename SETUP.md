@@ -8,17 +8,20 @@
 
 | 组件 | 最低版本 | 说明 |
 |------|---------|------|
-| Python | **3.12 ~ 3.13** | RAG-Anything 对 3.14 兼容性不佳，3.12/3.13 最稳定 |
+| Python | **3.12 ~ 3.13** | 传统 RAG 文本/多媒体解析链路推荐版本 |
 | Git | 2.30+ | 克隆仓库 |
 | pip | 24.0+ | Python 包管理 |
 | 磁盘空间 | ≥ 10 GB | MinerU 模型文件约 3-5 GB，RAG 存储需预留空间 |
 | 内存 | ≥ 8 GB | MinerU 解析较大 PDF 时内存占用高 |
 
-### 可选（高级功能）
+### 解析依赖
 
 | 组件 | 需要时安装 | 用途 |
 |------|----------|------|
-| MinerU | `pip install -U "mineru[core]"` | PDF/Office 文档解析 |
+| MinerU | `pip install -U "mineru[core]"` | 扫描 PDF、复杂 PDF、图片 OCR 解析 |
+| LibreOffice | 系统安装（`soffice` 可执行） | `.doc/.xls/.ppt` 老 Office 格式转换 |
+| ffmpeg | 系统安装（`ffmpeg` 可执行） | 视频抽取音轨 |
+| openai-whisper | `pip install openai-whisper` | 音频/视频语音转写 |
 
 ---
 
@@ -48,17 +51,20 @@ source .venv/bin/activate
 ## 4. 安装依赖
 
 ```bash
-# RAG 服务依赖（raganything 引擎已内置于项目中）
+# RAG 服务依赖
 pip install -r rag-anything-api/requirements.txt
 
-# MinerU 文档解析（可选，跳过则仅支持文本导入）
+# MinerU（推荐）
 pip install -U "mineru[core]"
+
+# Whisper（音视频转写）
+pip install openai-whisper
 
 # Tutor 服务依赖
 pip install -r ai-tutor-system/requirements_tutor.txt
 ```
 
-> RAG-Anything 引擎源码已包含在 `rag-anything-api/raganything/` 目录中，无需额外安装。
+> 系统内部仍兼容历史 RAG-Anything 数据目录和索引结构，用于旧数据平滑迁移与读取，但该兼容能力不作为用户操作选项暴露。
 
 ---
 
@@ -138,9 +144,12 @@ curl -X POST http://localhost:8003/ingest/path \
   -d '{"path":"/path/to/documents","database":"我的知识库","recursive":true}'
 ```
 
-传统 RAG 默认支持：`.txt .md .csv .pdf .docx .xlsx`。
+知识库统一使用传统 RAG。支持格式：
 
-RAG-Anything 高级解析额外适合：复杂 PDF、图片、音频、视频和需要图谱增强的文档。旧版 Excel `.xls` 不由传统 RAG 直接处理，请另存为 `.xlsx` 后上传，或使用 RAG-Anything 高级解析。
+- 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
+- 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
 
 ---
 
@@ -156,7 +165,7 @@ python start.py
 启动成功标志：
 ```
 [OK] 依赖检查通过
-正在启动 RAG-Anything API 服务...
+正在启动知识库 API 服务...
 INFO:     Uvicorn running on http://0.0.0.0:8003
 ```
 
@@ -244,26 +253,20 @@ RERANK_MODEL=BAAI/bge-reranker-v2-m3
 
 ---
 
-## 7.3 知识库引擎
+## 7.3 知识库能力
 
-### 传统 RAG（默认）
+用户可见的知识库能力统一为传统 RAG（向量检索 + 重排），不再提供 RAG-Anything 引擎切换入口。
 
-新建知识库默认使用「传统 RAG」引擎，基于 SQLite 向量存储和文本分块，无需 GPU 或额外依赖。支持格式：`.txt`, `.md`, `.csv`, `.pdf`, `.docx`, `.xlsx`。
+支持格式：
 
-传统 RAG 在知识库列表和文档列表中显示蓝色「传统 RAG」标签。
+- 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
+- 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
 
 传统 RAG 嵌入请求默认按 10 条一批提交，并在批次之间等待 1 秒。如果硅基流动返回 429 TPM 限流，系统会按 `Retry-After` 或退避策略重试。可通过 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_BATCH_INTERVAL`、`EMBEDDING_RETRY_ATTEMPTS` 和 `EMBEDDING_RETRY_BASE_DELAY` 调整。
 
-### 切换到 RAG-Anything
-
-RAG-Anything 提供知识图谱、多模态处理和音视频解析能力。切换方式：
-
-- **新建知识库时**：通过 API `POST /db/register` 传入 `engine: "raganything"`
-- **已有知识库**：通过 API `PUT /db/{db_id}` 修改引擎类型
-
-RAG-Anything 额外支持：`.jpg`, `.png`, `.bmp`, `.mp4`, `.avi`, `.mkv`, `.mp3`, `.wav`, `.flac` 等格式。使用音视频功能需配置 ffmpeg 和 whisper。
-
-如果 RAG-Anything 文档在 MinerU 解析后入库失败，可在知识库文档列表点击「重试」。系统会优先复用 MinerU 生成的 Markdown 并分段入库，分段恢复在同一个 event loop 中顺序执行，避免 LightRAG 共享锁跨 event loop 冲突。
+系统内部仍兼容历史 RAG-Anything 数据目录和索引结构，用于旧数据平滑迁移与读取，但该兼容能力不作为用户操作选项暴露。
 
 ---
 
@@ -300,7 +303,7 @@ Test-System/
 │   ├── start.py               # 启动脚本（自动依赖检查）
 │   ├── app.py                 # FastAPI 路由
 │   ├── config.py              # 配置项
-│   ├── raganything_service.py # RAG-Anything 封装（VLM + Rerank）
+│   ├── raganything_service.py # 历史 RAG-Anything 数据兼容层
 │   └── storage/               # 知识库持久化（gitignored）
 │
 ├── ai-tutor-system/           # Tutor 服务（端口 8002）
@@ -404,6 +407,6 @@ RAG_SERVICE_URL=http://localhost:8004
 
 这是嵌入模型侧的 TPM 限流。优先降低 `EMBEDDING_BATCH_SIZE`，增大 `EMBEDDING_BATCH_INTERVAL`，或等待限流窗口恢复后点击文档「重试」。
 
-### RAG-Anything PDF 重试失败
+### 历史 RAG-Anything 数据读取异常
 
-如果日志出现 `bound to a different event loop`，请确认已重启 RAG API 服务并加载最新代码，然后重新点击「重试」。旧进程不会自动使用新的分段恢复逻辑。
+如果历史知识库读取失败，请先重启 RAG API 服务并检查 `storage/raganything/` 与 `storage/databases.json` 是否一致。该能力仅用于兼容历史数据，不影响新建传统 RAG 知识库的导入与问答。

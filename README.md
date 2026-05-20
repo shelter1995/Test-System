@@ -2,7 +2,7 @@
 
 AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成：
 
-- `rag-anything-api/`：RAG-Anything 知识库服务，默认端口 `8003`
+- `rag-anything-api/`：知识库服务（统一传统 RAG，内部兼容历史 RAG-Anything 数据），默认端口 `8003`
 - `ai-tutor-system/`：AI 话术陪练系统和前端界面，默认端口 `8002`
 
 ## 主要功能
@@ -39,39 +39,27 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 
 - MiniMax API：用于陪练对话和评分
 - 硅基流动 API：用于 embedding、rerank 等模型调用
-- MinerU：用于 PDF/Office 文档解析，文本导入不依赖它
-- 传统 RAG：默认知识库引擎，用于常见文本、PDF、Word、Excel 文件的快速导入和检索。
-- RAG-Anything：高级引擎，用于复杂 PDF、多模态、音视频和图谱增强场景。
+- MinerU：用于扫描 PDF、复杂 PDF 和图片 OCR 解析
+- LibreOffice：用于 `.doc/.xls/.ppt` 老 Office 格式转为现代格式后解析
+- ffmpeg：用于视频抽取音轨
+- openai-whisper：用于音频和视频语音转写
 
 依赖安装和环境配置见 [SETUP.md](SETUP.md)。
 
-## 知识库引擎
+## 知识库能力
 
-### 传统 RAG（默认）
+用户可见的知识库能力统一为传统 RAG（向量检索 + 重排），不再提供 RAG-Anything 引擎切换入口。
 
-新建知识库默认使用「传统 RAG」引擎。它基于 SQLite 向量存储和文本分块，无需 GPU 或额外依赖即可完成以下格式的导入和检索：
+支持格式：
 
-- 文本文件：`.txt`, `.md`, `.csv`
-- 文档文件：`.pdf`, `.docx`, `.xlsx`
-
-传统 RAG 在知识库列表中显示蓝色「传统 RAG」标签。
-
-旧版 Excel `.xls` 不由传统 RAG 直接处理。请先另存为 `.xlsx` 后上传，或将知识库切换到 RAG-Anything 高级解析。
+- 文档：`.pdf`、`.doc`、`.docx`、`.xls`、`.xlsx`、`.ppt`、`.pptx`、`.txt`、`.md`、`.csv`
+- 图片：`.png`、`.jpg`、`.jpeg`、`.bmp`、`.tiff`、`.webp`
+- 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`
+- 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`
 
 传统 RAG 默认使用硅基流动嵌入和重排模型，并内置批量嵌入与 429 限流重试。长文本批量上传时，可通过 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_BATCH_INTERVAL`、`EMBEDDING_RETRY_ATTEMPTS` 和 `EMBEDDING_RETRY_BASE_DELAY` 调整吞吐与稳定性。
 
-### RAG-Anything（高级引擎）
-
-RAG-Anything 提供知识图谱、多模态处理和音视频解析能力，适合需要深层语义理解的场景：
-
-- 复杂 PDF（含表格、图片、公式）
-- 图片文件：`.jpg`, `.png`, `.bmp`
-- 视频文件：`.mp4`, `.avi`, `.mkv`
-- 音频文件：`.mp3`, `.wav`, `.flac`
-
-切换方式：创建知识库时通过 API 指定 `engine: "raganything"`，或在 Web 界面的知识库详情中修改引擎类型。已导入文档的引擎类型在知识库列表和文档列表中均有标签显示。
-
-RAG-Anything 长 PDF 如果 MinerU 已生成 Markdown 但图谱入库失败，可在文档列表点击「重试」。重试会优先使用 MinerU Markdown 分段恢复，并在同一个异步流程内顺序处理分段，避免 LightRAG 跨 event loop 锁冲突。
+系统内部仍兼容历史 RAG-Anything 数据目录和索引结构，用于旧数据平滑迁移与读取，但该兼容能力不作为用户操作选项暴露。
 
 ## 模型配置
 
