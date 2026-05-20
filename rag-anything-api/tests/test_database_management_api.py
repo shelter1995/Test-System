@@ -225,7 +225,7 @@ class TestRegisterDatabase:
         assert data["database"]["name"] == "minimal-db"
         assert data["database"]["description"] == ""
 
-    def test_register_accepts_engine(self, monkeypatch):
+    def test_register_forces_traditional_engine(self, monkeypatch):
         client, _ = _make_client(monkeypatch)
         response = client.post(
             "/db/register",
@@ -233,7 +233,7 @@ class TestRegisterDatabase:
         )
 
         assert response.status_code == 200
-        assert response.json()["database"]["engine"] == "raganything"
+        assert response.json()["database"]["engine"] == "traditional"
 
     def test_register_existing_updates(self, monkeypatch):
         """对已存在的 id 再次 register 应更新而非报错。"""
@@ -294,6 +294,15 @@ class TestUpdateDatabase:
         client, _ = _make_client(monkeypatch)
         response = client.put("/db/no-such-db", json={"name": "X"})
         assert response.status_code == 404
+
+    def test_update_rejects_raganything_engine(self, monkeypatch):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("my-db")
+
+        response = client.put("/db/my-db", json={"engine": "raganything"})
+
+        assert response.status_code == 400
+        assert "RAG-Anything" in response.json()["detail"]
 
 
 # ── GET /db/{db_id}/documents ────────────────────────────────────────────

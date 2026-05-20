@@ -670,7 +670,7 @@ async def register_database(request: DatabaseRegisterRequest):
             request.id,
             name=request.name,
             description=request.description or "",
-            engine=_normalize_engine_name(request.engine),
+            engine="traditional",
         )
         return {"status": "success", "database": _database_payload(item)}
     except ValueError as e:
@@ -681,16 +681,21 @@ async def register_database(request: DatabaseRegisterRequest):
 async def update_database(db_id: str, request: DatabaseUpdateRequest):
     service = _require_service()
     try:
+        engine = _normalize_engine_name(request.engine)
+        if engine == "raganything":
+            raise HTTPException(status_code=400, detail="不支持将知识库引擎更新为 RAG-Anything")
         item = service.registry.update_database(
             db_id,
             name=request.name,
             description=request.description,
             status=request.status,
-            engine=_normalize_engine_name(request.engine),
+            engine=engine,
         )
         return {"status": "success", "database": _database_payload(item)}
     except KeyError:
         raise HTTPException(status_code=404, detail=f"数据库不存在: {db_id}")
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
