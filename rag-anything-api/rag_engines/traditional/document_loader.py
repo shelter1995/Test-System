@@ -4,6 +4,8 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
+from .document_parsers import DocumentParsingError, ParserUnavailable, parse_with_mineru, should_use_mineru_for_pdf
+
 
 class UnsupportedDocumentType(ValueError):
     pass
@@ -16,6 +18,7 @@ class LoadedDocument:
 
 
 TEXT_EXTENSIONS = {".txt", ".md", ".csv"}
+IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
 
 def _read_text_file(path: Path) -> str:
@@ -35,7 +38,7 @@ def _read_csv(path: Path) -> str:
     return "\n".join(rows)
 
 
-def _read_pdf(path: Path) -> str:
+def _read_pdf(path: Path) -> tuple[str, int]:
     from pypdf import PdfReader
 
     reader = PdfReader(str(path))
@@ -44,7 +47,7 @@ def _read_pdf(path: Path) -> str:
         text = page.extract_text() or ""
         if text.strip():
             pages.append(f"[第 {index + 1} 页]\n{text.strip()}")
-    return "\n\n".join(pages)
+    return "\n\n".join(pages), len(reader.pages)
 
 
 def _read_docx(path: Path) -> str:
@@ -73,6 +76,28 @@ def _read_xlsx(path: Path) -> str:
     return "\n".join(lines)
 
 
+def _resolve_mineru_runtime_config() -> tuple[Path, str]:
+    import config
+
+    output_root = Path(getattr(config, "RAGANYTHING_OUTPUT_ROOT", Path.cwd() / "output")) / "traditional_parser"
+    mineru_path = str(getattr(config, "MINERU_CLI_PATH", "") or getattr(config, "MINERU_PATH", "") or "")
+    return output_root, mineru_path
+
+
+def _load_with_mineru(file_path: Path) -> LoadedDocument:
+    output_root, mineru_path = _resolve_mineru_runtime_config()
+    parsed = parse_with_mineru(path=file_path, output_root=output_root, mineru_path=mineru_path)
+    return LoadedDocument(
+        text=parsed.text.strip(),
+        metadata={
+            "file_name": file_path.name,
+            "extension": file_path.suffix.lower(),
+            "path": str(file_path),
+            **parsed.metadata,
+        },
+    )
+
+
 def load_document_text(path: str | Path) -> LoadedDocument:
     file_path = Path(path)
     extension = file_path.suffix.lower()
@@ -84,11 +109,22 @@ def load_document_text(path: str | Path) -> LoadedDocument:
     elif extension == ".csv":
         text = _read_csv(file_path)
     elif extension == ".pdf":
-        text = _read_pdf(file_path)
+        pdf_text, page_count = _read_pdf(file_path)
+        if should_use_mineru_for_pdf(pdf_text, page_count):
+            try:
+                return _load_with_mineru(file_path)
+            except (ParserUnavailable, DocumentParsingError) as exc:
+                raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+        text = pdf_text
     elif extension == ".docx":
         text = _read_docx(file_path)
     elif extension == ".xlsx":
         text = _read_xlsx(file_path)
+    elif extension in IMAGE_EXTENSIONS:
+        try:
+            return _load_with_mineru(file_path)
+        except (ParserUnavailable, DocumentParsingError) as exc:
+            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
     elif extension == ".xls":
         raise UnsupportedDocumentType(f"{file_path.name} 是旧版 .xls 格式；传统 RAG 仅支持 .xlsx，请另存为 .xlsx 后上传，或使用 RAG-Anything 高级解析。")
     else:
