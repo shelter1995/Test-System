@@ -8,6 +8,15 @@ def _trim(text: str, max_chars: int = 700) -> str:
     return clean[:max_chars].rstrip() + "..."
 
 
+def _as_float(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def extract_source_summaries(contexts: list[dict[str, Any]], max_items: int = 8) -> list[dict[str, Any]]:
     sources = []
     seen = set()
@@ -23,12 +32,26 @@ def extract_source_summaries(contexts: list[dict[str, Any]], max_items: int = 8)
         if key in seen:
             continue
         seen.add(key)
+        source_id = str(ctx.get("source_id") or meta.get("source_id") or "").strip()
+        score = _as_float(ctx.get("score"))
+        if score is None:
+            score = 0.0
+        rerank_score = _as_float(ctx.get("rerank_score"))
+        chunk_index = ctx.get("chunk_index")
+        if chunk_index is None:
+            chunk_index = meta.get("chunk_index")
+        document_sha256 = str(ctx.get("document_sha256") or meta.get("document_sha256") or "").strip()
+        engine = str(ctx.get("engine") or meta.get("engine") or "").strip()
         sources.append(
             {
+                "source_id": source_id,
                 "file_name": file_name,
                 "snippet": snippet,
-                "score": float(ctx.get("score") or 0),
-                "engine": str(meta.get("engine") or "").strip(),
+                "score": score,
+                "rerank_score": rerank_score,
+                "chunk_index": chunk_index,
+                "document_sha256": document_sha256,
+                "engine": engine,
             }
         )
         if len(sources) >= max_items:
@@ -67,7 +90,9 @@ def build_kb_answer_prompt(
         "只能基于【知识库资料】回答。",
         "资料不足时回答：当前知识库未找到相关资料。",
         "不要编造价格、流程、政策、日期、版本号或来源。",
-        "回答应先给结论，再列出关键依据。",
+        "先给出结论，再给出依据。",
+        "关键句后标注来源编号（如 [来源 1]）。",
+        "资料不足时明确说明信息缺口。",
         "",
     ]
     if history:
@@ -86,7 +111,8 @@ def build_kb_answer_prompt(
         for index, ctx in enumerate(contexts[:8], start=1):
             meta = ctx.get("metadata") if isinstance(ctx.get("metadata"), dict) else {}
             source = meta.get("source") or meta.get("file_path") or "知识库资料"
-            lines.append(f"[资料{index}｜来源：{source}]")
+            source_id = str(ctx.get("source_id") or "").strip() or f"资料{index}"
+            lines.append(f"[{source_id}｜来源：{source}]")
             lines.append(_trim(str(ctx.get("text") or ""), 900))
     else:
         lines.append("未检索到可用资料。")

@@ -483,12 +483,34 @@ async def kb_chat(request: KBChatRequest):
             raise HTTPException(status_code=400, detail="query 不能为空")
 
         engine = _engine_for_database(db_id)
-        context_result = await engine.query_context(
-            db_id,
-            request.query,
-            mode=config.CONTEXT_QUERY_MODE,
-            max_chars=config.CONTEXT_MAX_CHARS,
-        )
+        retrieve_contexts = getattr(engine, "retrieve_contexts", None)
+        if callable(retrieve_contexts):
+            try:
+                contexts = await retrieve_contexts(
+                    db_id,
+                    request.query,
+                    history=request.history or [],
+                )
+            except TypeError:
+                contexts = await retrieve_contexts(db_id, request.query)
+            if isinstance(contexts, dict):
+                context_result = contexts
+            else:
+                context_list = contexts if isinstance(contexts, list) else []
+                context_result = {
+                    "query": request.query,
+                    "database": db_id,
+                    "contexts": context_list,
+                    "total_found": len(context_list),
+                    "fallback": None,
+                }
+        else:
+            context_result = await engine.query_context(
+                db_id,
+                request.query,
+                mode=config.CONTEXT_QUERY_MODE,
+                max_chars=config.CONTEXT_MAX_CHARS,
+            )
 
         contexts = context_result.get("contexts") or []
         sources = extract_source_summaries(contexts)
