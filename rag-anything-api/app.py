@@ -557,6 +557,7 @@ async def status():
             "ffmpeg_path": config.FFMPEG_PATH,
             "whisper_available": bool(config.WHISPER_AVAILABLE),
         },
+        "traditional_parser": config.TRADITIONAL_PARSER_DEPENDENCIES,
         "rerank": {
             "enabled": config.ENABLE_RERANK and bool(config.RERANK_API_KEY),
             "provider": "硅基流动",

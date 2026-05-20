@@ -11,6 +11,7 @@ from typing import Any
 from importlib.util import find_spec
 
 from dotenv import load_dotenv
+from rag_engines.traditional.dependencies import detect_traditional_parser_dependencies
 
 
 def _normalize_base_url(base_url: str, suffix: str) -> str:
@@ -153,6 +154,21 @@ DEFAULT_QUERY_MODE = os.getenv("DEFAULT_QUERY_MODE", "hybrid").strip().lower() o
 FFMPEG_PATH = shutil.which("ffmpeg") or _discover_winget_ffmpeg()
 WHISPER_AVAILABLE = find_spec("whisper") is not None
 MINERU_PATH = shutil.which("mineru")
+LIBREOFFICE_PATH = os.getenv("LIBREOFFICE_PATH", "").strip()
+MINERU_CLI_PATH = os.getenv("MINERU_CLI_PATH", "").strip()
+TRADITIONAL_PARSER_DEPENDENCIES = detect_traditional_parser_dependencies()
+if not TRADITIONAL_PARSER_DEPENDENCIES["ffmpeg"]["path"] and FFMPEG_PATH:
+    TRADITIONAL_PARSER_DEPENDENCIES["ffmpeg"] = {"available": True, "path": FFMPEG_PATH}
+if LIBREOFFICE_PATH:
+    TRADITIONAL_PARSER_DEPENDENCIES["libreoffice"] = {"available": True, "path": LIBREOFFICE_PATH}
+if MINERU_CLI_PATH:
+    TRADITIONAL_PARSER_DEPENDENCIES["mineru"] = {"available": True, "path": MINERU_CLI_PATH}
+if not LIBREOFFICE_PATH:
+    LIBREOFFICE_PATH = str(TRADITIONAL_PARSER_DEPENDENCIES["libreoffice"]["path"])
+if not MINERU_CLI_PATH:
+    MINERU_CLI_PATH = str(TRADITIONAL_PARSER_DEPENDENCIES["mineru"]["path"])
+MINERU_PATH = str(TRADITIONAL_PARSER_DEPENDENCIES["mineru"]["path"])
+WHISPER_AVAILABLE = bool(TRADITIONAL_PARSER_DEPENDENCIES["whisper"]["available"])
 
 # VLM 图片理解（MiniMax Coding Plan 专用接口）
 # POST /v1/coding_plan/vlm  {prompt, image_url} → {content}
@@ -176,6 +192,11 @@ RAG_QUERY_TIMEOUT = _safe_int(os.getenv("RAG_QUERY_TIMEOUT", "8"), 8)
 CONTEXT_QUERY_MODE = os.getenv("CONTEXT_QUERY_MODE", "naive").strip().lower() or "naive"
 CONTEXT_MAX_CHARS = _safe_int(os.getenv("CONTEXT_MAX_CHARS", "3000"), 3000)
 CONTEXT_LOCAL_FIRST = _safe_bool(os.getenv("CONTEXT_LOCAL_FIRST"), True)
+KB_QUERY_REWRITE_ENABLED = _safe_bool(os.getenv("KB_QUERY_REWRITE_ENABLED"), True)
+KB_RETRIEVAL_CANDIDATES = _safe_int(os.getenv("KB_RETRIEVAL_CANDIDATES", "20"), 20)
+KB_FINAL_CONTEXTS = _safe_int(os.getenv("KB_FINAL_CONTEXTS", "8"), 8)
+KB_MIN_SCORE = _safe_float(os.getenv("KB_MIN_SCORE", "0.25"), 0.25)
+KB_MAX_REWRITE_QUERIES = _safe_int(os.getenv("KB_MAX_REWRITE_QUERIES", "3"), 3)
 
 # RAG 实例缓存上限
 MAX_RAG_INSTANCES = _safe_int(os.getenv("MAX_RAG_INSTANCES", "3"), 3)
