@@ -43,9 +43,13 @@ def test_extract_source_summaries_deduplicates_sources():
 
     assert sources == [
         {
+            "source_id": "",
             "file_name": "资费说明.pdf",
             "snippet": "商务彩铃基础版 10 元/月/线。",
             "score": 0.9,
+            "rerank_score": None,
+            "chunk_index": None,
+            "document_sha256": "",
             "engine": "",
         }
     ]
