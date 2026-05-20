@@ -168,3 +168,48 @@ def test_legacy_office_missing_libreoffice_maps_to_unsupported(monkeypatch, tmp_
         load_document_text(path)
 
     assert "LibreOffice" in str(exc.value)
+
+
+def test_audio_routes_to_whisper_transcription(monkeypatch, tmp_path: Path):
+    path = tmp_path / "call.mp3"
+    path.write_bytes(b"audio")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader.transcribe_audio",
+        lambda file_path, whisper_available: "音频转写结果",
+    )
+
+    result = load_document_text(path)
+
+    assert result.text == "音频转写结果"
+    assert result.metadata["extension"] == ".mp3"
+
+
+def test_video_routes_to_ffmpeg_then_whisper(monkeypatch, tmp_path: Path):
+    path = tmp_path / "meeting.mp4"
+    path.write_bytes(b"video")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader.transcribe_video",
+        lambda file_path, output_dir, ffmpeg_path, whisper_available: "视频转写结果",
+    )
+
+    result = load_document_text(path)
+
+    assert result.text == "视频转写结果"
+    assert result.metadata["extension"] == ".mp4"
+
+
+def test_media_parser_unavailable_maps_to_unsupported(monkeypatch, tmp_path: Path):
+    path = tmp_path / "call.wav"
+    path.write_bytes(b"audio")
+
+    def _raise(*_args, **_kwargs):
+        raise ParserUnavailable("Whisper not available")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.transcribe_audio", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    assert "Whisper" in str(exc.value)

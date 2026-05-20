@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .document_parsers import DocumentParsingError, ParserUnavailable, parse_with_mineru, should_use_mineru_for_pdf
+from .document_parsers.media_parser import AUDIO_EXTENSIONS, VIDEO_EXTENSIONS, transcribe_audio, transcribe_video
 from .document_parsers.office_converter import LEGACY_OFFICE_EXTENSIONS, convert_with_libreoffice
 
 
@@ -110,6 +111,19 @@ def _resolve_libreoffice_path() -> str:
     return str(getattr(config, "LIBREOFFICE_PATH", "") or "")
 
 
+def _resolve_media_runtime_config() -> tuple[str, bool, Path]:
+    import config
+
+    deps = getattr(config, "TRADITIONAL_PARSER_DEPENDENCIES", {}) or {}
+    ffmpeg_path = str(getattr(config, "FFMPEG_PATH", "") or deps.get("ffmpeg", {}).get("path", "") or "")
+    whisper_available = bool(
+        getattr(config, "WHISPER_AVAILABLE", False)
+        or deps.get("whisper", {}).get("available", False)
+    )
+    output_root = Path(getattr(config, "RAGANYTHING_OUTPUT_ROOT", Path.cwd() / "output")) / "traditional_parser" / "media"
+    return ffmpeg_path, whisper_available, output_root
+
+
 def _load_with_mineru(file_path: Path) -> LoadedDocument:
     output_root, mineru_path = _resolve_mineru_runtime_config()
     parsed = parse_with_mineru(path=file_path, output_root=output_root, mineru_path=mineru_path)
@@ -161,6 +175,23 @@ def load_document_text(path: str | Path) -> LoadedDocument:
     elif extension in IMAGE_EXTENSIONS:
         try:
             return _load_with_mineru(file_path)
+        except (ParserUnavailable, DocumentParsingError) as exc:
+            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+    elif extension in AUDIO_EXTENSIONS:
+        try:
+            _ffmpeg_path, whisper_available, _output_root = _resolve_media_runtime_config()
+            text = transcribe_audio(file_path, whisper_available=whisper_available)
+        except (ParserUnavailable, DocumentParsingError) as exc:
+            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+    elif extension in VIDEO_EXTENSIONS:
+        try:
+            ffmpeg_path, whisper_available, output_root = _resolve_media_runtime_config()
+            text = transcribe_video(
+                file_path,
+                output_dir=output_root / f"{file_path.stem}_audio",
+                ffmpeg_path=ffmpeg_path,
+                whisper_available=whisper_available,
+            )
         except (ParserUnavailable, DocumentParsingError) as exc:
             raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
     else:
