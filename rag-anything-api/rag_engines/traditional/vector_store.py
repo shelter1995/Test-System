@@ -91,13 +91,25 @@ class TraditionalVectorStore:
                 if vector_norm == 0:
                     continue
                 score = float(np.dot(query, vector) / (query_norm * vector_norm))
+                metadata = json.loads(row["metadata_json"])
+                metadata.setdefault("chunk_index", int(row["chunk_index"]))
+                metadata.setdefault("document_sha256", str(row["document_sha256"]))
                 rows.append(
                     {
+                        "id": int(row["id"]),
                         "text": row["text"],
                         "score": score,
-                        "metadata": json.loads(row["metadata_json"]),
+                        "metadata": metadata,
                         "document_sha256": row["document_sha256"],
+                        "chunk_index": int(row["chunk_index"]),
                     }
                 )
-        rows.sort(key=lambda item: item["score"], reverse=True)
+        rows.sort(
+            key=lambda item: (
+                float(item.get("score") or 0.0),
+                str(item.get("document_sha256") or ""),
+                int(item.get("chunk_index") or 0),
+            ),
+            reverse=True,
+        )
         return rows[: max(1, int(top_k))]

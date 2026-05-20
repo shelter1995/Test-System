@@ -8,6 +8,14 @@ from rag_engines.contracts import ContextResult, IngestResult, SearchResult
 
 from .chunking import chunk_text
 from .document_loader import load_document_text
+from .retrieval import (
+    RetrievalConfig,
+    apply_rerank_order,
+    assign_source_ids,
+    build_rewrite_queries,
+    dedupe_candidates,
+    filter_candidates,
+)
 from .vector_store import TraditionalVectorStore
 
 
@@ -27,12 +35,14 @@ class TraditionalRAGEngine:
         storage_root: str | Path,
         embedding_client: Any,
         rerank_client: Any | None = None,
+        retrieval_config: RetrievalConfig | None = None,
         chunk_size: int = 1200,
         chunk_overlap: int = 120,
     ):
         self.storage_root = Path(storage_root)
         self.embedding_client = embedding_client
         self.rerank_client = rerank_client
+        self.retrieval_config = retrieval_config or RetrievalConfig()
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.storage_root.mkdir(parents=True, exist_ok=True)
@@ -111,21 +121,53 @@ class TraditionalRAGEngine:
         enable_rerank: bool | None = None,
         vlm_enhanced: bool | None = None,
     ) -> dict[str, Any]:
-        embeddings = await self.embedding_client.embed([query])
-        results = self._store(database_id).search(database_id, embeddings[0], top_k=max(1, int(n_results)))
-        if enable_rerank and self.rerank_client and results:
-            docs = [item["text"] for item in results]
-            reranked = await self.rerank_client.rerank(query, docs, top_n=len(results))
-            if reranked:
-                ordered = []
-                for item in reranked:
-                    index = int(item.get("index", 0))
-                    if 0 <= index < len(results):
-                        copy = dict(results[index])
-                        copy["rerank_score"] = item.get("relevance_score")
-                        ordered.append(copy)
-                results = ordered or results
+        results = await self.retrieve_contexts(
+            database_id,
+            query,
+            n_results=max(1, int(n_results)),
+            enable_rerank=enable_rerank,
+        )
         return SearchResult(query=query, database=database_id, results=results).to_dict()
+
+    async def retrieve_contexts(
+        self,
+        database_id: str,
+        query: str,
+        n_results: int | None = None,
+        enable_rerank: bool | None = None,
+    ) -> list[dict[str, Any]]:
+        rewrite_queries = build_rewrite_queries(
+            query,
+            rewrite_enabled=self.retrieval_config.rewrite_enabled,
+            max_rewrite_queries=self.retrieval_config.max_rewrite_queries,
+        )
+        if not rewrite_queries:
+            return []
+
+        embeddings = await self.embedding_client.embed(rewrite_queries)
+        store = self._store(database_id)
+        candidates: list[dict[str, Any]] = []
+        top_k = max(1, int(self.retrieval_config.candidates))
+        for embedding in embeddings:
+            candidates.extend(store.search(database_id, embedding, top_k=top_k))
+
+        deduped = dedupe_candidates(candidates)
+        filtered = filter_candidates(deduped, min_score=self.retrieval_config.min_score)
+
+        use_rerank = bool(enable_rerank)
+        ordered = filtered
+        if use_rerank and self.rerank_client and filtered:
+            docs = [item["text"] for item in filtered]
+            reranked = await self.rerank_client.rerank(query, docs, top_n=len(filtered))
+            ordered = apply_rerank_order(filtered, reranked)
+
+        limit = max(1, int(n_results if n_results is not None else self.retrieval_config.final_contexts))
+        final_rows = assign_source_ids(ordered[:limit])
+        for row in final_rows:
+            meta = dict(row.get("metadata") or {})
+            meta.setdefault("engine", self.name)
+            row["metadata"] = meta
+        return final_rows
 
     async def query_context(
         self,
@@ -134,10 +176,15 @@ class TraditionalRAGEngine:
         mode: str = "naive",
         max_chars: int = 3000,
     ) -> dict[str, Any]:
-        result = await self.query(database_id, query, n_results=5, enable_rerank=True)
+        contexts_source = await self.retrieve_contexts(
+            database_id,
+            query,
+            n_results=self.retrieval_config.final_contexts,
+            enable_rerank=True,
+        )
         contexts = []
         remaining = max(0, int(max_chars))
-        for item in result.get("results", []):
+        for item in contexts_source:
             text = str(item.get("text") or "")
             if remaining and len(text) > remaining:
                 text = text[:remaining]

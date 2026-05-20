@@ -6,6 +6,7 @@ import config
 from model_settings import ModelSettingsStore
 from rag_engines.traditional.engine import TraditionalRAGEngine
 from rag_engines.traditional.model_clients import ModelEndpoint, OpenAICompatibleClient
+from rag_engines.traditional.retrieval import RetrievalConfig
 
 
 def _runtime_settings() -> dict[str, Any]:
@@ -71,6 +72,13 @@ def create_traditional_engine() -> TraditionalRAGEngine:
         storage_root=config.TRADITIONAL_RAG_STORAGE_ROOT,
         embedding_client=_embedding_client(settings),
         rerank_client=_rerank_client(settings),
+        retrieval_config=RetrievalConfig(
+            min_score=config.KB_MIN_SCORE,
+            candidates=config.KB_RETRIEVAL_CANDIDATES,
+            final_contexts=config.KB_FINAL_CONTEXTS,
+            rewrite_enabled=config.KB_QUERY_REWRITE_ENABLED,
+            max_rewrite_queries=config.KB_MAX_REWRITE_QUERIES,
+        ),
         chunk_size=config.TRADITIONAL_CHUNK_SIZE,
         chunk_overlap=config.TRADITIONAL_CHUNK_OVERLAP,
     )
