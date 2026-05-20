@@ -12,7 +12,7 @@
 
 1. 前端隐藏 RAG-Anything 类型，用户创建和使用知识库时不再选择引擎。
 2. 所有新知识库默认并强制使用传统 RAG。
-3. 传统 RAG 增加 PDF、PPT、PPTX、DOC、DOCX、XLS、XLSX、音频、视频等格式的文本提取能力。
+3. 传统 RAG 增加 PDF、扫描版 PDF、图片、PPT、PPTX、DOC、DOCX、XLS、XLSX、音频、视频等格式的文本提取能力。
 4. 知识库问答参考 Cherry Studio 的知识库实现思路，加入多查询召回、候选合并、去重、阈值过滤、重排和引用式回答。
 5. 保持现有接口基本兼容，降低对内容生成和销售陪练模块的破坏面。
 
@@ -81,10 +81,17 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 
 文件：`rag-anything-api/rag_engines/traditional/document_loader.py`
 
+设计原则：
+
+1. 传统 RAG 仍然是唯一面向用户的知识库引擎。
+2. MinerU 作为文档解析/OCR 后端使用，不作为 RAG-Anything 图谱检索链路使用。
+3. 文本型 PDF 走快速解析；扫描版 PDF、乱码 PDF、图片型 PDF、复杂表格/公式 PDF 走 OCR/版面解析。
+4. 图片文件进入 OCR/图像描述流程，产出可检索的 Markdown 文本和结构化元数据。
+
 新增或调整解析器：
 
 1. `.txt/.md/.csv`：保留当前逻辑。
-2. `.pdf`：保留当前 `pypdf` 文本抽取，后续可按需接入 OCR。
+2. `.pdf`：先用 `pypdf` 快速抽取文本；如果文本量低、乱码比例高、页面疑似扫描图，自动切换到 MinerU OCR/版面解析。
 3. `.docx`：保留段落和表格抽取。
 4. `.xlsx`：保留工作表逐行抽取。
 5. `.pptx`：新增 `python-pptx` 抽取幻灯片文本、表格文本、备注文本。
@@ -93,8 +100,38 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 8. `.ppt`：新增老 PowerPoint 格式转换流程，优先通过 LibreOffice/soffice 转为 `.pptx` 或 `.pdf` 后抽取文本；缺少转换工具时返回清晰错误。
 9. 音频：`.mp3/.wav/.flac/.aac/.ogg/.m4a` 通过 Whisper 转写文本。
 10. 视频：`.mp4/.avi/.mkv/.mov/.webm` 通过 ffmpeg 抽取音轨，再用 Whisper 转写文本。
+11. 图片：`.png/.jpg/.jpeg/.bmp/.tiff/.tif/.webp` 通过 MinerU OCR 或后续可配置的视觉模型生成可检索文本。
 
 转换结果应写入临时目录或传统 RAG 存储目录下的派生文本缓存，避免重复上传同一文件时每次都重新转写。
+
+### PDF OCR 与图像处理
+
+新增模块建议：
+
+1. `rag-anything-api/rag_engines/traditional/document_parsers/mineru_parser.py`
+2. `rag-anything-api/rag_engines/traditional/document_parsers/media_parser.py`
+3. `rag-anything-api/rag_engines/traditional/document_parsers/office_converter.py`
+
+PDF 解析流程：
+
+1. 对 PDF 先执行快速探测：页数、可抽取字符数、乱码比例、是否存在大量图片对象。
+2. 如果是普通文本 PDF，使用 `pypdf` 快速抽取，减少处理时间。
+3. 如果是扫描版或复杂版式 PDF，调用 MinerU 输出 Markdown/JSON。
+4. MinerU 输出中的文本、标题、表格、公式说明、图片标题和脚注进入传统 RAG 分块。
+5. 每个 chunk metadata 记录 `page_number`、`block_type`、`bbox`、`parser: mineru`，便于来源展示和后续排查。
+
+图像处理流程：
+
+1. 对图片文件使用 MinerU OCR 提取文字。
+2. 如果 MinerU 返回图片描述、表格、标题或脚注，将这些内容合并为 Markdown。
+3. 如果图片没有可识别文字，返回“未识别到可索引文本”，不生成空索引。
+4. 后续可接入 VLM 生成图片语义描述，但本阶段默认只要求 OCR 和 MinerU 可产出的结构化内容。
+
+解析输出缓存：
+
+1. 缓存 key 使用文件 sha256、解析器名称、解析配置版本。
+2. 缓存 Markdown 和必要 JSON 元数据。
+3. 文档重试时优先复用缓存；用户删除文档时同步清理对应缓存。
 
 ### 依赖检测
 
@@ -102,10 +139,11 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 
 调整：
 
-1. 检测 `ffmpeg`、`whisper`、`soffice` 或 LibreOffice。
+1. 检测 `ffmpeg`、`whisper`、`soffice` 或 LibreOffice、`mineru`。
 2. `/status` 返回传统 RAG 文件解析依赖状态。
 3. 如果缺少依赖，导入对应格式时给出可执行的错误信息，例如：
    `当前环境未检测到 LibreOffice，无法解析 .doc 文件。请安装 LibreOffice 或另存为 .docx 后上传。`
+4. 如果缺少 MinerU，扫描版 PDF 和图片导入返回清晰错误；普通文本 PDF 仍可走 `pypdf` 快速路径。
 
 ### 检索链路
 
@@ -179,6 +217,9 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 1. `test_traditional_document_loader.py`
    - `.pptx` 能抽取幻灯片文本。
    - `.doc/.xls/.ppt` 在缺少 LibreOffice 时返回清晰错误。
+   - 扫描版或低文本 PDF 会选择 MinerU 解析路径。
+   - 图片文件会选择 MinerU OCR 路径。
+   - 缺少 MinerU 时，扫描版 PDF 和图片返回清晰错误。
    - 音频在缺少 Whisper 时返回清晰错误。
    - 视频在缺少 ffmpeg 或 Whisper 时返回清晰错误。
 
@@ -207,10 +248,11 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 
 1. 先写后端测试，覆盖文件解析和检索链路。
 2. 实现传统 RAG 文件转文本扩展。
-3. 实现多阶段检索和问答来源结构。
-4. 调整前端知识库管理和问答展示。
-5. 更新 README、SETUP 和使用说明中的知识库描述。
-6. 跑测试和编译检查。
+3. 接入 MinerU 作为传统 RAG 的 PDF OCR 和图片 OCR 解析后端。
+4. 实现多阶段检索和问答来源结构。
+5. 调整前端知识库管理和问答展示。
+6. 更新 README、SETUP 和使用说明中的知识库描述。
+7. 跑测试和编译检查。
 
 ## 风险与取舍
 
@@ -218,13 +260,15 @@ Cherry Studio 的知识库核心链路是：文件进入本地知识库、抽取
 2. 音视频转写耗时可能较长，需要保留后台处理和进度刷新。
 3. 多查询召回会增加 embedding 和 rerank 调用次数，需要通过候选数量和历史轮数控制成本。
 4. 继续使用 SQLite 向量存储适合当前本地部署规模；如果知识库规模明显增长，再单独评估向量数据库。
+5. MinerU 对复杂 PDF、扫描版 PDF、表格和图片更可靠，但处理成本高于 `pypdf`；因此采用“快速解析优先，必要时 OCR”的分层策略。
 
 ## 验收标准
 
 1. 前端用户看不到 RAG-Anything 选项或标签。
 2. 新建知识库全部为传统 RAG。
-3. `.pdf/.doc/.docx/.xls/.xlsx/.ppt/.pptx/.txt/.md/.csv` 可进入传统 RAG 解析流程。
+3. `.pdf/.doc/.docx/.xls/.xlsx/.ppt/.pptx/.txt/.md/.csv/.png/.jpg/.jpeg/.bmp/.tiff/.webp` 可进入传统 RAG 解析流程。
 4. 音频和视频可在依赖满足时转写并入库。
-5. 知识库问答能返回带来源编号的答案和来源依据。
-6. 对同一批文档，问答结果比当前版本更少跑偏，资料不足时更少编造。
-7. 相关测试和编译检查通过。
+5. 扫描版 PDF 和图片在 MinerU 可用时能通过 OCR 产生可检索文本。
+6. 知识库问答能返回带来源编号的答案和来源依据。
+7. 对同一批文档，问答结果比当前版本更少跑偏，资料不足时更少编造。
+8. 相关测试和编译检查通过。
