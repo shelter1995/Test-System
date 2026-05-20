@@ -1,9 +1,11 @@
+import sys
+from types import SimpleNamespace
 from pathlib import Path
 
 import pytest
 
 from rag_engines.traditional.document_loader import UnsupportedDocumentType, load_document_text
-from rag_engines.traditional.document_parsers import DocumentParsingError, ParsedDocument
+from rag_engines.traditional.document_parsers import DocumentParsingError, ParsedDocument, ParserUnavailable
 
 
 def test_load_markdown_text(tmp_path: Path):
@@ -96,3 +98,73 @@ def test_parser_errors_are_mapped_to_unsupported_type(monkeypatch, tmp_path: Pat
         load_document_text(path)
 
     assert "解析失败" in str(exc.value)
+
+
+def test_load_pptx_extracts_title_text_and_table(monkeypatch, tmp_path: Path):
+    class _Cell:
+        def __init__(self, text: str):
+            self.text = text
+
+    class _Row:
+        def __init__(self, values: list[str]):
+            self.cells = [_Cell(value) for value in values]
+
+    class _Table:
+        def __init__(self):
+            self.rows = [_Row(["套餐", "价格"]), _Row(["商务彩铃", "100元/月"])]
+
+    class _Shape:
+        def __init__(self, text: str = "", has_table: bool = False):
+            self.text = text
+            self.has_table = has_table
+            self.table = _Table() if has_table else None
+
+    class _Slide:
+        def __init__(self):
+            self.shapes = [_Shape("政企服务"), _Shape("重点产品说明"), _Shape(has_table=True)]
+
+    fake_pptx_module = SimpleNamespace(Presentation=lambda _: SimpleNamespace(slides=[_Slide()]))
+    monkeypatch.setitem(sys.modules, "pptx", fake_pptx_module)
+
+    path = tmp_path / "plan.pptx"
+    path.write_bytes(b"pptx")
+    result = load_document_text(path)
+
+    assert "政企服务" in result.text
+    assert "重点产品说明" in result.text
+    assert "套餐 | 价格" in result.text
+    assert "商务彩铃 | 100元/月" in result.text
+
+
+def test_legacy_office_converts_then_recurses(monkeypatch, tmp_path: Path):
+    path = tmp_path / "legacy.doc"
+    path.write_bytes(b"legacy")
+    converted = tmp_path / "legacy.docx"
+    converted.write_bytes(b"docx")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader.convert_with_libreoffice",
+        lambda path, output_dir, libreoffice_path: converted,
+    )
+    monkeypatch.setattr("rag_engines.traditional.document_loader._read_docx", lambda _p: "转换后文档文本")
+
+    result = load_document_text(path)
+
+    assert result.text == "转换后文档文本"
+    assert result.metadata["extension"] == ".docx"
+    assert result.metadata["file_name"] == "legacy.docx"
+
+
+def test_legacy_office_missing_libreoffice_maps_to_unsupported(monkeypatch, tmp_path: Path):
+    path = tmp_path / "legacy.xls"
+    path.write_bytes(b"legacy")
+
+    def _raise(*_args, **_kwargs):
+        raise ParserUnavailable("LibreOffice 未安装")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.convert_with_libreoffice", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    assert "LibreOffice" in str(exc.value)

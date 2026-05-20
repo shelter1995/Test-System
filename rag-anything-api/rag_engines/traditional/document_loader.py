@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .document_parsers import DocumentParsingError, ParserUnavailable, parse_with_mineru, should_use_mineru_for_pdf
+from .document_parsers.office_converter import LEGACY_OFFICE_EXTENSIONS, convert_with_libreoffice
 
 
 class UnsupportedDocumentType(ValueError):
@@ -76,12 +77,37 @@ def _read_xlsx(path: Path) -> str:
     return "\n".join(lines)
 
 
+def _read_pptx(path: Path) -> str:
+    from pptx import Presentation
+
+    presentation = Presentation(str(path))
+    lines = []
+    for slide_index, slide in enumerate(presentation.slides, start=1):
+        lines.append(f"[Slide: {slide_index}]")
+        for shape in slide.shapes:
+            text = getattr(shape, "text", "")
+            if text and text.strip():
+                lines.append(text.strip())
+            if getattr(shape, "has_table", False):
+                for row in shape.table.rows:
+                    values = [cell.text.strip() for cell in row.cells]
+                    if any(values):
+                        lines.append(" | ".join(values))
+    return "\n".join(lines)
+
+
 def _resolve_mineru_runtime_config() -> tuple[Path, str]:
     import config
 
     output_root = Path(getattr(config, "RAGANYTHING_OUTPUT_ROOT", Path.cwd() / "output")) / "traditional_parser"
     mineru_path = str(getattr(config, "MINERU_CLI_PATH", "") or getattr(config, "MINERU_PATH", "") or "")
     return output_root, mineru_path
+
+
+def _resolve_libreoffice_path() -> str:
+    import config
+
+    return str(getattr(config, "LIBREOFFICE_PATH", "") or "")
 
 
 def _load_with_mineru(file_path: Path) -> LoadedDocument:
@@ -120,13 +146,23 @@ def load_document_text(path: str | Path) -> LoadedDocument:
         text = _read_docx(file_path)
     elif extension == ".xlsx":
         text = _read_xlsx(file_path)
+    elif extension == ".pptx":
+        text = _read_pptx(file_path)
+    elif extension in LEGACY_OFFICE_EXTENSIONS:
+        try:
+            converted_path = convert_with_libreoffice(
+                path=file_path,
+                output_dir=file_path.parent / "_converted_office",
+                libreoffice_path=_resolve_libreoffice_path(),
+            )
+        except (ParserUnavailable, DocumentParsingError) as exc:
+            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+        return load_document_text(converted_path)
     elif extension in IMAGE_EXTENSIONS:
         try:
             return _load_with_mineru(file_path)
         except (ParserUnavailable, DocumentParsingError) as exc:
             raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
-    elif extension == ".xls":
-        raise UnsupportedDocumentType(f"{file_path.name} 是旧版 .xls 格式；传统 RAG 仅支持 .xlsx，请另存为 .xlsx 后上传，或使用 RAG-Anything 高级解析。")
     else:
         raise UnsupportedDocumentType(f"{file_path.name} 不支持传统 RAG 直接处理，请使用 RAG-Anything 高级解析。")
 
