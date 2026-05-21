@@ -6,6 +6,10 @@ from pathlib import Path
 from .common import DocumentParsingError, ParsedDocument, ParserUnavailable
 
 
+MINERU_PARSE_TIMEOUT_SECONDS = 30 * 60
+MINERU_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
+
+
 def should_use_mineru_for_pdf(text: str, page_count: int) -> bool:
     content = text or ""
     compact = "".join(ch for ch in content if not ch.isspace())
@@ -38,16 +42,28 @@ def parse_with_mineru(path: str | Path, output_root: str | Path, mineru_path: st
 
     cmd = [
         binary,
-        "--input",
+        "-p",
         str(source_path),
-        "--output-dir",
+        "-o",
         str(output_dir),
     ]
+    if source_path.suffix.lower() in MINERU_IMAGE_EXTENSIONS:
+        cmd.extend(["-m", "ocr", "-b", "pipeline"])
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=MINERU_PARSE_TIMEOUT_SECONDS,
+        )
     except FileNotFoundError as exc:
         raise ParserUnavailable(f"MinerU CLI not found: {binary}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise DocumentParsingError(
+            f"MinerU parsing timed out after {MINERU_PARSE_TIMEOUT_SECONDS} seconds."
+        ) from exc
     except OSError as exc:
         raise DocumentParsingError(f"MinerU execution failed: {exc}") from exc
 
