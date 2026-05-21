@@ -2781,6 +2781,52 @@ body.has-alert #tutorApp .page {
     line-height: 1.5;
 }
 
+.kbchat-source-ref {
+    display: inline-block;
+    margin: 0 0.08rem;
+    padding: 0.02rem 0.3rem;
+    border-radius: 999px;
+    background: #eef6ff;
+    color: #2563a7;
+    font-size: 0.78em;
+    font-weight: 600;
+    line-height: 1.45;
+    vertical-align: 0.08em;
+    white-space: nowrap;
+}
+
+.kbchat-answer-sources {
+    margin-top: 0.15rem;
+    padding: 0.55rem 0.85rem 0.65rem;
+    border-top: 1px solid #edf2f7;
+    background: #f8fafc;
+    color: #475569;
+}
+
+.kbchat-answer-sources-title {
+    margin-bottom: 0.25rem;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #64748b;
+}
+
+.kbchat-answer-sources ul {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.18rem;
+}
+
+.kbchat-answer-sources li {
+    min-width: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .kbchat-markdown p {
     margin: 0 0 0.55rem;
 }
@@ -2794,6 +2840,10 @@ body.has-alert #tutorApp .page {
     margin: 0 0 0.55rem 1.2rem;
 }
 
+.kbchat-markdown ol {
+    margin: 0 0 0.55rem 1.2rem;
+}
+
 .kbchat-markdown h3,
 .kbchat-markdown h4,
 .kbchat-markdown h5,
@@ -2801,6 +2851,40 @@ body.has-alert #tutorApp .page {
     margin: 0.2rem 0 0.45rem;
     font-size: 0.95rem;
     color: #0f4c81;
+}
+
+.kbchat-markdown table {
+    width: 100%;
+    margin: 0.55rem 0 0.75rem;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 0.88rem;
+}
+
+.kbchat-markdown th,
+.kbchat-markdown td {
+    padding: 0.45rem 0.55rem;
+    border: 1px solid #d7e0ea;
+    vertical-align: top;
+    overflow-wrap: anywhere;
+}
+
+.kbchat-markdown th {
+    background: #f1f7fd;
+    color: #0f4c81;
+    font-weight: 700;
+}
+
+.kbchat-markdown tr:nth-child(even) td {
+    background: #fbfdff;
+}
+
+.kbchat-markdown blockquote {
+    margin: 0.5rem 0;
+    padding: 0.45rem 0.65rem;
+    border-left: 3px solid #7aa9d8;
+    background: #f8fafc;
+    color: #334155;
 }
 
 .kbchat-markdown code {
@@ -2818,6 +2902,16 @@ body.has-alert #tutorApp .page {
     border-radius: var(--radius-sm);
     overflow-x: auto;
     white-space: pre;
+}
+
+.kbchat-markdown pre code {
+    display: block;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    white-space: inherit;
 }
 
 .kbchat-input-wrap {

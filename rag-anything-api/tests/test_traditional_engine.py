@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from rag_engines.traditional.engine import TraditionalRAGEngine
-from rag_engines.traditional.document_loader import UnsupportedDocumentType, load_document_text
+from rag_engines.traditional.document_loader import LoadedDocument, UnsupportedDocumentType, load_document_text
 
 
 class FakeEmbeddingClient:
@@ -47,6 +47,41 @@ async def test_ingest_and_query_markdown(tmp_path: Path):
     assert ingest["chunk_count"] == 1
     assert result["total_found"] == 1
     assert "提交企业资料" in result["results"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_ingest_file_loads_document_off_event_loop(tmp_path: Path, monkeypatch):
+    import asyncio
+    import rag_engines.traditional.engine as engine_module
+
+    source = tmp_path / "meeting.mp4"
+    source.write_bytes(b"video")
+    observed = {}
+
+    def fake_load_document_text(path):
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            observed["off_loop"] = True
+            return LoadedDocument(
+                text="视频转写结果",
+                metadata={"file_name": Path(path).name, "extension": ".mp4", "path": str(path)},
+            )
+        raise RuntimeError("document parsing ran on the FastAPI event loop")
+
+    monkeypatch.setattr(engine_module, "load_document_text", fake_load_document_text)
+    engine = TraditionalRAGEngine(
+        storage_root=tmp_path / "storage",
+        embedding_client=FakeEmbeddingClient(),
+        rerank_client=None,
+        chunk_size=200,
+        chunk_overlap=20,
+    )
+
+    ingest = await engine.ingest_file("kb", source)
+
+    assert ingest["status"] == "success"
+    assert observed["off_loop"] is True
 
 
 @pytest.mark.asyncio

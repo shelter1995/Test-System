@@ -48,6 +48,11 @@ class FakeService:
         assert "只能基于【知识库资料】回答" in prompt
         return "商务彩铃基础版资费为 10 元/月/线。依据：资费说明中明确写明基础版价格。"
 
+    async def generate_answer_stream(self, prompt):
+        assert "只能基于【知识库资料】回答" in prompt
+        for token in ["<think>内部分析", "不应展示</think>", "商务彩铃", "基础版资费", "为 10 元/月/线。"]:
+            yield token
+
     async def query_context(self, database_id, query, mode="naive", max_chars=3000):
         return {
             "query": query,
@@ -124,6 +129,36 @@ def test_kb_chat_contract(monkeypatch):
     assert "10 元/月/线" in data["answer"]
     assert data["answer"] != data["sources"][0]["snippet"]
     assert data["fallback"] in (None, "local_text")
+
+
+def test_kb_chat_stream_contract(monkeypatch):
+    monkeypatch.setattr(rag_api, "rag_service", FakeService())
+    monkeypatch.setattr(rag_api, "startup_error", None)
+    client = TestClient(rag_api.app)
+
+    with client.stream(
+        "POST",
+        "/kb/chat/stream",
+        json={
+            "query": "坐椅子时如何摆拍照姿势",
+            "database": "商务彩铃",
+            "history": [{"q": "先前问题", "a": "先前回答"}],
+            "n_results": 3,
+        },
+    ) as response:
+        assert response.status_code == 200
+        text = "".join(response.iter_text())
+
+    assert "event: status" in text
+    assert '"stage":"retrieving"' in text
+    assert "event: sources" in text
+    assert "外拍动作图解.md" in text
+    assert text.count("event: token") == 3
+    assert "商务彩铃" in text
+    assert "<think>" not in text
+    assert "内部分析" not in text
+    assert "event: done" in text
+    assert '"answer":"商务彩铃基础版资费为 10 元/月/线。"' in text
 
 
 def test_kb_chat_falls_back_to_context_summary_when_answer_generation_fails(monkeypatch):

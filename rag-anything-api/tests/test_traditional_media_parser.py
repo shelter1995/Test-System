@@ -59,6 +59,35 @@ def test_extract_audio_from_video_raises_parsing_error_on_failure(monkeypatch, t
     assert "ffmpeg" in str(exc.value)
 
 
+def test_extract_audio_from_video_uses_encoding_tolerant_subprocess(monkeypatch, tmp_path: Path):
+    video_path = tmp_path / "clip.mp4"
+    video_path.write_bytes(b"video")
+    audio_path = tmp_path / "out" / "clip.wav"
+    captured_kwargs = {}
+
+    class _Result:
+        returncode = 0
+        stderr = ""
+        stdout = ""
+
+    def _fake_run(*args, **kwargs):
+        captured_kwargs.update(kwargs)
+        audio_path.parent.mkdir(parents=True, exist_ok=True)
+        audio_path.write_bytes(b"audio")
+        return _Result()
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_parsers.media_parser.subprocess.run",
+        _fake_run,
+    )
+
+    result = extract_audio_from_video(video_path, output_dir=tmp_path / "out", ffmpeg_path="ffmpeg")
+
+    assert result == audio_path
+    assert captured_kwargs["encoding"] == "utf-8"
+    assert captured_kwargs["errors"] == "ignore"
+
+
 def test_transcribe_video_calls_extract_then_transcribe(monkeypatch, tmp_path: Path):
     video_path = tmp_path / "clip.mp4"
     video_path.write_bytes(b"video")

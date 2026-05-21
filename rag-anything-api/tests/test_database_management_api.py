@@ -585,6 +585,46 @@ class TestDeleteDocument:
 
 
 class TestRetryDocument:
+    def test_retry_traditional_document_short_circuits_already_indexed(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("video", engine="traditional")
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        service.registry.register_document(
+            "video",
+            file_name="clip.mp4",
+            file_path=str(source),
+            sha256="abc",
+            status="error",
+            error="previous request failed",
+        )
+        service.registry.update_document_index_metadata(
+            "video",
+            "abc",
+            engine="traditional",
+            index_status="indexed",
+            chunk_count=3,
+            embedding_model="embed",
+        )
+
+        class FakeTraditionalEngine:
+            async def ingest_file(self, database_id, file_path):
+                raise AssertionError("already indexed documents should not be reprocessed")
+
+        monkeypatch.setattr(rag_api, "traditional_service", FakeTraditionalEngine())
+
+        response = client.post(
+            "/db/video/documents/abc/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        doc = service.registry.list_documents("video")[0]
+        assert doc["status"] == "已导入"
+        assert doc["stage"] == "done"
+        assert doc["chunk_count"] == 3
+
     def test_retry_document_uses_segment_strategy(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)
         service.registry.register_database("kb")

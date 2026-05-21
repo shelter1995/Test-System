@@ -289,6 +289,11 @@ def _to_legacy_query_response(result: dict, include_context: bool = False) -> di
     return payload
 
 
+def _sse_event(event: str, payload: dict[str, Any]) -> str:
+    data = json.dumps(payload, ensure_ascii=False, allow_nan=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {data}\n\n"
+
+
 def _trim_snippet(text: str, max_chars: int = 220) -> str:
     clean = " ".join(str(text or "").split()).strip()
     if len(clean) <= max_chars:
@@ -348,6 +353,119 @@ def _record_traditional_ingest_result(
         embedding_model=embedding_model,
         rerank_model=rerank_model,
     )
+
+
+def _is_indexed_traditional_document(doc: dict[str, Any]) -> bool:
+    return (
+        str(doc.get("engine") or "").strip().lower() == "traditional"
+        and str(doc.get("index_status") or "").strip().lower() == "indexed"
+        and int(doc.get("chunk_count") or 0) > 0
+    )
+
+
+def _finalize_indexed_traditional_document(service: Any, db_id: str, sha256: str) -> None:
+    service.registry.update_document_status(db_id, sha256, status="已导入", error="")
+    service.registry.update_document_progress(db_id, sha256, stage="done")
+
+
+async def _resolve_kb_chat_context(request: KBChatRequest) -> dict[str, Any]:
+    db_id = _normalize_database_id(request.database)
+    if not db_id:
+        raise HTTPException(status_code=400, detail="database 不能为空")
+
+    query_text = str(request.query or "").strip()
+    if not query_text:
+        raise HTTPException(status_code=400, detail="query 不能为空")
+
+    engine = _engine_for_database(db_id)
+    retrieve_contexts = getattr(engine, "retrieve_contexts", None)
+    if callable(retrieve_contexts):
+        try:
+            contexts = await retrieve_contexts(
+                db_id,
+                request.query,
+                history=request.history or [],
+            )
+        except TypeError:
+            contexts = await retrieve_contexts(db_id, request.query)
+        if isinstance(contexts, dict):
+            context_result = contexts
+        else:
+            context_list = contexts if isinstance(contexts, list) else []
+            context_result = {
+                "query": request.query,
+                "database": db_id,
+                "contexts": context_list,
+                "total_found": len(context_list),
+                "fallback": None,
+            }
+    else:
+        context_result = await engine.query_context(
+            db_id,
+            request.query,
+            mode=config.CONTEXT_QUERY_MODE,
+            max_chars=config.CONTEXT_MAX_CHARS,
+        )
+
+    contexts = context_result.get("contexts") or []
+    return {
+        "db_id": db_id,
+        "context_result": context_result,
+        "contexts": contexts,
+        "sources": extract_source_summaries(contexts),
+    }
+
+
+async def _generate_kb_answer_stream(service: Any, prompt: str):
+    stream_answer = getattr(service, "generate_answer_stream", None)
+    if callable(stream_answer):
+        async for token in _without_think_tokens(stream_answer(prompt)):
+            if token:
+                yield token
+        return
+
+    answer = str(await service.generate_answer(prompt) or "").strip()
+    if answer:
+        yield answer
+
+
+async def _without_think_tokens(tokens):
+    buffer = ""
+    in_think = False
+    start_tag = "<think>"
+    end_tag = "</think>"
+    keep_tail = max(len(start_tag), len(end_tag)) - 1
+
+    async for token in tokens:
+        buffer += str(token or "")
+        while buffer:
+            lower = buffer.lower()
+            if in_think:
+                end_index = lower.find(end_tag)
+                if end_index == -1:
+                    break
+                buffer = buffer[end_index + len(end_tag):]
+                in_think = False
+                continue
+
+            start_index = lower.find(start_tag)
+            if start_index != -1:
+                visible = buffer[:start_index]
+                if visible:
+                    yield visible
+                buffer = buffer[start_index + len(start_tag):]
+                in_think = True
+                continue
+
+            if len(buffer) <= keep_tail:
+                break
+            visible = buffer[:-keep_tail]
+            buffer = buffer[-keep_tail:]
+            if visible:
+                yield visible
+
+    if buffer and not in_think:
+        yield buffer
 
 
 @app.get("/")
@@ -474,46 +592,11 @@ async def query(request: SearchRequest):
 async def kb_chat(request: KBChatRequest):
     service = _require_service()
     try:
-        db_id = _normalize_database_id(request.database)
-        if not db_id:
-            raise HTTPException(status_code=400, detail="database 不能为空")
-
-        query_text = str(request.query or "").strip()
-        if not query_text:
-            raise HTTPException(status_code=400, detail="query 不能为空")
-
-        engine = _engine_for_database(db_id)
-        retrieve_contexts = getattr(engine, "retrieve_contexts", None)
-        if callable(retrieve_contexts):
-            try:
-                contexts = await retrieve_contexts(
-                    db_id,
-                    request.query,
-                    history=request.history or [],
-                )
-            except TypeError:
-                contexts = await retrieve_contexts(db_id, request.query)
-            if isinstance(contexts, dict):
-                context_result = contexts
-            else:
-                context_list = contexts if isinstance(contexts, list) else []
-                context_result = {
-                    "query": request.query,
-                    "database": db_id,
-                    "contexts": context_list,
-                    "total_found": len(context_list),
-                    "fallback": None,
-                }
-        else:
-            context_result = await engine.query_context(
-                db_id,
-                request.query,
-                mode=config.CONTEXT_QUERY_MODE,
-                max_chars=config.CONTEXT_MAX_CHARS,
-            )
-
-        contexts = context_result.get("contexts") or []
-        sources = extract_source_summaries(contexts)
+        prepared = await _resolve_kb_chat_context(request)
+        db_id = prepared["db_id"]
+        context_result = prepared["context_result"]
+        contexts = prepared["contexts"]
+        sources = prepared["sources"]
         answer_fallback = context_result.get("fallback")
         if contexts:
             prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
@@ -545,6 +628,84 @@ async def kb_chat(request: KBChatRequest):
     except Exception as e:
         logger.error(f"知识库问答失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/kb/chat/stream")
+async def kb_chat_stream(request: KBChatRequest):
+    service = _require_service()
+    db_id = _normalize_database_id(request.database)
+    if not db_id:
+        raise HTTPException(status_code=400, detail="database 不能为空")
+    if not str(request.query or "").strip():
+        raise HTTPException(status_code=400, detail="query 不能为空")
+
+    async def event_stream():
+        answer = ""
+        context_result: dict[str, Any] = {}
+        sources: list[dict[str, Any]] = []
+        answer_fallback = None
+        try:
+            yield _sse_event("status", {"stage": "retrieving", "message": "正在检索知识库..."})
+            prepared = await _resolve_kb_chat_context(request)
+            context_result = prepared["context_result"]
+            contexts = prepared["contexts"]
+            sources = prepared["sources"]
+            answer_fallback = context_result.get("fallback")
+            yield _sse_event(
+                "sources",
+                {
+                    "sources": sources,
+                    "total_sources": len(sources),
+                    "fallback": answer_fallback,
+                    "sources_fallback": context_result.get("fallback"),
+                },
+            )
+
+            if contexts:
+                prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
+                yield _sse_event("status", {"stage": "generating", "message": "正在生成回答..."})
+                try:
+                    async for token in _generate_kb_answer_stream(service, prompt):
+                        answer += token
+                        yield _sse_event("token", {"delta": token})
+                except Exception as exc:
+                    logger.warning("知识库流式答案生成失败，改用上下文摘要兜底: %s", exc)
+                    answer = build_context_fallback_answer(request.query, contexts)
+                    answer_fallback = "answer_generation_failed"
+                    yield _sse_event(
+                        "error",
+                        {"code": "answer_generation_failed", "message": "答案生成服务暂时不可用，已改用召回片段摘要。"},
+                    )
+                    yield _sse_event("token", {"delta": answer})
+            else:
+                answer = "当前知识库未找到相关资料。"
+                answer_fallback = answer_fallback or "no_result"
+                yield _sse_event("token", {"delta": answer})
+
+            answer = answer.strip() or "当前知识库未找到相关资料。"
+            yield _sse_event(
+                "done",
+                {
+                    "query": request.query,
+                    "database": db_id,
+                    "answer": answer,
+                    "sources": sources,
+                    "total_sources": len(sources),
+                    "fallback": answer_fallback,
+                    "sources_fallback": context_result.get("fallback"),
+                },
+            )
+        except KeyError:
+            yield _sse_event("error", {"code": "database_not_found", "message": f"数据库不存在: {db_id}"})
+        except Exception as exc:
+            logger.error("知识库流式问答失败: %s", exc)
+            yield _sse_event("error", {"code": "kb_chat_stream_failed", "message": str(exc)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/status")
@@ -756,6 +917,19 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
     doc = next((item for item in docs if item.get("sha256") == sha256), None)
     if doc is None:
         raise HTTPException(status_code=404, detail="文档不存在")
+    if _is_indexed_traditional_document(doc):
+        _finalize_indexed_traditional_document(service, db_id, sha256)
+        return {
+            "status": "success",
+            "message": "传统 RAG 文档已完成索引，无需重新处理",
+            "result": {
+                "status": "success",
+                "database": db_id,
+                "document_sha256": sha256,
+                "engine": "traditional",
+                "chunk_count": int(doc.get("chunk_count") or 0),
+            },
+        }
     if doc.get("status") == "processing":
         updated_at = str(doc.get("updated_at") or "")
         is_stale = False
@@ -1091,6 +1265,16 @@ def _latest_status_for_file(doc_status: dict[str, Any], file_name: str) -> tuple
 def _reconcile_processing_documents(db_id: str, service: Any) -> None:
     documents = service.registry.list_documents(db_id)
     processing_docs = [doc for doc in documents if doc.get("status") == "processing"]
+    if not processing_docs:
+        return
+
+    for doc in processing_docs:
+        if _is_indexed_traditional_document(doc):
+            sha256 = str(doc.get("sha256", "")).strip()
+            if sha256:
+                _finalize_indexed_traditional_document(service, db_id, sha256)
+
+    processing_docs = [doc for doc in service.registry.list_documents(db_id) if doc.get("status") == "processing"]
     if not processing_docs:
         return
 

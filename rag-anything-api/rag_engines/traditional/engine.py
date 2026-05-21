@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from pathlib import Path
 from typing import Any
@@ -60,7 +61,7 @@ class TraditionalRAGEngine:
 
     async def ingest_file(self, database_id: str, file_path: str | Path, source: str | None = None) -> dict[str, Any]:
         path = Path(file_path)
-        loaded = load_document_text(path)
+        loaded = await asyncio.to_thread(load_document_text, path)
         document_sha256 = _sha256(path)
         source_name = source or loaded.metadata["file_name"]
         chunks = chunk_text(

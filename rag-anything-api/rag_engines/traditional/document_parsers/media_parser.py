@@ -60,7 +60,14 @@ def extract_audio_from_video(path: str | Path, output_dir: str | Path, ffmpeg_pa
     ]
 
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="ignore",
+            check=False,
+        )
     except FileNotFoundError as exc:
         raise ParserUnavailable(f"ffmpeg binary not found: {binary}") from exc
     except OSError as exc:

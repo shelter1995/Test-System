@@ -1000,6 +1000,59 @@ class RAGAnythingService:
         )
         return str(response or "").strip()
 
+    async def generate_answer_stream(self, prompt: str):
+        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
+        payload = {
+            "model": config.MINIMAX_MODEL_M27,
+            "messages": [
+                {"role": "system", "content": "你是严谨的中文知识库问答助手。"},
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.2,
+            "stream": True,
+        }
+
+        async with httpx.AsyncClient(timeout=config.LLM_TIMEOUT_M27) as client:
+            async with client.stream(
+                "POST",
+                f"{llm_base}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {config.MINIMAX_API_KEY}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+            ) as response:
+                response.raise_for_status()
+                async for line in response.aiter_lines():
+                    if not line or not line.startswith("data: "):
+                        continue
+                    chunk = line[6:].strip()
+                    if chunk == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(chunk)
+                    except json.JSONDecodeError:
+                        logger.warning("LLM stream parse failure: %s", chunk[:100])
+                        continue
+
+                    base_resp = data.get("base_resp", {})
+                    if isinstance(base_resp, dict) and base_resp.get("status_code", 0) not in (0, None):
+                        raise RuntimeError(
+                            f"MiniMax stream error [{base_resp.get('status_code')}]: "
+                            f"{base_resp.get('status_msg', '')}"
+                        )
+
+                    choices = data.get("choices") or []
+                    if not choices:
+                        continue
+                    choice = choices[0]
+                    delta = choice.get("delta") or {}
+                    content = delta.get("content")
+                    if content is None:
+                        content = (choice.get("message") or {}).get("content")
+                    if content:
+                        yield str(content)
+
     async def ingest_text(self, database_id: str, text: str, source: str = "manual") -> dict[str, Any]:
         content = str(text or "").strip()
         if not content:
