@@ -161,6 +161,8 @@ curl -X POST http://localhost:8003/ingest/path \
 - 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
 - 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
+当前视频解析依赖音轨转写；无音频视频的关键帧抽取、图片 OCR 或 VLM 画面理解尚未实现，后续再扩展。
+
 ---
 
 ## 7. 启动服务

@@ -80,6 +80,8 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 - 音频：`.mp3`、`.wav`、`.flac`、`.aac`、`.ogg`、`.m4a`、`.wma`
 - 视频：`.mp4`、`.avi`、`.mkv`、`.mov`、`.webm`、`.wmv`、`.m4v`
 
+当前传统 RAG 的视频解析基于“抽取音轨 -> Whisper 转写 -> 文本入库”。无音频视频暂不支持通过抽取关键帧、图片 OCR 或 VLM 理解画面内容；该能力作为后续功能规划。
+
 传统 RAG 默认使用硅基流动嵌入和重排模型，并内置批量嵌入与 429 限流重试。长文本批量上传时，可通过 `EMBEDDING_BATCH_SIZE`、`EMBEDDING_BATCH_INTERVAL`、`EMBEDDING_RETRY_ATTEMPTS` 和 `EMBEDDING_RETRY_BASE_DELAY` 调整吞吐与稳定性。
 
 系统内部仍兼容历史 RAG-Anything 数据目录和索引结构，用于旧数据平滑迁移与读取，但该兼容能力不作为用户操作选项暴露。
