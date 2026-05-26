@@ -11,8 +11,8 @@ from datetime import datetime
 import requests
 
 import tutor_config as config
-from minimax_client import MiniMaxClient
 from rag_client import RAGClient, get_rag_client
+from unified_llm_client import create_unified_llm_client
 
 try:
     from json_repair import repair_json
@@ -212,23 +212,28 @@ class RAGService:
 # ==================== AIService ====================
 
 class AIService:
-    """AI generation service wrapping MiniMax streaming and non-streaming calls."""
+    """AI generation service wrapping the unified LLM configured by the RAG service."""
 
-    def __init__(self, client: MiniMaxClient = None):
+    def __init__(self, client=None):
         if client is not None:
             self._client = client
         else:
-            self._client = MiniMaxClient(
-                api_key=config.MINIMAX_API_KEY,
-                model=config.MINIMAX_MODEL,
-            )
+            self._client = create_unified_llm_client()
 
     @property
     def available(self) -> bool:
-        return bool(
-            config.MINIMAX_API_KEY
-            and config.MINIMAX_API_KEY != "your_minimax_api_key_here"
-        )
+        available = getattr(self._client, "available", None)
+        if callable(available):
+            return bool(available())
+        return bool(self._client)
+
+    @property
+    def model_name(self) -> str:
+        return str(getattr(self._client, "model", "") or "")
+
+    @property
+    def provider_name(self) -> str:
+        return str(getattr(self._client, "provider", "unified") or "unified")
 
     def generate_response(
         self,
@@ -238,7 +243,7 @@ class AIService:
     ) -> str:
         """Non-streaming AI response generation (backward compat for /chat)."""
         if not self.available:
-            return "抱歉，AI服务未配置。请在tutor_config.py中设置MINIMAX_API_KEY。"
+            return "抱歉，AI服务未配置。请在模型设置中配置统一 LLM。"
 
         try:
             messages = [

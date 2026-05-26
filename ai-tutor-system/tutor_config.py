@@ -12,7 +12,9 @@ if os.path.exists(env_path):
     load_dotenv(env_path)
     print(f"[INFO] 已加载.env配置文件")
 
-# ==================== MiniMax AI配置 ====================
+# ==================== 历史兼容配置 ====================
+# 8002 不再单独读取本地 LLM 配置；陪练与内容生成统一通过 8003 的模型设置调用。
+# 以下变量仅保留给旧脚本/旧测试兼容。
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "your_minimax_api_key_here")
 MINIMAX_MODEL = os.getenv("MINIMAX_MODEL", "MiniMax-M2.7")
 

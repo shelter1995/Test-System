@@ -1,5 +1,31 @@
 # Change Log
 
+## 2026-05-26
+
+### 统一 LLM 客户端
+
+- 新增 `ai-tutor-system/unified_llm_client.py`：Tutor 服务不再直接调用 MiniMax API，改为通过 8003 RAG 服务的 `/llm/chat` 和 `/llm/chat/stream` 代理所有 LLM 调用。
+- `tutor_services.py` 的 `AIService` 和 `generation_runner.py` 的内容生成均已切换为 `UnifiedLLMClient`。
+- `minimax_client.py` 保留在仓库中但已无调用方，为历史参考文件。
+- RAG 服务 `app.py` 新增 `/llm/chat`（非流式）和 `/llm/chat/stream`（SSE 流式）两个路由，使用运行时模型配置（前端「模型设置」可热切换）。
+- 新增 `test_unified_llm_usage.py` 验证默认使用 UnifiedLLMClient。
+
+### 文档与项目元数据
+
+- 新增 `REASONIX.md`：面向 AI 编码 Agent 的项目参考文件（技术栈、目录结构、命令、约定、注意事项）。
+- 新增 `部署说明.md`：中文详细部署说明（系统依赖、从 clone 到启动的完整步骤、排错指引）。
+- 新增 `使用说明.md`：中文详细使用说明（架构图、知识库、问答、陪练、内容生成、场景管理）。
+- 新增 `rag_database_guide.md`：RAG 数据库 API 快速参考。
+- 新增 `部门推广版项目介绍文档.md`：部门级推广文档需求规格。
+- 新增 `docs/项目详细介绍-部门推广版.md`：~7000 字完整部门推广文档（含架构图和流程图）。
+- 新增 `docs/diagrams/`：系统架构图和用户流程图（SVG + PNG）。
+- 新增 `assets/`：项目图标（SVG + ICO）。
+
+### 配置修正
+
+- `rag-anything-api/.env.example` 中推理模型密钥统一为 `LLM_API_KEY`（不再使用 `MINIMAX_API_KEY`）。
+- `ai-tutor-system/.env.example` 不再包含 `MINIMAX_API_KEY`；Tutor 通过 `RAG_SERVICE_URL` 从 8003 获取模型配置。
+
 ## 2026-05-21
 
 ### 文档与依赖整理

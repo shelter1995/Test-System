@@ -3,7 +3,7 @@
 
 两管线：
 - solution:  RAG → SCQA+MECE 结构化方案（温度 0.4，固定章节模板）
-- training:  RAG → 3 次独立 MiniMax 调用 → 讲义 + 测试题 + README
+- training:  RAG → 3 次独立统一 LLM 调用 → 讲义 + 测试题 + README
 """
 
 import json
@@ -14,6 +14,8 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+
+from unified_llm_client import create_unified_llm_client
 
 logger = logging.getLogger(__name__)
 
@@ -49,18 +51,10 @@ def _get_ai_client():
     if _ai_client is not None:
         return _ai_client
     try:
-        import tutor_config as config
-        from minimax_client import MiniMaxClient
-        if config.MINIMAX_API_KEY and config.MINIMAX_API_KEY != "your_minimax_api_key_here":
-            _ai_client = MiniMaxClient(
-                api_key=config.MINIMAX_API_KEY,
-                model=getattr(config, "MINIMAX_MODEL", "MiniMax-M2.7"),
-                timeout=300,
-                max_retries=2,
-            )
-            logger.info("内容生成器：MiniMax AI 已初始化 (timeout=300s)")
+        _ai_client = create_unified_llm_client(timeout=300)
+        logger.info("内容生成器：统一 LLM 已初始化 (timeout=300s)")
     except Exception as e:
-        logger.error(f"内容生成器：MiniMax 初始化失败: {e}")
+        logger.error(f"内容生成器：统一 LLM 初始化失败: {e}")
     return _ai_client
 
 
@@ -289,21 +283,16 @@ def _rag_warnings(rag_results: dict) -> list[str]:
     return warnings if isinstance(warnings, list) else []
 
 
-# ==================== MiniMax 调用 ====================
+# ==================== 统一 LLM 调用 ====================
 
 def _call_minimax(prompt: str, max_tokens: int = 8000, timeout: int = None, temperature: float = 0.7) -> str:
+    """历史函数名保留给测试和旧调用，实际走 8003 统一 LLM 代理。"""
     client = _get_ai_client()
     if not client:
         raise RuntimeError("AI 服务未配置")
 
     if timeout and timeout != client.timeout:
-        import tutor_config as config
-        from minimax_client import MiniMaxClient
-        active = MiniMaxClient(
-            api_key=config.MINIMAX_API_KEY,
-            model=getattr(config, "MINIMAX_MODEL", "MiniMax-M2.7"),
-            timeout=timeout, max_retries=2,
-        )
+        active = create_unified_llm_client(timeout=timeout)
     else:
         active = client
 

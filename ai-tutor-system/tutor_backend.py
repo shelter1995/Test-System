@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="AI话术陪练系统",
-    description="基于MiniMax AI和RAG知识库的智能角色扮演训练系统",
+    description="基于统一 LLM 和 RAG 知识库的智能角色扮演训练系统",
     version="2.1.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -66,11 +66,8 @@ rag_service = get_rag_service()
 report_gen = ReportGenerator(ai_service)
 streaming_pipeline = StreamingPipeline(rag_service, ai_service)
 
-# 日志 AI 状态
-if ai_service.available:
-    logger.info("MiniMax AI 已配置，模型: %s", config.MINIMAX_MODEL)
-else:
-    logger.warning("MiniMax AI API Key 未配置")
+# 日志 AI 状态。8002 不在启动时判定 LLM 可用性，避免与 8003 启动顺序产生误报。
+logger.info("统一 LLM 由 8003 模型设置提供: %s", config.RAG_SERVICE_URL)
 
 
 def _find_existing_evaluation(session_data: dict):
@@ -102,8 +99,8 @@ async def api_status():
         "status": "running",
         "message": "AI话术陪练系统正在运行",
         "ai_configured": ai_service.available,
-        "ai_provider": "MiniMax" if ai_service.available else "未配置",
-        "ai_model": config.MINIMAX_MODEL if ai_service.available else None,
+        "ai_provider": ai_service.provider_name if ai_service.available else "未配置",
+        "ai_model": ai_service.model_name if ai_service.available else None,
         "rag_service": config.RAG_SERVICE_URL,
     }
 
@@ -482,12 +479,8 @@ if __name__ == "__main__":
         print(f"[ERROR] 端口 {config.TUTOR_SERVICE_PORT} 已被占用！")
         sys.exit(1)
 
-    if ai_service.available:
-        print("[OK] MiniMax AI 已配置")
-        print(f"[OK] 使用模型：{config.MINIMAX_MODEL}")
-        print("[OK] SSE 流式输出已启用")
-    else:
-        print("[!] MiniMax AI 未配置")
+    print("[OK] 统一 LLM：由 8003 模型设置提供")
+    print("[OK] SSE 流式输出已启用")
 
     print(f"[OK] RAG服务：{config.RAG_SERVICE_URL}")
     print()

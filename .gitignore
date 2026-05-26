@@ -42,17 +42,23 @@ solution_output/
 # Claude Code local settings (permissions, hooks)
 .claude/
 CLAUDE.md
+AGENTS.md
+REASONIX.md
 
 # Temp / migration data
 temp_fastmcp/
 rag-anything-api/migration_data/
 minimax_response.json
 temp.json
+generate_diagrams.py
+svg_to_png.py
 
 # Session data
 SESSION.md
 docs/superpowers/
+docs/diagrams/
 ai-tutor-system/tutor_data/
 generation_output/
 .superpowers/
 .worktrees/
+部门推广版项目介绍文档.md

@@ -76,15 +76,21 @@ MODEL_CATALOG: dict[str, dict[str, list[str]]] = {
 
 
 ENV_KEYS = {
-    "llm": "MINIMAX_API_KEY",
+    "llm": ("LLM_API_KEY", "MINIMAX_API_KEY"),
     "embedding": "SILICONFLOW_API_KEY",
     "rerank": "RERANK_API_KEY",
 }
 
 
 def _env_api_key(section: str) -> str:
-    env_key = ENV_KEYS.get(section, "")
-    value = os.getenv(env_key, "") if env_key else ""
+    env_keys = ENV_KEYS.get(section, "")
+    if isinstance(env_keys, str):
+        env_keys = (env_keys,) if env_keys else ()
+    value = ""
+    for env_key in env_keys:
+        value = os.getenv(env_key, "")
+        if value:
+            break
     if section == "rerank" and not value:
         value = os.getenv("SILICONFLOW_API_KEY", "")
     return value

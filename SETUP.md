@@ -85,19 +85,19 @@ cp ai-tutor-system/.env.example ai-tutor-system/.env
 
 ```ini
 # 必填
-MINIMAX_API_KEY=你的MiniMax_API_Key
+LLM_API_KEY=你的统一推理模型_API_Key
 SILICONFLOW_API_KEY=你的硅基流动_API_Key
 
 # 可选：MiniMax Coding Plan VLM（图片理解）
 ENABLE_VLM=true              # 需要 Coding Plan 套餐
-VLM_API_KEY=                 # 留空自动复用 MINIMAX_API_KEY
+VLM_API_KEY=                 # 如启用 VLM，请填写 MiniMax Coding Plan Key
 VLM_BASE_URL=https://api.minimaxi.com
 
 # 可选：硅基流动 Rerank（检索重排序）
 ENABLE_RERANK=true
 RERANK_API_KEY=              # 留空自动复用 SILICONFLOW_API_KEY
 
-# 查询模式：hybrid（推荐）
+# 历史接口兼容字段；传统 RAG 不暴露图谱查询模式
 DEFAULT_QUERY_MODE=hybrid
 
 # 传统 RAG 引擎（默认）
@@ -116,8 +116,7 @@ MINERU_CLI_PATH=
 ### 5.3 填写密钥 — `ai-tutor-system/.env`
 
 ```ini
-MINIMAX_API_KEY=你的MiniMax_API_Key
-MINIMAX_MODEL=MiniMax-M2.7
+# 8002 不再单独配置 LLM；统一模型在前端「模型设置」页面维护并由 8003 提供。
 RAG_SERVICE_URL=http://localhost:8003
 RAG_REQUEST_TIMEOUT=90
 DEFAULT_RAG_DATABASE=
@@ -128,7 +127,7 @@ GENERATION_MAX_RUNNING_JOBS=1
 
 | 服务 | 注册地址 |
 |------|---------|
-| MiniMax API | https://platform.minimaxi.com |
+| 统一 LLM API | 根据所选供应商获取，例如 MiniMax、DeepSeek 或其他 OpenAI-compatible 服务 |
 | 硅基流动 API | https://siliconflow.cn |
 
 ---
@@ -190,7 +189,7 @@ python tutor_backend.py
 
 启动成功标志：
 ```
-[OK] MiniMax AI 已配置
+[OK] 统一 LLM：由 8003 模型设置提供
 [OK] SSE 流式输出已启用
 INFO:     Uvicorn running on http://0.0.0.0:8002
 ```
@@ -249,9 +248,8 @@ powershell -ExecutionPolicy Bypass -File packaging\create_shortcut.ps1
 
 ```ini
 # rag-anything-api/.env
-MINIMAX_API_KEY=sk-your-key
-MINIMAX_BASE_URL=https://api.minimaxi.com/v1
-MINIMAX_MODEL_M27=MiniMax-M2.7
+LLM_API_KEY=sk-your-key
+# 推理模型可在前端「模型设置」页面修改并热更新
 
 SILICONFLOW_API_KEY=sk-your-key
 SILICONFLOW_BASE_URL=https://api.siliconflow.cn

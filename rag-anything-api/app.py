@@ -1,6 +1,6 @@
 """
-RAG-Anything REST API 服务
-保留既有接口合同，内部引擎使用 HKUDS/RAG-Anything
+传统 RAG 知识库 REST API 服务。
+内部保留历史 RAG-Anything 数据兼容读取能力。
 """
 
 import asyncio
@@ -15,6 +15,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, List, Optional
 
+import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
@@ -70,12 +71,12 @@ async def initialize_service() -> None:
         _recover_interrupted_processing_documents(rag_service)
         traditional_service = create_traditional_engine()
         startup_error = None
-        logger.info("RAG-Anything 服务初始化完成")
+        logger.info("知识库服务初始化完成")
     except Exception as e:
         rag_service = None
         traditional_service = None
         startup_error = str(e)
-        logger.error(f"RAG-Anything 服务初始化失败: {e}")
+        logger.error(f"知识库服务初始化失败: {e}")
 
 
 @asynccontextmanager
@@ -85,8 +86,8 @@ async def lifespan(app_: FastAPI):
 
 
 app = FastAPI(
-    title="RAG-Anything 智能检索系统",
-    description="基于 HKUDS/RAG-Anything 的增强检索服务",
+    title="传统 RAG 知识库服务",
+    description="基于向量检索与重排的知识库服务，内部兼容历史 RAG-Anything 数据读取",
     version="3.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
@@ -106,6 +107,29 @@ settings_store = ModelSettingsStore(
     config.STORAGE_ROOT / "model_settings.json",
     config.STORAGE_ROOT / "model_settings.local.json",
 )
+
+SERVICE_MESSAGE = "传统 RAG 知识库服务"
+ENGINE_STACK = "Traditional RAG + Vector Search + Rerank"
+KB_SYSTEM_PROMPT = "你是严谨的中文知识库问答助手。"
+
+
+def _runtime_model_settings() -> dict[str, Any]:
+    return settings_store.runtime()
+
+
+def _section(settings: dict[str, Any], name: str) -> dict[str, Any]:
+    value = settings.get(name) or {}
+    return value if isinstance(value, dict) else {}
+
+
+def _model_label(section: dict[str, Any]) -> str:
+    provider = str(section.get("provider") or "openai-compatible").strip()
+    model = str(section.get("model") or "").strip()
+    return f"{provider} {model}".strip()
+
+
+def _runtime_llm_endpoint() -> ModelEndpoint:
+    return _endpoint_from_settings(_section(_runtime_model_settings(), "llm"))
 
 
 def _normalize_database_id(text: Optional[str]) -> str:
@@ -203,6 +227,17 @@ class KBChatRequest(BaseModel):
     history: Optional[List[dict]] = None
 
 
+class LLMMessage(BaseModel):
+    role: str
+    content: str
+
+
+class LLMChatRequest(BaseModel):
+    messages: List[LLMMessage]
+    temperature: Optional[float] = 0.7
+    max_tokens: Optional[int] = 800
+
+
 class DocumentIngestRequest(BaseModel):
     text: str
     database: Optional[str] = "default"
@@ -250,7 +285,7 @@ def _database_payload(item: dict) -> dict:
 
 def _require_service() -> RAGAnythingService:
     if not rag_service:
-        detail = "RAG-Anything 引擎未初始化"
+        detail = "知识库服务未初始化"
         if startup_error:
             detail = f"{detail}: {startup_error}"
         raise HTTPException(status_code=503, detail=detail)
@@ -416,17 +451,95 @@ async def _resolve_kb_chat_context(request: KBChatRequest) -> dict[str, Any]:
     }
 
 
-async def _generate_kb_answer_stream(service: Any, prompt: str):
-    stream_answer = getattr(service, "generate_answer_stream", None)
-    if callable(stream_answer):
-        async for token in _without_think_tokens(stream_answer(prompt)):
-            if token:
-                yield token
-        return
+async def _generate_kb_answer(prompt: str) -> str:
+    client = OpenAICompatibleClient(_runtime_llm_endpoint())
+    return str(await client.chat(KB_SYSTEM_PROMPT, prompt) or "").strip()
 
-    answer = str(await service.generate_answer(prompt) or "").strip()
-    if answer:
-        yield answer
+
+def _split_chat_messages(messages: list[dict[str, str]]) -> tuple[str, str]:
+    system_parts: list[str] = []
+    conversation_items: list[tuple[str, str]] = []
+    for item in messages:
+        role = str(item.get("role") or "user").strip().lower()
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            system_parts.append(content)
+        else:
+            conversation_items.append((role, content))
+    if len(conversation_items) == 1 and conversation_items[0][0] == "user":
+        user_prompt = conversation_items[0][1]
+    else:
+        conversation_parts = []
+        for role, content in conversation_items:
+            label = "用户" if role == "user" else "助手"
+            conversation_parts.append(f"{label}: {content}")
+        user_prompt = "\n\n".join(conversation_parts)
+    return "\n\n".join(system_parts), user_prompt
+
+
+async def _stream_runtime_chat_completion(
+    endpoint: ModelEndpoint,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+):
+    payload = {
+        "model": endpoint.model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "temperature": temperature,
+        "stream": True,
+    }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    async with httpx.AsyncClient(timeout=endpoint.timeout) as client:
+        async with client.stream(
+            "POST",
+            f"{endpoint.normalized_base_url}/chat/completions",
+            headers={
+                "Authorization": f"Bearer {endpoint.api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                chunk = line[6:].strip()
+                if chunk == "[DONE]":
+                    break
+                try:
+                    data = json.loads(chunk)
+                except json.JSONDecodeError:
+                    logger.warning("LLM stream parse failure: %s", chunk[:100])
+                    continue
+                base_resp = data.get("base_resp", {})
+                if isinstance(base_resp, dict) and base_resp.get("status_code", 0) not in (0, None):
+                    raise RuntimeError(
+                        f"LLM stream error [{base_resp.get('status_code')}]: "
+                        f"{base_resp.get('status_msg', '')}"
+                    )
+                choices = data.get("choices") or []
+                if not choices:
+                    continue
+                delta = choices[0].get("delta") or choices[0].get("message") or {}
+                token = delta.get("content", "")
+                if token:
+                    yield str(token)
+
+
+async def _generate_kb_answer_stream(service: Any, prompt: str):
+    del service
+    endpoint = _runtime_llm_endpoint()
+    async for token in _without_think_tokens(_stream_runtime_chat_completion(endpoint, KB_SYSTEM_PROMPT, prompt)):
+        if token:
+            yield token
 
 
 async def _without_think_tokens(tokens):
@@ -470,17 +583,21 @@ async def _without_think_tokens(tokens):
 
 @app.get("/")
 async def root():
+    runtime = _runtime_model_settings()
+    llm = _section(runtime, "llm")
+    embedding = _section(runtime, "embedding")
+    rerank = _section(runtime, "rerank")
     return {
         "status": "running",
-        "message": "RAG-Anything 智能检索系统正在运行",
+        "message": f"{SERVICE_MESSAGE}正在运行",
         "version": "3.1.0",
-        "engine": "RAGAnything + MinerU + LightRAG",
-        "llm": f"MiniMax ({config.MINIMAX_MODEL_M27} → {config.MINIMAX_MODEL_M25})",
-        "embedding": f"硅基流动 {config.SILICONFLOW_MODEL}",
+        "engine": ENGINE_STACK,
+        "llm": _model_label(llm),
+        "embedding": _model_label(embedding),
         "query": {
             "default_mode": config.DEFAULT_QUERY_MODE,
             "vlm": "enabled" if config.ENABLE_VLM and config.VLM_API_KEY else "disabled",
-            "rerank": "enabled" if config.ENABLE_RERANK and config.RERANK_API_KEY else "disabled",
+            "rerank": "enabled" if bool(rerank.get("enabled")) else "disabled",
         },
         "endpoints": {
             "docs": "/docs",
@@ -488,6 +605,7 @@ async def root():
             "ai_enhanced_search": "/ai_enhanced_search",
             "query": "/query",
             "kb_chat": "/kb/chat",
+            "llm_chat": "/llm/chat",
             "db_list": "/db/list",
             "db_stats": "/db/stats",
             "ingest_path": "/ingest/path",
@@ -601,7 +719,7 @@ async def kb_chat(request: KBChatRequest):
         if contexts:
             prompt = build_kb_answer_prompt(request.query, contexts, request.history or [])
             try:
-                answer = str(await service.generate_answer(prompt) or "").strip()
+                answer = await _generate_kb_answer(prompt)
             except Exception as exc:
                 logger.warning("知识库答案生成失败，改用上下文摘要兜底: %s", exc)
                 answer = build_context_fallback_answer(request.query, contexts)
@@ -708,23 +826,98 @@ async def kb_chat_stream(request: KBChatRequest):
     )
 
 
+@app.post("/llm/chat")
+async def llm_chat(request: LLMChatRequest):
+    messages = [item.model_dump() for item in request.messages]
+    system_prompt, user_prompt = _split_chat_messages(messages)
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="messages must include user content")
+    endpoint = _runtime_llm_endpoint()
+    try:
+        client = OpenAICompatibleClient(endpoint)
+        content = await client.chat(
+            system_prompt,
+            user_prompt,
+            temperature=float(request.temperature if request.temperature is not None else 0.7),
+            max_tokens=request.max_tokens,
+        )
+        return {
+            "success": True,
+            "content": content,
+            "provider": endpoint.provider,
+            "model": endpoint.model,
+        }
+    except Exception as exc:
+        logger.error("统一 LLM 调用失败: %s", exc)
+        return {
+            "success": False,
+            "content": "",
+            "error": str(exc),
+            "provider": endpoint.provider,
+            "model": endpoint.model,
+        }
+
+
+@app.post("/llm/chat/stream")
+async def llm_chat_stream(request: LLMChatRequest):
+    messages = [item.model_dump() for item in request.messages]
+    system_prompt, user_prompt = _split_chat_messages(messages)
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="messages must include user content")
+    endpoint = _runtime_llm_endpoint()
+
+    async def event_stream():
+        try:
+            async for token in _stream_runtime_chat_completion(
+                endpoint,
+                system_prompt,
+                user_prompt,
+                temperature=float(request.temperature if request.temperature is not None else 0.7),
+                max_tokens=request.max_tokens,
+            ):
+                yield _sse_event("token", {"delta": token})
+            yield _sse_event("done", {"provider": endpoint.provider, "model": endpoint.model})
+        except Exception as exc:
+            logger.error("统一 LLM 流式调用失败: %s", exc)
+            yield _sse_event(
+                "error",
+                {"code": "llm_stream_failed", "message": str(exc), "provider": endpoint.provider, "model": endpoint.model},
+            )
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.get("/status")
 async def status():
+    runtime = _runtime_model_settings()
+    llm = _section(runtime, "llm")
+    embedding = _section(runtime, "embedding")
+    rerank = _section(runtime, "rerank")
     return {
         "status": "running",
         "engine": "ready" if rag_service else "not_initialized",
-        "message": "RAG-Anything 智能检索系统",
-        "engine_stack": "RAGAnything + MinerU + LightRAG",
+        "message": SERVICE_MESSAGE,
+        "engine_stack": ENGINE_STACK,
         "llm": {
-            "primary": config.MINIMAX_MODEL_M27,
-            "fallback": config.MINIMAX_MODEL_M25,
-            "timeout_m27": config.LLM_TIMEOUT_M27,
-            "timeout_m25": config.LLM_TIMEOUT_M25,
+            "provider": llm.get("provider", ""),
+            "base_url": llm.get("base_url", ""),
+            "model": llm.get("model", ""),
+            "timeout": llm.get("timeout"),
+            "has_api_key": bool(llm.get("api_key")),
         },
         "embedding": {
-            "provider": "硅基流动",
-            "model": config.SILICONFLOW_MODEL,
-            "max_tokens": config.EMBEDDING_MAX_TOKENS,
+            "provider": embedding.get("provider", ""),
+            "base_url": embedding.get("base_url", ""),
+            "model": embedding.get("model", ""),
+            "dimension": embedding.get("dimension", config.EMBEDDING_DIM),
+            "batch_size": embedding.get("batch_size", config.EMBEDDING_BATCH_SIZE),
+            "batch_interval": embedding.get("batch_interval", config.EMBEDDING_BATCH_INTERVAL),
+            "timeout": embedding.get("timeout", config.EMBEDDING_TIMEOUT),
+            "has_api_key": bool(embedding.get("api_key")),
         },
         "vlm": {
             "enabled": config.ENABLE_VLM and bool(config.VLM_API_KEY),
@@ -742,16 +935,21 @@ async def status():
         },
         "traditional_parser": config.TRADITIONAL_PARSER_DEPENDENCIES,
         "rerank": {
-            "enabled": config.ENABLE_RERANK and bool(config.RERANK_API_KEY),
-            "provider": "硅基流动",
-            "model": config.RERANK_MODEL,
+            "enabled": bool(rerank.get("enabled")),
+            "provider": rerank.get("provider", ""),
+            "base_url": rerank.get("base_url", ""),
+            "model": rerank.get("model", ""),
+            "top_n": rerank.get("top_n"),
+            "timeout": rerank.get("timeout"),
+            "has_api_key": bool(rerank.get("api_key")),
         },
         "query": {
             "default_mode": config.DEFAULT_QUERY_MODE,
         },
         "storage": {
             "registry": str(config.DATABASE_REGISTRY_FILE),
-            "root": str(config.RAGANYTHING_STORAGE_ROOT),
+            "traditional_root": str(config.TRADITIONAL_RAG_STORAGE_ROOT),
+            "legacy_raganything_root": str(config.RAGANYTHING_STORAGE_ROOT),
         },
         "startup_error": startup_error,
     }
@@ -1659,13 +1857,19 @@ def check_port_available(port: int) -> bool:
 if __name__ == "__main__":
     import uvicorn
 
+    runtime = _runtime_model_settings()
+    llm = _section(runtime, "llm")
+    embedding = _section(runtime, "embedding")
+    rerank = _section(runtime, "rerank")
+
     print("=" * 60)
-    print("  RAG-Anything 智能检索系统")
+    print("  传统 RAG 知识库服务")
     print("=" * 60)
     print()
-    print(f"  Engine: RAGAnything + MinerU + LightRAG")
-    print(f"  LLM: {config.MINIMAX_MODEL_M27} → {config.MINIMAX_MODEL_M25}")
-    print(f"  Embedding: 硅基流动 {config.SILICONFLOW_MODEL}")
+    print(f"  Engine: {ENGINE_STACK}")
+    print(f"  LLM: {_model_label(llm)}")
+    print(f"  Embedding: {_model_label(embedding)}")
+    print(f"  Rerank: {'enabled' if bool(rerank.get('enabled')) else 'disabled'} {_model_label(rerank)}")
     print(f"  Registry: {config.DATABASE_REGISTRY_FILE}")
     print()
 

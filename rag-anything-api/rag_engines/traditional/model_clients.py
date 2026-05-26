@@ -38,15 +38,24 @@ def build_rerank_payload(endpoint: ModelEndpoint, query: str, documents: list[st
     }
 
 
-def build_chat_payload(endpoint: ModelEndpoint, system_prompt: str, user_prompt: str) -> dict[str, Any]:
-    return {
+def build_chat_payload(
+    endpoint: ModelEndpoint,
+    system_prompt: str,
+    user_prompt: str,
+    temperature: float = 0.2,
+    max_tokens: int | None = None,
+) -> dict[str, Any]:
+    payload = {
         "model": endpoint.model,
         "messages": [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "temperature": 0.2,
+        "temperature": temperature,
     }
+    if max_tokens is not None:
+        payload["max_tokens"] = int(max_tokens)
+    return payload
 
 
 class OpenAICompatibleClient:
@@ -118,12 +127,18 @@ class OpenAICompatibleClient:
             )
         return data.get("results") or []
 
-    async def chat(self, system_prompt: str, user_prompt: str) -> str:
+    async def chat(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        temperature: float = 0.2,
+        max_tokens: int | None = None,
+    ) -> str:
         async with httpx.AsyncClient(timeout=self.endpoint.timeout) as client:
             data = await self._post_json(
                 client,
                 f"{self.endpoint.normalized_base_url}/chat/completions",
-                build_chat_payload(self.endpoint, system_prompt, user_prompt),
+                build_chat_payload(self.endpoint, system_prompt, user_prompt, temperature, max_tokens),
             )
         choices = data.get("choices") or []
         if not choices:

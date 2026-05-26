@@ -60,7 +60,7 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 
 项目需要本地 Python 虚拟环境和外部模型服务：
 
-- MiniMax API：用于陪练对话和评分
+- 统一 LLM API：用于知识库问答、陪练对话、评分和内容生成，可在前端「模型设置」页面配置
 - 硅基流动 API：用于 embedding、rerank 等模型调用
 - MinerU：用于扫描 PDF、复杂 PDF 和图片 OCR 解析
 - LibreOffice：用于 `.doc/.xls/.ppt` 老 Office 格式转为现代格式后解析
@@ -94,7 +94,7 @@ AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成
 
 | 模型组 | 默认供应商 | 用途 |
 |--------|-----------|------|
-| 推理模型 | MiniMax | 陪练对话、评分、内容生成 |
+| 推理模型 | MiniMax（可改为 DeepSeek 等 OpenAI-compatible 服务） | 知识库问答、陪练对话、评分、内容生成 |
 | 嵌入模型 | 硅基流动 (BAAI/bge-m3) | 文本转向量 |
 | 重排模型 | 硅基流动 (BAAI/bge-reranker-v2-m3) | 检索结果重排序 |
 
@@ -174,7 +174,7 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 产出：`dist-portable/Test-System-Portable.zip`
 
-便携包解压后运行 `start_services.bat` 即可使用。用户仍需在 `.env` 中配置 MiniMax 和硅基流动的 API Key。
+便携包解压后运行 `start_services.bat` 即可使用。用户需在 8003 的模型设置中配置统一 LLM、嵌入和重排模型的 API Key。
 
 ## 文档
 

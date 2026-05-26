@@ -75,7 +75,7 @@
         if (tutorOnline) {
             try {
                 const data = await checks[1].value.clone().json();
-                tutorMeta = data.ai_model ? 'MiniMax · ' + data.ai_model : '陪练服务已就绪';
+                tutorMeta = data.ai_model ? (data.ai_provider || '统一 LLM') + ' · ' + data.ai_model : '陪练服务已就绪';
             } catch (_) {
                 tutorMeta = '陪练服务已就绪';
             }

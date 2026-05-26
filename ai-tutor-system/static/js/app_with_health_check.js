@@ -142,7 +142,7 @@ function updateServiceStatusUI() {
     if (rag === 'unhealthy') {
         alertHTML += `<div class="alert-item warning"><span class="alert-icon">⚠️</span>
             <div class="alert-content"><strong>RAG知识库服务未启动</strong>
-            <p>AI将使用通用话术。请启动RAG-Anything服务</p></div></div>`;
+            <p>AI将使用通用话术。请启动知识库服务</p></div></div>`;
     }
     if (rag === 'healthy' && tutor === 'healthy') {
         alertHTML = `<div class="alert-item success"><span class="alert-icon">✅</span>

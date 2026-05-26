@@ -3,6 +3,19 @@ from fastapi.testclient import TestClient
 import app as rag_api
 
 
+async def _async_value(value):
+    return value
+
+
+async def _raise_answer_timeout(prompt):
+    raise TimeoutError("LLM timeout")
+
+
+async def _fake_runtime_stream(endpoint, system_prompt, user_prompt):
+    for token in ["<think>内部分析", "不应展示</think>", "商务彩铃", "基础版资费", "为 10 元/月/线。"]:
+        yield token
+
+
 class FakeRegistry:
     def list_databases(self):
         return [{"id": "商务彩铃", "name": "商务彩铃", "status": "active", "engine": "raganything", "documents": []}]
@@ -109,6 +122,11 @@ def test_ai_enhanced_search_contract(monkeypatch):
 def test_kb_chat_contract(monkeypatch):
     monkeypatch.setattr(rag_api, "rag_service", FakeService())
     monkeypatch.setattr(rag_api, "startup_error", None)
+    monkeypatch.setattr(
+        rag_api,
+        "_generate_kb_answer",
+        lambda prompt: _async_value("商务彩铃基础版资费为 10 元/月/线。依据：资费说明中明确写明基础版价格。"),
+    )
     client = TestClient(rag_api.app)
 
     response = client.post(
@@ -134,6 +152,7 @@ def test_kb_chat_contract(monkeypatch):
 def test_kb_chat_stream_contract(monkeypatch):
     monkeypatch.setattr(rag_api, "rag_service", FakeService())
     monkeypatch.setattr(rag_api, "startup_error", None)
+    monkeypatch.setattr(rag_api, "_stream_runtime_chat_completion", _fake_runtime_stream)
     client = TestClient(rag_api.app)
 
     with client.stream(
@@ -164,6 +183,7 @@ def test_kb_chat_stream_contract(monkeypatch):
 def test_kb_chat_falls_back_to_context_summary_when_answer_generation_fails(monkeypatch):
     monkeypatch.setattr(rag_api, "rag_service", FailingAnswerService())
     monkeypatch.setattr(rag_api, "startup_error", None)
+    monkeypatch.setattr(rag_api, "_generate_kb_answer", _raise_answer_timeout)
     client = TestClient(rag_api.app)
 
     response = client.post(

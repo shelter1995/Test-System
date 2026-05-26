@@ -1,5 +1,6 @@
 """
-RAG-Anything API 配置
+传统 RAG 知识库服务配置。
+历史 RAG-Anything 相关配置仅用于旧数据兼容读取。
 """
 
 import json
@@ -110,14 +111,15 @@ RAG_SERVICE_HOST = os.getenv("RAG_SERVICE_HOST", "0.0.0.0")
 RAG_SERVICE_PORT = _safe_int(os.getenv("RAG_SERVICE_PORT", "8003"), 8003)
 
 
-# MiniMax LLM
+# 默认 LLM 兼容配置。用户可见推理模型以 model_settings.py 的运行时配置为准。
 MINIMAX_API_KEY = os.getenv("MINIMAX_API_KEY", "")
 MINIMAX_BASE_URL = os.getenv("MINIMAX_BASE_URL", "https://api.minimaxi.com/v1")
+# 以下两个变量仅保留给历史 RAG-Anything 兼容层读取，不再作为用户可见回退策略。
 MINIMAX_MODEL_M27 = os.getenv("MINIMAX_MODEL_M27", "MiniMax-M2.7")
 MINIMAX_MODEL_M25 = os.getenv("MINIMAX_MODEL_M25", "MiniMax-M2.5")
 
 
-# 硅基流动 Embedding
+# 默认 Embedding 兼容配置。实际嵌入模型可在前端模型设置中热更新。
 SILICONFLOW_API_KEY = os.getenv("SILICONFLOW_API_KEY", "")
 SILICONFLOW_BASE_URL = os.getenv("SILICONFLOW_BASE_URL", "https://api.siliconflow.cn")
 SILICONFLOW_MODEL = os.getenv("SILICONFLOW_MODEL", "BAAI/bge-m3")
@@ -178,7 +180,7 @@ VLM_API_KEY = os.getenv("VLM_API_KEY") or os.getenv("MINIMAX_API_KEY") or ""
 VLM_BASE_URL = os.getenv("VLM_BASE_URL", "https://api.minimaxi.com").rstrip("/")
 VLM_MODEL = os.getenv("VLM_MODEL", "")  # coding_plan 接口不需要指定模型
 
-# Rerank 重排序（硅基流动）
+# Rerank 重排序兼容配置。实际重排模型可在前端模型设置中热更新。
 ENABLE_RERANK = _safe_bool(os.getenv("ENABLE_RERANK"), False)
 RERANK_API_KEY = os.getenv("RERANK_API_KEY") or os.getenv("SILICONFLOW_API_KEY") or ""
 RERANK_BASE_URL = _normalize_base_url(os.getenv("RERANK_BASE_URL", "https://api.siliconflow.cn"), "/v1")

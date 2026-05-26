@@ -38,6 +38,16 @@ def test_runtime_uses_siliconflow_key_for_rerank_when_specific_key_missing(tmp_p
     assert settings["rerank"]["api_key"] == "sf-key"
 
 
+def test_runtime_prefers_unified_llm_api_key(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("LLM_API_KEY", "llm-key")
+    monkeypatch.setenv("MINIMAX_API_KEY", "legacy-minimax-key")
+    store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
+
+    settings = store.runtime()
+
+    assert settings["llm"]["api_key"] == "llm-key"
+
+
 def test_providers_include_model_catalog(tmp_path: Path):
     store = ModelSettingsStore(tmp_path / "settings.json", tmp_path / "local.json")
 

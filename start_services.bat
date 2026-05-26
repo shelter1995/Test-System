@@ -24,7 +24,7 @@ echo   Test-System launcher
 echo ==================================================
 echo.
 echo Model settings:
-echo   Open http://localhost:8002 and choose Model Settings to edit MiniMax, embedding, and rerank models.
+echo   Open http://localhost:8002 and choose Model Settings to edit inference, embedding, and rerank models.
 echo.
 
 if not exist "%PYTHON%" (
