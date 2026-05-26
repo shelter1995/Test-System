@@ -979,9 +979,17 @@ function updateOverviewCounts() {
         knowledgeCountEl.textContent = knowledgeState.databases.length;
     }
 
-    const fileRows = document.querySelectorAll('#fileListContainer .file-row');
     if (fileCountEl) {
-        fileCountEl.textContent = fileRows.length;
+        const registryCount = knowledgeState.databases.reduce((sum, db) => {
+            if (typeof db === 'string') return sum;
+            return sum + (parseInt(db.documents_count, 10) || 0);
+        }, 0);
+        const visibleRows = document.querySelectorAll('#fileListContainer .file-row').length;
+        fileCountEl.textContent = registryCount || visibleRows;
+    }
+
+    if (window.OverviewDashboard && typeof window.OverviewDashboard.refresh === 'function') {
+        window.OverviewDashboard.refresh();
     }
 }
 

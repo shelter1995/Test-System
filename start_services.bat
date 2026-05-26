@@ -43,6 +43,7 @@ if not exist "%ACTIVATE%" (
     exit /b 1
 )
 
+echo Checking service ports...
 call :check_url "%RAG_HEALTH%"
 if errorlevel 1 (
     echo Starting RAG service on port 8003...
@@ -51,20 +52,23 @@ if errorlevel 1 (
     echo RAG service is already running.
 )
 
-call :wait_url "%RAG_HEALTH%" "RAG service" 120
-if errorlevel 1 (
-    echo.
-    echo [ERROR] RAG service did not become ready.
-    pause
-    exit /b 1
-)
-
 call :check_url "%TUTOR_STATUS%"
 if errorlevel 1 (
     echo Starting Tutor service on port 8002...
     start "Test-System Tutor 8002" "%ComSpec%" /k ""%~f0" tutor"
 ) else (
     echo Tutor service is already running.
+)
+
+echo.
+echo Both service windows have been requested. Waiting for readiness...
+
+call :wait_url "%RAG_HEALTH%" "RAG service" 120
+if errorlevel 1 (
+    echo.
+    echo [ERROR] RAG service did not become ready.
+    pause
+    exit /b 1
 )
 
 call :wait_url "%TUTOR_STATUS%" "Tutor service" 120

@@ -4,7 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>统一工作台</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=2.8">
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/static/css/style.css?v=3.0">
 </head>
 <body>
     <div class="app-shell">
@@ -58,27 +59,85 @@
             <main class="content">
                 <!-- 1. 总览 -->
                 <section data-page="overview" class="page-section active">
-                    <div class="overview-grid">
-                        <div class="overview-card" data-nav="knowledge" style="cursor:pointer">
-                            <div class="overview-card-icon">📚</div>
-                            <h3>知识库</h3>
-                            <p><span id="knowledgeCount">0</span> 个知识库 · <span id="fileCount">0</span> 个文件</p>
-                            <p>管理产品文档、话术技巧、异议处理等知识内容</p>
+                    <div id="overviewApp" class="overview-page">
+                        <div class="overview-hero">
+                            <div>
+                                <div class="overview-kicker">启动页</div>
+                                <h1>今天从这里开工</h1>
+                                <p>检查服务、确认知识库状态，继续最近的陪练或内容生成任务。</p>
+                            </div>
+                            <div class="overview-actions" aria-label="常用动作">
+                                <button class="overview-action primary" data-overview-action="tutor">开始陪练</button>
+                                <button class="overview-action" data-overview-action="knowledge-chat">知识库问答</button>
+                                <button class="overview-action" data-overview-action="generation">生成内容</button>
+                                <button class="overview-action" data-overview-action="upload">上传资料</button>
+                            </div>
                         </div>
-                        <div class="overview-card" data-nav="knowledge-chat" style="cursor:pointer">
-                            <div class="overview-card-icon">💬</div>
-                            <h3>知识库问答</h3>
-                            <p>业务人员通过对话快速查询资料并核对来源依据</p>
+
+                        <div class="overview-status-grid">
+                            <div class="overview-status-card">
+                                <div class="overview-card-label">服务状态</div>
+                                <div id="overviewServiceStatus" class="overview-service-list">
+                                    <div class="overview-skeleton"></div>
+                                    <div class="overview-skeleton short"></div>
+                                </div>
+                            </div>
+                            <div class="overview-stat-card">
+                                <span class="overview-stat-label">知识库</span>
+                                <strong id="knowledgeCount">0</strong>
+                                <span id="overviewActiveDb">未选择</span>
+                            </div>
+                            <div class="overview-stat-card">
+                                <span class="overview-stat-label">文件</span>
+                                <strong id="fileCount">0</strong>
+                                <span id="overviewIndexedCount">等待统计</span>
+                            </div>
+                            <div class="overview-stat-card">
+                                <span class="overview-stat-label">陪练记录</span>
+                                <strong id="overviewSessionCount">0</strong>
+                                <span id="overviewLastSession">暂无记录</span>
+                            </div>
                         </div>
-                        <div class="overview-card" data-nav="generation" style="cursor:pointer">
-                            <div class="overview-card-icon">✏️</div>
-                            <h3>内容生成</h3>
-                            <p>基于知识库自动生成话术、方案和培训材料</p>
-                        </div>
-                        <div class="overview-card" data-nav="tutor" style="cursor:pointer">
-                            <div class="overview-card-icon">🎯</div>
-                            <h3>陪练系统</h3>
-                            <p>AI 模拟客户角色进行话术实战训练</p>
+
+                        <div class="overview-main-grid">
+                            <section class="overview-panel overview-panel-wide">
+                                <div class="overview-panel-header">
+                                    <div>
+                                        <h2>知识库统计</h2>
+                                        <p>按当前知识库状态快速判断能否直接问答、生成和陪练。</p>
+                                    </div>
+                                    <button class="overview-link-btn" data-overview-action="knowledge">管理知识库</button>
+                                </div>
+                                <div id="overviewKnowledgeStats" class="overview-db-list">
+                                    <div class="overview-empty">正在加载知识库...</div>
+                                </div>
+                            </section>
+
+                            <section class="overview-panel">
+                                <div class="overview-panel-header">
+                                    <div>
+                                        <h2>最近产物</h2>
+                                        <p>方案、讲义和考试文件。</p>
+                                    </div>
+                                    <button class="overview-link-btn" data-overview-action="generation">去生成</button>
+                                </div>
+                                <div id="overviewArtifacts" class="overview-list">
+                                    <div class="overview-empty">正在加载产物...</div>
+                                </div>
+                            </section>
+
+                            <section class="overview-panel">
+                                <div class="overview-panel-header">
+                                    <div>
+                                        <h2>最近陪练</h2>
+                                        <p>继续复盘训练记录。</p>
+                                    </div>
+                                    <button class="overview-link-btn" data-overview-action="history">查看全部</button>
+                                </div>
+                                <div id="overviewTutorHistory" class="overview-list">
+                                    <div class="overview-empty">正在加载记录...</div>
+                                </div>
+                            </section>
                         </div>
                     </div>
                 </section>
@@ -460,16 +519,19 @@
     <script src="/static/js/health.js"></script>
 
     <!-- 知识库管理模块 -->
-    <script src="/static/js/knowledge.js?v=2.3"></script>
+    <script src="/static/js/knowledge.js?v=2.4"></script>
 
     <!-- 知识库问答模块 -->
     <script src="/static/js/knowledge-chat.js?v=2.7"></script>
 
     <!-- 内容生成模块 -->
-    <script src="/static/js/generation.js"></script>
+    <script src="/static/js/generation.js?v=1.1"></script>
 
     <!-- 模型设置模块 -->
     <script src="/static/js/model-settings.js"></script>
+
+    <!-- 总览启动页 -->
+    <script src="/static/js/overview.js?v=1.1"></script>
 
     <!-- 原有陪练系统逻辑 -->
     <script src="/static/js/app_with_health_check.js?v=2.1"></script>

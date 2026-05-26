@@ -27,6 +27,7 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 ARTIFACT_DIRS = ["generation_output"]
 
 MAX_RUNNING_JOBS = int(os.getenv("GENERATION_MAX_RUNNING_JOBS", "1"))
+RUNNING_JOB_STALE_SECONDS = int(os.getenv("GENERATION_RUNNING_JOB_STALE_SECONDS", "1800"))
 
 # Lock to protect the check-and-create sequence in create_job
 _create_job_lock = threading.Lock()
@@ -79,9 +80,24 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _parse_job_time(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
 def _save_job(job: dict) -> None:
-    (JOBS_DIR / f"{job['job_id']}.json").write_text(
-        json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+    job["updated_at"] = _now()
+    path = JOBS_DIR / f"{job['job_id']}.json"
+    temp_path = path.with_suffix(path.suffix + ".tmp")
+    temp_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(path)
 
 
 def _update_job_stage(job_id: str, stage: str) -> None:
@@ -107,6 +123,38 @@ def _safe_filename(text: str) -> str:
     return safe[:60] or "untitled"
 
 
+def _running_job_stale_reason(job: dict) -> str | None:
+    if job.get("status") != "running":
+        return None
+
+    worker_pid = job.get("worker_pid")
+    if worker_pid is not None:
+        try:
+            if int(worker_pid) != os.getpid():
+                return "运行进程已不存在"
+        except (TypeError, ValueError):
+            return "运行进程记录无效"
+
+    last_active = _parse_job_time(job.get("updated_at") or job.get("created_at"))
+    if not last_active:
+        return "运行时间记录无效"
+    elapsed = (datetime.now(timezone.utc) - last_active).total_seconds()
+    if elapsed > RUNNING_JOB_STALE_SECONDS:
+        return f"超过 {RUNNING_JOB_STALE_SECONDS} 秒未更新"
+
+    return None
+
+
+def _recover_stale_running_job(job: dict, reason: str) -> None:
+    job["status"] = "failed"
+    job["stage"] = "error"
+    job["error"] = f"作业已从运行队列恢复：{reason}"
+    job["error_type"] = "StaleGenerationJob"
+    job["retryable"] = True
+    job["finished_at"] = _now()
+    _save_job(job)
+
+
 def _running_jobs_count() -> int:
     count = 0
     for path in JOBS_DIR.glob("*.json"):
@@ -116,6 +164,11 @@ def _running_jobs_count() -> int:
             logger.warning(f"跳过损坏的作业文件 {path.name}: {exc}")
             continue
         if job.get("status") == "running":
+            stale_reason = _running_job_stale_reason(job)
+            if stale_reason:
+                logger.warning(f"恢复遗留生成作业 {path.stem}: {stale_reason}")
+                _recover_stale_running_job(job, stale_reason)
+                continue
             count += 1
     return count
 
@@ -153,12 +206,19 @@ def _search_for_training(database: str, customer_group: str = "") -> dict:
     return rag.multi_query_search(queries, database, n_results=5, use_enhanced=True)
 
 
-def _validate_markdown_artifact(content: str, artifact_name: str) -> None:
+def _validate_markdown_artifact(
+    content: str,
+    artifact_name: str,
+    required_sections: list[str] | None = None,
+) -> None:
     text = str(content or "").strip()
     if len(text) < 80:
         raise ContentValidationError(f"{artifact_name} 生成内容过短")
     if "#" not in text:
         raise ContentValidationError(f"{artifact_name} 缺少 Markdown 标题")
+    missing = [section for section in (required_sections or []) if section not in text]
+    if missing:
+        raise ContentValidationError(f"{artifact_name} 缺少必要章节: {', '.join(missing)}")
 
 
 # ==================== RAG 格式化 ====================
@@ -175,26 +235,52 @@ def build_context_block(context_result: dict) -> str:
     return "\n\n".join(lines)
 
 
+def _source_file_label(metadata: dict) -> str:
+    """从检索 metadata 中提取用户可识别的具体文件名。"""
+    metadata = metadata if isinstance(metadata, dict) else {}
+    for key in ("source", "file_name", "filename", "stored_file_name", "source_path"):
+        value = str(metadata.get(key) or "").strip()
+        if value:
+            return Path(value).name
+
+    source_list = metadata.get("sources")
+    if isinstance(source_list, list):
+        labels = []
+        for item in source_list:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            name = Path(text).name
+            if Path(name).suffix and name not in labels:
+                labels.append(name)
+        if labels:
+            return "、".join(labels[:5])
+
+    return "未标明文件"
+
+
 def _format_rag_results(rag_results: dict) -> str:
     if not rag_results:
         return '（知识库暂无相关内容，请基于专业知识生成。）'
     blocks = []
+    group_index = 0
     for query, results in rag_results.items():
         if str(query).startswith("_"):
             continue
         if not results:
             continue
-        blocks.append(f"\n### {query}")
+        group_index += 1
+        blocks.append(f"\n### 检索资料组 {group_index}")
         for i, r in enumerate(results[:3], 1):
             content = str(r.get("text", r.get("content", "")))[:600]
             metadata = r.get("metadata", {}) if isinstance(r.get("metadata"), dict) else {}
-            db_name = metadata.get("database", "")
-            source_list = metadata.get("sources", [])
-            source_label = db_name or "知识库"
-            if source_list:
-                source_label += "（文件：" + "、".join(source_list[:5]) + "）"
+            source_label = _source_file_label(metadata)
             score = r.get("score", 0)
-            blocks.append(f"\n片段{i} [来源：{source_label} 相关度:{score:.0%}]\n{content}\n")
+            blocks.append(
+                f"\n片段{i} [来源文件：{source_label} | 相关度:{score:.0%}]\n"
+                f"{content}\n"
+                f"引用格式：📄来源：`{source_label}`\n"
+            )
     return "\n".join(blocks) if blocks else "（检索完成但无有效内容。）"
 
 
@@ -321,11 +407,13 @@ def _build_solution_prompt(request: dict, rag_results: dict) -> str:
 
 ## 关键要求
 
-1. 每条信息标注源文件：📄来源：`文件名`
-2. 严禁编造功能/数据/日期/版本号/文档编号
-3. 基于知识库内容，不虚构
-4. 总字数 ≥ 2000 字
-5. 使用 Markdown，直接输出文档，不要任何前言后语。"""
+1. 正文引用要求：每个事实段落、功能条目、数据结论、案例描述、实施步骤、话术依据，必须在句末或段末内联标注具体文件名，格式固定为：📄来源：`文件名`
+2. 不得只在文末集中列来源；文末来源列表可以保留，但不能替代正文内联来源。
+3. 来源只能使用「知识库内容」中给出的“来源文件/引用格式”，不得使用知识库名或检索关键词代替文件名。
+4. 严禁编造功能/数据/日期/版本号/文档编号
+5. 基于知识库内容，不虚构
+6. 总字数 ≥ 2000 字
+7. 使用 Markdown，直接输出文档，不要任何前言后语。"""
 
 
 # ==================== 培训三阶段 Prompt ====================
@@ -404,12 +492,14 @@ def _build_manual_prompt(request: dict, rag_results: dict) -> str:
 
 ## 要求
 1. 禁止提纲式——所有内容必须完整展开
-2. 每条信息标注源文件：📄来源：`文件名`
-3. 话术是完整对话脚本，不是要点列表
-4. 案例 ≥200字/个
-5. 严厉禁止编造日期/版本号/文档编号
-6. 总字数 ≥ 4000 字
-7. Markdown 格式，直接输出文档。"""
+2. 正文引用要求：每个事实段落、功能条目、数据结论、案例描述、演练脚本依据，必须在句末或段末内联标注具体文件名，格式固定为：📄来源：`文件名`
+3. 不得使用知识库名或检索关键词代替文件名；来源只能使用「知识库内容」中给出的“来源文件/引用格式”。
+4. 话术是完整对话脚本，不是要点列表
+5. 案例 ≥200字/个
+6. 严厉禁止编造日期/版本号/文档编号
+7. 总字数 ≥ 4000 字
+8. 必须完整输出到“第六部分：总结与行动清单”，不得在对话、话术或案例中途结束。
+9. Markdown 格式，直接输出文档。"""
 
 
 def _build_exam_prompt(request: dict, rag_results: dict, manual_summary: str) -> str:
@@ -520,8 +610,10 @@ A. ...  B. ...  C. ...  D. ...
 
 1. 每题必须完整，不缺题干、不缺答案、不缺解析、不缺分值
 2. 考题覆盖布鲁姆全部层级（记忆→理解→应用→分析→创造）
-3. 严禁编造日期/版本号
-4. Markdown 格式，直接输出。"""
+3. 引用来源必须写具体文件名；凡题干、解析、参考答案使用知识库事实，均在句末标注：📄来源：`文件名`
+4. 不得使用知识库名或检索关键词代替文件名；来源只能使用「知识库内容」中给出的“来源文件/引用格式”。
+5. 严禁编造日期/版本号
+6. Markdown 格式，直接输出。"""
 
 
 def _build_readme_prompt(request: dict) -> str:
@@ -613,8 +705,21 @@ def _generate_training(request: dict, job_id: str = None) -> dict:
     if job_id:
         _update_job_stage(job_id, "generating_manual")
     manual_prompt = _build_manual_prompt(request, rag_results)
-    manual_content = _call_minimax(manual_prompt, max_tokens=8000, timeout=600, temperature=0.5)
-    _validate_markdown_artifact(manual_content, "培训讲义")
+    manual_content = _call_minimax(manual_prompt, max_tokens=16000, timeout=600, temperature=0.5)
+    _validate_markdown_artifact(
+        manual_content,
+        "培训讲义",
+        required_sections=[
+            "## 课程信息",
+            "## 学习目标",
+            "## 第一部分",
+            "## 第二部分",
+            "## 第三部分",
+            "## 第四部分",
+            "## 第五部分",
+            "## 第六部分",
+        ],
+    )
 
     # 第2次：生成测试题（传入讲义摘要做上下文）
     if job_id:
@@ -658,6 +763,7 @@ def _run_job(job_id: str) -> None:
             raise ValueError(f"未知生成类型: {gen_type}")
 
         job["stage"] = "searching"
+        job["worker_pid"] = os.getpid()
         _save_job(job)
 
         output = generator(request, job_id=job_id)
@@ -699,7 +805,8 @@ def create_job(request: dict) -> str:
 
         job_id = uuid.uuid4().hex[:12]
         job = {"job_id": job_id, "status": "running", "stage": "init",
-               "created_at": _now(), "request": request, "result": None, "error": None}
+               "created_at": _now(), "worker_pid": os.getpid(),
+               "request": request, "result": None, "error": None}
         _save_job(job)
 
     # 后台线程使用 daemon=True；进程退出时正在运行的作业会被强制中断

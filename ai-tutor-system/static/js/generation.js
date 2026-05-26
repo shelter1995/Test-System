@@ -6,6 +6,10 @@
     var _initialized = false;
     var _sessionStartTime = Date.now();
     var _activeJob = null;
+    var EXAM_QUESTION_TYPES = ['选择题', '填空题', '简答题', '案例分析题', '附加题'];
+    var EXAM_DEFAULT_COUNTS = { '选择题': 5, '填空题': 3, '简答题': 4, '案例分析题': 3, '附加题': 1 };
+    var EXAM_MAX_PER_TYPE = 30;
+    var _syncingExamConfig = false;
 
     // ==================== 类型配置 ====================
 
@@ -121,13 +125,13 @@
     }
 
     function renderExamConfigHtml() {
-        var questionTypes = ['选择题', '填空题', '简答题', '案例分析题', '附加题'];
-        var defaultCounts = { '选择题': 5, '填空题': 3, '简答题': 4, '案例分析题': 3, '附加题': 1 };
-        var typeRows = questionTypes.map(function (t, i) {
+        var typeRows = EXAM_QUESTION_TYPES.map(function (t, i) {
             var checked = i < 4 ? ' checked' : '';  // 默认前4种选中
+            var disabled = i < 4 ? '' : ' disabled';
+            var count = i < 4 ? (EXAM_DEFAULT_COUNTS[t] || 1) : 0;
             return '<div class="exam-type-row">' +
-                '<label class="exam-check"><input type="checkbox" class="trnExamType" value="' + t + '"' + checked + ' onchange="toggleExamTypeCount(this)"> ' + t + '</label>' +
-                '<input type="number" class="form-control exam-count-input" id="trnExamCount_' + i + '" value="' + (defaultCounts[t] || 1) + '" min="1" max="30" style="width:70px" data-type="' + t + '">' +
+                '<label class="exam-check"><input type="checkbox" class="trnExamType" value="' + t + '"' + checked + '> ' + t + '</label>' +
+                '<input type="number" class="form-control exam-count-input" id="trnExamCount_' + i + '" value="' + count + '" min="0" max="' + EXAM_MAX_PER_TYPE + '" style="width:70px" data-type="' + t + '"' + disabled + '>' +
                 '<span class="exam-count-label">题</span>' +
             '</div>';
         }).join('');
@@ -135,7 +139,7 @@
         return typeRows +
             '<div class="exam-divider"></div>' +
             '<div class="form-row-3">' +
-                '<div class="form-group"><label>总题量</label><input type="number" id="trnExamTotalCount" class="form-control" value="16" readonly></div>' +
+                '<div class="form-group"><label>总题量</label><input type="number" id="trnExamTotalCount" class="form-control" value="15" min="0" max="' + (EXAM_QUESTION_TYPES.length * EXAM_MAX_PER_TYPE) + '"></div>' +
                 '<div class="form-group"><label>总分</label><input type="number" id="trnExamTotalScore" class="form-control" value="100" min="10" max="500"></div>' +
                 '<div class="form-group"><label>合格线</label><input type="number" id="trnExamPassScore" class="form-control" value="80" min="0" max="500"></div>' +
             '</div>' +
@@ -177,6 +181,7 @@
         document.getElementById('genSubmitBtn').addEventListener('click', function () {
             startGenerationJob(type);
         });
+        bindExamConfigEvents();
         restoreActiveJobUi(type);
     }
 
@@ -304,18 +309,167 @@
         var countInput = document.querySelector('.exam-count-input[data-type="' + cb.value + '"]');
         if (countInput) {
             countInput.disabled = !cb.checked;
-            if (!cb.checked) countInput.value = 0;
+            if (cb.checked) {
+                var value = parseInt(countInput.value, 10) || 0;
+                countInput.value = value > 0 ? Math.min(value, EXAM_MAX_PER_TYPE) : (EXAM_DEFAULT_COUNTS[cb.value] || 1);
+            } else {
+                countInput.value = 0;
+            }
         }
         updateExamTotalCount();
     };
 
     window.updateExamTotalCount = function () {
-        var inputs = document.querySelectorAll('.exam-count-input');
+        if (_syncingExamConfig) return;
+        var inputs = document.querySelectorAll('.trnExamType:checked');
         var total = 0;
-        inputs.forEach(function (el) { total += parseInt(el.value) || 0; });
+        inputs.forEach(function (cb) {
+            var el = document.querySelector('.exam-count-input[data-type="' + cb.value + '"]');
+            total += el ? (parseInt(el.value, 10) || 0) : 0;
+        });
         var totalEl = document.getElementById('trnExamTotalCount');
         if (totalEl) totalEl.value = total;
     };
+
+    function clampNumber(value, min, max) {
+        var num = parseInt(value, 10);
+        if (isNaN(num)) num = min;
+        return Math.max(min, Math.min(max, num));
+    }
+
+    function selectedExamTypes() {
+        return Array.prototype.slice.call(document.querySelectorAll('.trnExamType:checked'));
+    }
+
+    function bindExamConfigEvents() {
+        var section = document.getElementById('section_trnExam');
+        if (!section) return;
+
+        section.querySelectorAll('.trnExamType').forEach(function (cb) {
+            cb.addEventListener('change', function () {
+                toggleExamTypeCount(cb);
+            });
+        });
+
+        section.querySelectorAll('.exam-count-input').forEach(function (input) {
+            input.addEventListener('input', function () {
+                if (_syncingExamConfig) return;
+                var type = input.getAttribute('data-type');
+                var cb = section.querySelector('.trnExamType[value="' + type + '"]');
+                var value = clampNumber(input.value, 0, EXAM_MAX_PER_TYPE);
+                input.value = value;
+                if (cb) {
+                    cb.checked = value > 0;
+                    input.disabled = value <= 0;
+                }
+                updateExamTotalCount();
+            });
+        });
+
+        var totalEl = document.getElementById('trnExamTotalCount');
+        if (totalEl) {
+            totalEl.addEventListener('input', distributeExamTotalCount);
+            totalEl.addEventListener('change', distributeExamTotalCount);
+        }
+
+        updateExamTotalCount();
+    }
+
+    function distributeExamTotalCount() {
+        if (_syncingExamConfig) return;
+        var totalEl = document.getElementById('trnExamTotalCount');
+        if (!totalEl) return;
+
+        var target = clampNumber(totalEl.value, 0, EXAM_QUESTION_TYPES.length * EXAM_MAX_PER_TYPE);
+        _syncingExamConfig = true;
+        try {
+            var checked = selectedExamTypes();
+            if (target === 0) {
+                EXAM_QUESTION_TYPES.forEach(function (type) {
+                    var cb = document.querySelector('.trnExamType[value="' + type + '"]');
+                    var input = document.querySelector('.exam-count-input[data-type="' + type + '"]');
+                    if (cb) cb.checked = false;
+                    if (input) { input.value = 0; input.disabled = true; }
+                });
+                totalEl.value = 0;
+                return;
+            }
+
+            if (checked.length === 0) {
+                EXAM_QUESTION_TYPES.slice(0, 4).forEach(function (type) {
+                    var cb = document.querySelector('.trnExamType[value="' + type + '"]');
+                    if (cb) cb.checked = true;
+                });
+                checked = selectedExamTypes();
+            }
+
+            while (target > checked.length * EXAM_MAX_PER_TYPE && checked.length < EXAM_QUESTION_TYPES.length) {
+                var nextType = EXAM_QUESTION_TYPES.find(function (type) {
+                    var cb = document.querySelector('.trnExamType[value="' + type + '"]');
+                    return cb && !cb.checked;
+                });
+                if (!nextType) break;
+                var nextCb = document.querySelector('.trnExamType[value="' + nextType + '"]');
+                if (nextCb) nextCb.checked = true;
+                checked = selectedExamTypes();
+            }
+
+            if (target < checked.length) {
+                checked.forEach(function (cb, index) {
+                    var input = document.querySelector('.exam-count-input[data-type="' + cb.value + '"]');
+                    var keep = index < target;
+                    cb.checked = keep;
+                    if (input) {
+                        input.value = keep ? 1 : 0;
+                        input.disabled = !keep;
+                    }
+                });
+                totalEl.value = target;
+                return;
+            }
+
+            checked = selectedExamTypes();
+            var capacity = checked.length * EXAM_MAX_PER_TYPE;
+            target = Math.min(target, capacity);
+            var remaining = target - checked.length;
+            var weights = checked.map(function (cb) {
+                var input = document.querySelector('.exam-count-input[data-type="' + cb.value + '"]');
+                return Math.max(1, parseInt(input && input.value, 10) || EXAM_DEFAULT_COUNTS[cb.value] || 1);
+            });
+            var weightTotal = weights.reduce(function (sum, value) { return sum + value; }, 0) || checked.length;
+            var counts = checked.map(function (_, index) {
+                return 1 + Math.floor(remaining * weights[index] / weightTotal);
+            });
+            var allocated = counts.reduce(function (sum, value) { return sum + value; }, 0);
+            var cursor = 0;
+            while (allocated < target) {
+                if (counts[cursor] < EXAM_MAX_PER_TYPE) {
+                    counts[cursor] += 1;
+                    allocated += 1;
+                }
+                cursor = (cursor + 1) % counts.length;
+            }
+
+            checked.forEach(function (cb, index) {
+                var input = document.querySelector('.exam-count-input[data-type="' + cb.value + '"]');
+                if (input) {
+                    input.disabled = false;
+                    input.value = counts[index];
+                }
+            });
+            EXAM_QUESTION_TYPES.forEach(function (type) {
+                var cb = document.querySelector('.trnExamType[value="' + type + '"]');
+                var input = document.querySelector('.exam-count-input[data-type="' + type + '"]');
+                if (cb && !cb.checked && input) {
+                    input.value = 0;
+                    input.disabled = true;
+                }
+            });
+            totalEl.value = target;
+        } finally {
+            _syncingExamConfig = false;
+        }
+    }
 
     // ==================== 数据操作 ====================
 
@@ -368,6 +522,7 @@
                 ];
             }
             payload['exam_question_config'] = questionConfig;
+            payload['exam_question_count'] = questionConfig.reduce(function (sum, item) { return sum + item.count; }, 0);
             payload['exam_total_score'] = parseInt(document.getElementById('trnExamTotalScore')?.value) || 100;
             payload['exam_pass_score'] = parseInt(document.getElementById('trnExamPassScore')?.value) || 80;
             var basic = parseInt(document.getElementById('trnExamBasic')?.value) || 50;
