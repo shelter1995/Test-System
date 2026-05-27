@@ -39,3 +39,17 @@ def test_generation_runner_uses_unified_llm_client(monkeypatch):
     client = generation_runner._get_ai_client()
 
     assert client is fake
+
+
+def test_unified_llm_available_is_quiet_when_rag_service_is_not_ready(monkeypatch, caplog):
+    from unified_llm_client import UnifiedLLMClient
+
+    class FailingSession:
+        def get(self, *args, **kwargs):
+            raise ConnectionError("connection refused")
+
+    client = UnifiedLLMClient("http://localhost:8003")
+    client._session = FailingSession()
+
+    assert client.available() is False
+    assert "统一 LLM 设置不可用" not in caplog.text

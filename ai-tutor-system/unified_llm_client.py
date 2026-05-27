@@ -49,7 +49,7 @@ class UnifiedLLMClient:
             settings = self._settings()
             return bool(settings.get("has_api_key"))
         except Exception as exc:
-            logger.warning("统一 LLM 设置不可用: %s", exc)
+            logger.debug("统一 LLM 设置暂不可用: %s", exc)
             return False
 
     def chat_completion(

@@ -95,12 +95,13 @@ async def root():
 @app.get("/api/status")
 async def api_status():
     """系统状态"""
+    ai_configured = ai_service.available
     return {
         "status": "running",
         "message": "AI话术陪练系统正在运行",
-        "ai_configured": ai_service.available,
-        "ai_provider": ai_service.provider_name if ai_service.available else "未配置",
-        "ai_model": ai_service.model_name if ai_service.available else None,
+        "ai_configured": ai_configured,
+        "ai_provider": ai_service.provider_name if ai_configured else "未配置",
+        "ai_model": ai_service.model_name if ai_configured else None,
         "rag_service": config.RAG_SERVICE_URL,
     }
 
