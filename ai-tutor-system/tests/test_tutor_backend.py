@@ -90,3 +90,74 @@ def test_history_list_tolerates_legacy_sessions_without_created_at(tmp_path, mon
     assert history[0]["session_id"] == "legacy"
     assert history[0]["scenario"] == "测试场景"
     assert history[0]["created_at"]
+
+
+def test_delete_session_removes_saved_record(tmp_path, monkeypatch):
+    import json
+    import tutor_config
+
+    monkeypatch.setattr(tutor_config, "SESSIONS_DIR", str(tmp_path))
+    session_file = tmp_path / "session-delete-me.json"
+    session_file.write_text(
+        json.dumps({"session_id": "session-delete-me", "scenario": {"name": "测试场景"}}),
+        encoding="utf-8",
+    )
+
+    client = TestClient(tutor_backend.app)
+    response = client.delete("/session/session-delete-me")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert not session_file.exists()
+
+
+def test_export_session_pdf_returns_pdf(tmp_path, monkeypatch):
+    import json
+    import tutor_config
+
+    monkeypatch.setattr(tutor_config, "SESSIONS_DIR", str(tmp_path))
+    session_file = tmp_path / "session-export.json"
+    session_file.write_text(
+        json.dumps(
+            {
+                "session_id": "session-export",
+                "client_unit": "测试客户",
+                "product": "测试产品",
+                "scenario": {"name": "价格敏感型客户"},
+                "round": 1,
+                "status": "completed",
+                "messages": [
+                    {"role": "user", "content": "您好，介绍一下产品。"},
+                    {"role": "ai", "content": "请说明价格优势。"},
+                ],
+                "report": {
+                    "total_score": 86,
+                    "rating_text": "优秀",
+                    "highlights": ["开场清晰"],
+                    "improvements": ["补充案例"],
+                    "suggestions": ["明确下一步"],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    client = TestClient(tutor_backend.app)
+    response = client.get("/session/session-export/export.pdf")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/pdf"
+    assert "filename*=UTF-8''" in response.headers["content-disposition"]
+    assert "%E6%B5%8B%E8%AF%95%E5%AE%A2%E6%88%B7" in response.headers["content-disposition"]
+    assert "%E6%B5%8B%E8%AF%95%E4%BA%A7%E5%93%81" in response.headers["content-disposition"]
+    assert response.content.startswith(b"%PDF")
+
+
+def test_pdf_export_uses_wrapped_paragraphs_for_dimension_feedback():
+    import inspect
+
+    source = inspect.getsource(tutor_backend._build_session_pdf)
+
+    assert 'wordWrap="CJK"' in source
+    assert 'Paragraph(text(value.get("feedback", "")), styles["table_cell"])' in source

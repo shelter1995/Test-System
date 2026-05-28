@@ -6,6 +6,7 @@
 - GET    /generation/jobs/{job_id}     查询作业状态
 - GET    /generation/artifacts         列出历史产物
 - GET    /generation/artifacts/download 下载产物文件
+- DELETE /generation/artifacts         删除历史产物
 """
 
 import re
@@ -17,6 +18,26 @@ from pydantic import BaseModel
 from typing import Optional
 
 router = APIRouter(prefix="/generation", tags=["generation"])
+
+
+def _resolve_artifact_path(path: str) -> Path:
+    """Resolve and validate a generation artifact path."""
+    root = Path(__file__).parent.parent
+    artifact_root = (root / "generation_output").resolve()
+    if ".." in Path(path).parts:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    try:
+        resolved = (root / path).resolve()
+        resolved.relative_to(root.resolve())
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid path")
+
+    try:
+        resolved.relative_to(artifact_root)
+    except ValueError:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return resolved
 
 
 # ==================== 数据模型 ====================
@@ -127,18 +148,25 @@ async def download_artifact(path: str):
     安全限制：path 必须以 generation_output 开头，
     且必须位于项目根目录内。
     """
-    root = Path(__file__).parent.parent
-    try:
-        resolved = (root / path).resolve()
-        resolved.relative_to(root.resolve())
-    except (ValueError, TypeError):
-        raise HTTPException(status_code=400, detail="Invalid path")
-
-    allowed_dirs = ["generation_output"]
-    if not any(path.startswith(d) for d in allowed_dirs):
-        raise HTTPException(status_code=403, detail="Access denied")
+    resolved = _resolve_artifact_path(path)
 
     if not resolved.exists() or not resolved.is_file():
         raise HTTPException(status_code=404, detail="File not found")
 
     return FileResponse(str(resolved), filename=resolved.name)
+
+
+@router.delete("/artifacts")
+async def delete_artifact(path: str):
+    """删除指定历史产物文件。"""
+    resolved = _resolve_artifact_path(path)
+
+    if not resolved.exists() or not resolved.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        resolved.unlink()
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {exc}") from exc
+
+    return {"status": "success", "message": "Artifact deleted", "path": path}

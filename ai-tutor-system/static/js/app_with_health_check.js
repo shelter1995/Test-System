@@ -43,6 +43,10 @@ const elements = {
     scenarioType: document.getElementById('scenarioType'),
     scenarioSelect: document.getElementById('scenarioSelect'),
     tutorDatabase: document.getElementById('tutorDatabase'),
+    tutorDatabasePicker: document.getElementById('tutorDatabasePicker'),
+    tutorDatabaseButton: document.getElementById('tutorDatabaseButton'),
+    tutorDatabaseButtonText: document.getElementById('tutorDatabaseButtonText'),
+    tutorDatabaseMenu: document.getElementById('tutorDatabaseMenu'),
     startBtn: document.getElementById('startBtn'),
 
     chatMessages: document.getElementById('chatMessages'),
@@ -67,6 +71,7 @@ const elements = {
     reportHighlights: document.getElementById('reportHighlights'),
     reportImprovements: document.getElementById('reportImprovements'),
     reportSuggestions: document.getElementById('reportSuggestions'),
+    exportReportPdfBtn: document.getElementById('exportReportPdfBtn'),
     viewHistoryBtn: document.getElementById('viewHistoryBtn'),
 
     historyBtn: document.getElementById('historyBtn'),
@@ -605,6 +610,7 @@ function updateKnowledgeBox(debugInfo) {
 }
 
 function showReport(report) {
+    _currentReportSessionId = report && report.session_id ? report.session_id : null;
     elements.reportScore.textContent = report.total_score;
     elements.reportRating.textContent = report.rating_text;
 
@@ -636,6 +642,7 @@ function showReport(report) {
 // ==================== 历史记录（增强版） ====================
 
 let _historyCache = null;  // 缓存全量历史数据
+let _currentReportSessionId = null;
 
 function scoreColorClass(score) {
     if (score == null) return '';
@@ -718,7 +725,7 @@ function renderHistoryList(history) {
     elements.historyList.querySelectorAll('.history-item').forEach(el => {
         el.addEventListener('click', function(e) {
             // 如果点击的是内部按钮则不处理
-            if (e.target.closest('.history-view-report')) return;
+            if (e.target.closest('.history-row-action')) return;
             const wasExpanded = this.classList.contains('expanded');
             // 关闭其他展开项
             elements.historyList.querySelectorAll('.history-item.expanded').forEach(i => i.classList.remove('expanded'));
@@ -740,6 +747,7 @@ function renderHistoryList(history) {
                 if (response.ok) {
                     const sessionData = await response.json();
                     if (sessionData.report) {
+                        sessionData.report.session_id = sessionData.report.session_id || sessionId;
                         showReport(sessionData.report);
                     } else {
                         showToast('该会话暂无总结报告', 'info');
@@ -750,6 +758,20 @@ function renderHistoryList(history) {
             } catch (error) {
                 showToast('加载会话详情失败', 'error');
             }
+        });
+    });
+
+    elements.historyList.querySelectorAll('.history-export-pdf').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            exportHistorySessionPdf(this.dataset.sessionId);
+        });
+    });
+
+    elements.historyList.querySelectorAll('.history-delete-session').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            deleteHistorySession(this.dataset.sessionId);
         });
     });
 }
@@ -780,7 +802,11 @@ function renderHistoryItem(item) {
         <div class="history-meta">
             ${statusBadge}
             ${scoreHTML}
-            <button class="history-view-report" data-session-id="${item.session_id}" style="margin-left:auto;font-size:0.75rem;padding:0.15rem 0.5rem;border:1px solid var(--border-color);border-radius:4px;background:white;cursor:pointer;">查看完整报告</button>
+            <div class="history-actions">
+                <button class="history-row-action history-export-pdf" data-session-id="${item.session_id}" type="button">导出PDF</button>
+                <button class="history-row-action history-delete-session danger" data-session-id="${item.session_id}" type="button">删除</button>
+                <button class="history-row-action history-view-report" data-session-id="${item.session_id}" type="button">查看报告</button>
+            </div>
         </div>
         <div class="history-item-detail">
             <div class="history-detail-section" data-detail-type="loading">
@@ -788,6 +814,61 @@ function renderHistoryItem(item) {
             </div>
         </div>
     </div>`;
+}
+
+function getFilenameFromDisposition(disposition, fallback) {
+    const text = String(disposition || '');
+    const utf8Match = text.match(/filename\*=UTF-8''([^;]+)/i);
+    if (utf8Match) {
+        try {
+            return decodeURIComponent(utf8Match[1]);
+        } catch (err) {
+            return utf8Match[1];
+        }
+    }
+    const plainMatch = text.match(/filename="?([^";]+)"?/i);
+    return plainMatch ? plainMatch[1] : fallback;
+}
+
+async function exportHistorySessionPdf(sessionId) {
+    if (!sessionId) return;
+    const url = `${CONFIG.TUTOR_API}/session/${sessionId}/export.pdf`;
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const blob = await response.blob();
+        const filename = getFilenameFromDisposition(
+            response.headers.get('content-disposition'),
+            `${sessionId}.pdf`
+        );
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    } catch (error) {
+        showToast('导出失败: ' + error.message, 'error');
+    }
+}
+
+async function deleteHistorySession(sessionId) {
+    if (!sessionId) return;
+    if (!confirm('确定要删除这条陪练记录吗？\n\n删除后无法恢复。')) return;
+
+    const options = { method: 'DELETE' };
+    try {
+        const response = await fetch(`${CONFIG.TUTOR_API}/session/${sessionId}`, options);
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        showToast('陪练记录已删除', 'success');
+        _historyCache = (_historyCache || []).filter(item => item.session_id !== sessionId);
+        populateHistoryFilters(_historyCache);
+        renderHistoryList(_historyCache);
+    } catch (error) {
+        showToast('删除失败: ' + error.message, 'error');
+    }
 }
 
 async function loadHistoryDetail(itemEl) {
@@ -1000,6 +1081,15 @@ if (chatBackBtn) {
 }
 
 elements.viewHistoryBtn.addEventListener('click', () => openHistoryPanel());
+if (elements.exportReportPdfBtn) {
+    elements.exportReportPdfBtn.addEventListener('click', () => {
+        if (!_currentReportSessionId) {
+            showToast('当前报告缺少会话ID，无法导出PDF', 'error');
+            return;
+        }
+        exportHistorySessionPdf(_currentReportSessionId);
+    });
+}
 
 elements.historyBtn.addEventListener('click', () => {
     if (isHistoryPanelOpen()) { closeHistoryPanel(); } else { openHistoryPanel(); }
@@ -1069,6 +1159,52 @@ elements.customScenarioModal.addEventListener('click', (e) => {
 
 // ==================== 知识库下拉 ====================
 
+function setTutorDatabaseDropdownOpen(open) {
+    if (!elements.tutorDatabasePicker || !elements.tutorDatabaseButton) return;
+    elements.tutorDatabasePicker.classList.toggle('open', Boolean(open));
+    elements.tutorDatabaseButton.setAttribute('aria-expanded', Boolean(open) ? 'true' : 'false');
+}
+
+function syncTutorDatabaseButton() {
+    if (!elements.tutorDatabase || !elements.tutorDatabaseButtonText || !elements.tutorDatabaseMenu) return;
+    const selectedOption = Array.from(elements.tutorDatabase.options).find(opt => opt.value === elements.tutorDatabase.value)
+        || elements.tutorDatabase.options[0];
+    elements.tutorDatabaseButtonText.textContent = selectedOption ? selectedOption.textContent : '自动选择';
+
+    Array.from(elements.tutorDatabaseMenu.children).forEach(button => {
+        const active = button.dataset.dbId === elements.tutorDatabase.value;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+}
+
+function selectTutorDatabase(dbId) {
+    if (!elements.tutorDatabase) return;
+    elements.tutorDatabase.value = dbId || '';
+    syncTutorDatabaseButton();
+    setTutorDatabaseDropdownOpen(false);
+    elements.tutorDatabase.dispatchEvent(new Event('change'));
+}
+
+function appendTutorDatabaseMenuOption(option) {
+    if (!elements.tutorDatabaseMenu) return;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'tutor-db-option';
+    button.setAttribute('role', 'option');
+    button.dataset.dbId = option.value;
+    button.textContent = option.textContent;
+    button.title = option.textContent;
+    elements.tutorDatabaseMenu.appendChild(button);
+}
+
+function renderTutorDatabaseMenu() {
+    if (!elements.tutorDatabase || !elements.tutorDatabaseMenu) return;
+    elements.tutorDatabaseMenu.innerHTML = '';
+    Array.from(elements.tutorDatabase.options).forEach(option => appendTutorDatabaseMenuOption(option));
+    syncTutorDatabaseButton();
+}
+
 async function populateTutorDatabaseDropdown() {
     const select = elements.tutorDatabase;
     if (!select) return;
@@ -1088,10 +1224,47 @@ async function populateTutorDatabaseDropdown() {
             opt.textContent = name;
             select.appendChild(opt);
         });
+        renderTutorDatabaseMenu();
     } catch (err) {
         console.warn('加载知识库列表失败:', err.message);
+        renderTutorDatabaseMenu();
     }
 }
+
+if (elements.tutorDatabaseButton) {
+    elements.tutorDatabaseButton.addEventListener('click', () => {
+        const isOpen = elements.tutorDatabasePicker?.classList.contains('open');
+        setTutorDatabaseDropdownOpen(!isOpen);
+    });
+}
+
+if (elements.tutorDatabaseMenu) {
+    elements.tutorDatabaseMenu.addEventListener('click', (event) => {
+        const option = event.target.closest('.tutor-db-option');
+        if (!option) return;
+        selectTutorDatabase(option.dataset.dbId || '');
+    });
+}
+
+if (elements.tutorDatabase) {
+    elements.tutorDatabase.addEventListener('change', syncTutorDatabaseButton);
+}
+
+document.addEventListener('click', (event) => {
+    if (!elements.tutorDatabasePicker || elements.tutorDatabasePicker.contains(event.target)) return;
+    setTutorDatabaseDropdownOpen(false);
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setTutorDatabaseDropdownOpen(false);
+});
+
+window.TutorDatabaseDropdown = {
+    populate: populateTutorDatabaseDropdown,
+    render: renderTutorDatabaseMenu,
+    select: selectTutorDatabase,
+    setOpen: setTutorDatabaseDropdownOpen,
+};
 
 // ==================== 初始化 ====================
 

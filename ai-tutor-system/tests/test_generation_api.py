@@ -7,6 +7,7 @@ Mock generation_runner 以避免实际执行脚本。
 
 import sys
 from pathlib import Path
+from uuid import uuid4
 from unittest.mock import patch
 
 import pytest
@@ -228,3 +229,36 @@ class TestDownloadArtifact:
             "/generation/artifacts/download?path=generation_output/nonexistent.md"
         )
         assert resp.status_code == 404
+
+
+# ==================== DELETE /generation/artifacts ====================
+
+
+class TestDeleteArtifact:
+    """测试删除历史产物文件。"""
+
+    def test_deletes_artifact_file(self):
+        root = Path(__file__).parent.parent.parent
+        artifact_dir = root / "generation_output"
+        artifact_dir.mkdir(exist_ok=True)
+        artifact = artifact_dir / f"delete-api-{uuid4().hex}.md"
+        artifact.write_text("# 待删除产物\n", encoding="utf-8")
+
+        try:
+            resp = client.delete(
+                "/generation/artifacts",
+                params={"path": str(artifact.relative_to(root))},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["status"] == "success"
+            assert not artifact.exists()
+        finally:
+            if artifact.exists():
+                artifact.unlink()
+
+    def test_rejects_delete_path_traversal(self):
+        resp = client.delete(
+            "/generation/artifacts",
+            params={"path": "generation_output/../../tutor_config.py"},
+        )
+        assert resp.status_code == 400

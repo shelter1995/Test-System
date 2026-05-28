@@ -1249,14 +1249,134 @@ body.has-alert #tutorApp .page {
     border-color: var(--secondary-color);
 }
 
+.native-select-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.tutor-db-picker {
+    position: relative;
+    width: 100%;
+    z-index: 40;
+}
+
+.tutor-db-button {
+    width: 100%;
+    height: 42.5px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    background: #fff;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.95rem;
+    line-height: normal;
+    cursor: pointer;
+    text-align: left;
+    box-sizing: border-box;
+    transition: border-color 0.3s;
+    box-shadow: none;
+}
+
+.tutor-db-button:focus {
+    outline: none;
+    border-color: var(--secondary-color);
+}
+
+.tutor-db-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+#tutorDatabaseButtonText {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tutor-db-caret {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    margin-right: 0.15rem;
+    margin-top: -0.2rem;
+    border: solid var(--text-primary);
+    border-width: 0 2px 2px 0;
+    opacity: 0.95;
+    transform: rotate(45deg);
+}
+
+.tutor-db-menu {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    right: 0;
+    max-height: 280px;
+    overflow-y: auto;
+    padding: 0.35rem;
+    border: 1px solid #cfd8e3;
+    border-radius: var(--radius-md);
+    background: #fff;
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+    z-index: 1200;
+}
+
+.tutor-db-picker.open .tutor-db-menu {
+    display: block;
+}
+
+.tutor-db-option {
+    width: 100%;
+    display: block;
+    padding: 0.55rem 0.65rem;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-primary);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tutor-db-option:hover,
+.tutor-db-option.active {
+    background: var(--bg-accent);
+    color: var(--primary-color);
+}
+
+.form-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(150px, 1fr);
+    gap: 0.75rem;
+    align-items: stretch;
+    margin-top: 0.75rem;
+}
+
 .start-btn {
     width: 100%;
-    padding: 1rem;
+    min-height: 52px;
+    padding: 0.75rem 1rem;
     background: linear-gradient(135deg, var(--secondary-color), var(--primary-color));
     color: white;
     border: none;
     border-radius: var(--radius-md);
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.3s;
@@ -1265,6 +1385,35 @@ body.has-alert #tutorApp .page {
 .start-btn:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
+}
+
+.history-action-btn {
+    width: 100%;
+    min-height: 52px;
+    padding: 0.75rem 1rem;
+    background: #fff;
+    color: var(--primary-color);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    font-size: 0.95rem;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+.history-action-btn:hover {
+    background: var(--bg-accent);
+    border-color: var(--secondary-color);
+    color: var(--primary-color);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+@media (max-width: 560px) {
+    .form-actions {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ==================== 对话页面 ==================== */
@@ -1617,7 +1766,10 @@ body.has-alert #tutorApp .page {
     transition: all 0.4s ease;
 }
 .eval-card.show {
-    max-height: 500px;
+    max-height: 56vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
     opacity: 1;
     padding: 1rem;
 }
@@ -2159,6 +2311,7 @@ body.has-alert #tutorApp .page {
     align-items: center;
     margin-top: 0.5rem;
     font-size: 0.85rem;
+    flex-wrap: wrap;
 }
 
 .history-status {
@@ -2181,6 +2334,41 @@ body.has-alert #tutorApp .page {
 .history-score {
     font-weight: 600;
     color: var(--secondary-color);
+}
+
+.history-actions {
+    display: flex;
+    gap: 0.35rem;
+    margin-left: auto;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
+.history-row-action {
+    font-size: 0.75rem;
+    padding: 0.18rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: white;
+    color: var(--primary-color);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.history-row-action:hover {
+    background: var(--bg-accent);
+    border-color: var(--secondary-color);
+}
+
+.history-row-action.danger {
+    color: #c0392b;
+    border-color: #f1c5bf;
+}
+
+.history-row-action.danger:hover {
+    background: #fff5f5;
+    border-color: #e74c3c;
 }
 
 /* 历史记录搜索/筛选 */
@@ -3738,6 +3926,27 @@ body.has-alert #tutorApp .page {
 }
 .download-link:hover {
     background: var(--primary-color);
+    transform: translateY(-1px);
+}
+
+.artifact-delete-btn {
+    display: inline-block;
+    padding: 0.3rem 0.65rem;
+    background: #fff;
+    color: #c0392b;
+    border: 1px solid #f1c5bf;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s, transform 0.2s;
+    white-space: nowrap;
+}
+
+.artifact-delete-btn:hover {
+    background: #fff5f5;
+    border-color: #e74c3c;
     transform: translateY(-1px);
 }
 

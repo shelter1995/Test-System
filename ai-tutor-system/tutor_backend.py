@@ -5,12 +5,16 @@ AI话术陪练系统 - 后端服务（精简版）
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pathlib import Path
 from datetime import datetime
+from io import BytesIO
+from html import escape
+from urllib.parse import quote
 import json
 import asyncio
 import logging
+import re
 
 import tutor_config as config
 from tutor_models import ScenarioCreate, SessionStart, ChatMessage, SessionEnd
@@ -79,6 +83,202 @@ def _find_existing_evaluation(session_data: dict):
         ),
         None,
     )
+
+
+def _build_session_pdf(session_data: dict) -> bytes:
+    """Render a training session report as a PDF file."""
+    try:
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    except ImportError as exc:  # pragma: no cover - dependency guard
+        raise HTTPException(status_code=500, detail="PDF export dependency missing: reportlab") from exc
+
+    pdfmetrics.registerFont(UnicodeCIDFont("STSong-Light"))
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=18 * mm,
+        rightMargin=18 * mm,
+        topMargin=16 * mm,
+        bottomMargin=16 * mm,
+        title="陪练记录报告",
+    )
+    base = getSampleStyleSheet()
+    styles = {
+        "title": ParagraphStyle(
+            "ChineseTitle",
+            parent=base["Title"],
+            fontName="STSong-Light",
+            fontSize=18,
+            leading=24,
+            spaceAfter=8,
+            textColor=colors.HexColor("#2c3e50"),
+            wordWrap="CJK",
+        ),
+        "heading": ParagraphStyle(
+            "ChineseHeading",
+            parent=base["Heading2"],
+            fontName="STSong-Light",
+            fontSize=13,
+            leading=18,
+            spaceBefore=12,
+            spaceAfter=8,
+            textColor=colors.HexColor("#2c3e50"),
+            borderPadding=(0, 0, 4, 0),
+            borderColor=colors.HexColor("#3498db"),
+            borderWidth=0,
+            borderBottomWidth=1,
+            wordWrap="CJK",
+        ),
+        "body": ParagraphStyle(
+            "ChineseBody",
+            parent=base["BodyText"],
+            fontName="STSong-Light",
+            fontSize=9,
+            leading=14,
+            textColor=colors.HexColor("#2c3e50"),
+            wordWrap="CJK",
+        ),
+        "table_header": ParagraphStyle(
+            "ChineseTableHeader",
+            parent=base["BodyText"],
+            fontName="STSong-Light",
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor("#2c3e50"),
+            wordWrap="CJK",
+        ),
+        "table_label": ParagraphStyle(
+            "ChineseTableLabel",
+            parent=base["BodyText"],
+            fontName="STSong-Light",
+            fontSize=8.5,
+            leading=12,
+            textColor=colors.HexColor("#607d8b"),
+            wordWrap="CJK",
+        ),
+        "table_cell": ParagraphStyle(
+            "ChineseTableCell",
+            parent=base["BodyText"],
+            fontName="STSong-Light",
+            fontSize=8.5,
+            leading=12,
+            textColor=colors.HexColor("#2c3e50"),
+            wordWrap="CJK",
+        ),
+    }
+
+    def text(value) -> str:
+        return escape(str(value or "")).replace("\n", "<br/>")
+
+    def para(value, style_name: str = "body"):
+        return Paragraph(text(value), styles[style_name])
+
+    def bullet_list(items):
+        return [Paragraph("• " + text(item), styles["body"]) for item in (items or [])]
+
+    scenario = session_data.get("scenario") if isinstance(session_data.get("scenario"), dict) else {}
+    report = session_data.get("report") if isinstance(session_data.get("report"), dict) else {}
+    story = [
+        Paragraph("AI 话术陪练记录报告", styles["title"]),
+        Paragraph("会话摘要", styles["heading"]),
+        Table(
+            [
+                [para("客户单位", "table_label"), para(session_data.get("client_unit"), "table_cell"), para("产品", "table_label"), para(session_data.get("product"), "table_cell")],
+                [para("场景", "table_label"), para(scenario.get("name"), "table_cell"), para("轮次", "table_label"), para(session_data.get("round", 0), "table_cell")],
+                [para("状态", "table_label"), para(session_data.get("status"), "table_cell"), para("总分", "table_label"), para(report.get("total_score", "暂无"), "table_cell")],
+                [para("评级", "table_label"), para(report.get("rating_text", "暂无"), "table_cell"), para("会话ID", "table_label"), para(session_data.get("session_id"), "table_cell")],
+            ],
+            colWidths=[24 * mm, 58 * mm, 20 * mm, 58 * mm],
+            style=TableStyle(
+                [
+                    ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+                    ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#edf4fa")),
+                    ("BACKGROUND", (2, 0), (2, -1), colors.HexColor("#edf4fa")),
+                    ("BACKGROUND", (1, 0), (1, -1), colors.HexColor("#fbfdff")),
+                    ("BACKGROUND", (3, 0), (3, -1), colors.HexColor("#fbfdff")),
+                    ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#dcdcdc")),
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                ]
+            ),
+        ),
+    ]
+
+    dims = report.get("dimension_scores") if isinstance(report.get("dimension_scores"), dict) else {}
+    if dims:
+        story.append(Paragraph("五维评分", styles["heading"]))
+        rows = [[para("维度", "table_header"), para("分数", "table_header"), para("反馈", "table_header")]]
+        for name, value in dims.items():
+            value = value if isinstance(value, dict) else {}
+            rows.append([
+                para(name, "table_cell"),
+                para(value.get("score", 0), "table_cell"),
+                Paragraph(text(value.get("feedback", "")), styles["table_cell"]),
+            ])
+        story.append(
+            Table(
+                rows,
+                colWidths=[28 * mm, 16 * mm, 116 * mm],
+                style=TableStyle(
+                    [
+                        ("FONTNAME", (0, 0), (-1, -1), "STSong-Light"),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#eaf3fb")),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#ffffff")),
+                        ("GRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#dcdcdc")),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 6),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+                        ("TOPPADDING", (0, 0), (-1, -1), 5),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+                    ]
+                ),
+                repeatRows=1,
+            )
+        )
+
+    for title, key in [("亮点", "highlights"), ("改进点", "improvements"), ("建议", "suggestions")]:
+        if report.get(key):
+            story.append(Paragraph(title, styles["heading"]))
+            story.extend(bullet_list(report.get(key)))
+
+    messages = session_data.get("messages") if isinstance(session_data.get("messages"), list) else []
+    if messages:
+        story.append(Paragraph("对话记录", styles["heading"]))
+        for item in messages:
+            role = "销售代表" if item.get("role") == "user" else "AI客户"
+            story.append(Paragraph(f"<b>{role}：</b>{text(item.get('content'))}", styles["body"]))
+            story.append(Spacer(1, 5))
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+def _safe_pdf_filename(session_data: dict) -> str:
+    """Create a readable PDF filename from session context."""
+    scenario = session_data.get("scenario") if isinstance(session_data.get("scenario"), dict) else {}
+    parts = [
+        "陪练记录",
+        session_data.get("client_unit"),
+        session_data.get("product"),
+        scenario.get("name"),
+    ]
+    raw = "_".join(str(part).strip() for part in parts if str(part or "").strip())
+    safe = re.sub(r'[\\/:*?"<>|\r\n]+', "_", raw).strip(" ._")
+    if not safe:
+        safe = str(session_data.get("session_id") or "陪练记录")
+    if len(safe) > 120:
+        safe = safe[:120].rstrip(" ._")
+    return f"{safe}.pdf"
 
 
 # ==================== API 端点 ====================
@@ -452,6 +652,37 @@ async def get_session(session_id: str):
     if not session_data:
         raise HTTPException(status_code=404, detail="会话不存在")
     return session_data
+
+
+@app.get("/session/{session_id}/export.pdf")
+async def export_session_pdf(session_id: str):
+    """导出陪练记录 PDF。"""
+    session_data = SessionManager.load(session_id)
+    if not session_data:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    pdf = _build_session_pdf(session_data)
+    filename = _safe_pdf_filename(session_data)
+    encoded = quote(filename)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": (
+                f'attachment; filename="training-session.pdf"; filename*=UTF-8\'\'{encoded}'
+            )
+        },
+    )
+
+
+@app.delete("/session/{session_id}")
+async def delete_session(session_id: str):
+    """删除陪练历史记录。"""
+    existed = SessionManager.delete(session_id)
+    if not existed:
+        raise HTTPException(status_code=404, detail="会话不存在")
+    sessions.pop(session_id, None)
+    return {"status": "success", "message": "Session deleted", "session_id": session_id}
 
 
 # ==================== 启动 ====================

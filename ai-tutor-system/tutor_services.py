@@ -4,6 +4,7 @@ AI话术陪练系统 — 业务服务层
 """
 import json
 import logging
+import re
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime
@@ -466,13 +467,23 @@ class SessionManager:
     """Session lifecycle management."""
 
     @staticmethod
+    def is_valid_id(session_id: str) -> bool:
+        return bool(re.fullmatch(r"session[-_][A-Za-z0-9_-]+", str(session_id or "")))
+
+    @staticmethod
+    def path_for(session_id: str) -> Path:
+        if not SessionManager.is_valid_id(session_id):
+            raise ValueError("Invalid session_id")
+        return Path(config.SESSIONS_DIR) / f"{session_id}.json"
+
+    @staticmethod
     def generate_id() -> str:
         return f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
     @staticmethod
     def save(session_id: str, session_data: dict) -> None:
         try:
-            session_file = Path(config.SESSIONS_DIR) / f"{session_id}.json"
+            session_file = SessionManager.path_for(session_id)
             with open(session_file, "w", encoding="utf-8") as f:
                 json.dump(session_data, f, ensure_ascii=False, indent=2)
             logger.info("Session saved: %s", session_id)
@@ -482,13 +493,31 @@ class SessionManager:
     @staticmethod
     def load(session_id: str) -> Optional[dict]:
         try:
-            session_file = Path(config.SESSIONS_DIR) / f"{session_id}.json"
+            session_file = SessionManager.path_for(session_id)
             if session_file.exists():
                 with open(session_file, "r", encoding="utf-8") as f:
                     return json.load(f)
+        except ValueError:
+            logger.warning("Invalid session id: %s", session_id)
         except Exception as e:
             logger.error("Failed to load session: %s", e)
         return None
+
+    @staticmethod
+    def delete(session_id: str) -> bool:
+        try:
+            session_file = SessionManager.path_for(session_id)
+        except ValueError:
+            return False
+        if not session_file.exists():
+            return False
+        try:
+            session_file.unlink()
+            logger.info("Session deleted: %s", session_id)
+            return True
+        except OSError as e:
+            logger.error("Failed to delete session: %s", e)
+            return False
 
     @staticmethod
     def list_all() -> List[dict]:

@@ -597,6 +597,36 @@
 
     // ==================== 产物列表 ====================
 
+    async function deleteGenerationArtifact(path) {
+        if (!path) return;
+        if (!confirm('确定要删除这个历史产物吗？\n\n删除后无法恢复。')) return;
+
+        var options = { method: 'DELETE' };
+        try {
+            await WorkbenchAPI.requestJson(
+                WorkbenchAPI.BASE_URLS.TUTOR_API +
+                    '/generation/artifacts?path=' + encodeURIComponent(path),
+                options
+            );
+            loadGenerationArtifacts();
+        } catch (err) {
+            alert('删除失败: ' + err.message);
+        }
+    }
+
+    function bindArtifactDeleteButtons(root) {
+        if (!root) return;
+        root.querySelectorAll('.artifact-delete-btn').forEach(function (btn) {
+            if (btn.dataset.bound === 'true') return;
+            btn.dataset.bound = 'true';
+            btn.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                deleteGenerationArtifact(btn.dataset.artifactPath || '');
+            });
+        });
+    }
+
     function renderArtifactList(artifacts) {
         var container = document.getElementById('genResults');
         var section = document.getElementById('genResultsSection');
@@ -624,9 +654,11 @@
                         '</span>' +
                         '<span class="artifact-meta">' + sizeKB + ' KB</span>' +
                         '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                        '<button type="button" class="artifact-delete-btn" data-artifact-path="' + escapeHtml(a.path || '') + '">删除</button>' +
                     '</div>'
                 );
             }).join('');
+        bindArtifactDeleteButtons(container);
     }
 
     function loadGenerationArtifacts() {
@@ -672,10 +704,12 @@
                             '</span>' +
                             '<span class="topbar-dropdown-meta">' + sizeKB + ' KB</span>' +
                             '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                            '<button type="button" class="artifact-delete-btn topbar-delete-btn" data-artifact-path="' + escapeHtml(a.path || '') + '">删除</button>' +
                         '</div>'
                     );
                 }).join('') +
             '</div>';
+        bindArtifactDeleteButtons(panel);
     }
 
     function toggleTopbarDropdown() {
