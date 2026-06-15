@@ -15,6 +15,23 @@
 - 解压目录移动后仍能运行，不依赖打包机绝对路径。
 - 新安装环境不自动创建没有实际索引数据的“商务彩铃”知识库。
 
+## 已确认的虚拟机故障
+
+现有便携包在全新虚拟机中直接双击 `start_services.bat` 时，会在包内 Python/uv 运行环境阶段报错，RAG 服务无法按预期启动。
+
+用户在虚拟机中改为使用本机 Python 执行以下流程后，RAG 服务可以启动：
+
+```text
+cd rag-anything-api
+pip install raganything fastapi uvicorn python-dotenv httpx pydantic numpy pypdf python-docx openpyxl
+pip install -U "mineru[core]"
+python start.py
+```
+
+该现象证明重新安装依赖会修复目标机器上的运行入口，但不能据此保留手动安装步骤。发布包必须自动完成等价工作。
+
+当前开发环境的 `.venv\pyvenv.cfg` 保存了打包机 uv Python 的绝对目录，`uvicorn.exe`、`mineru.exe` 等 console-script 启动器也内嵌了打包机 `.venv\Scripts\python.exe`。修改 `pyvenv.cfg` 不能重写这些可执行文件内部的路径，因此复制整个 `.venv` 不是可接受的便携方案。
+
 ## 发布运行时
 
 基础包固定使用经过虚拟机验证的 CPython `3.13.10`。
@@ -38,7 +55,14 @@ Test-System-Portable/
 
 不再复制开发环境 `.venv`。构建过程使用干净的发布目录安装基础依赖，避免 Windows console-script `.exe` 内嵌开发机 Python 绝对路径。
 
-所有 Python 命令都由包内解释器执行。MinerU 不通过复制的 `mineru.exe` 调用，而使用包内 Python 模块入口，或在目标机器安装后生成的本地入口。
+所有 Python 命令都由包内解释器执行：
+
+- RAG 服务使用 `runtime\python\python.exe rag-anything-api\start.py`。
+- Tutor 服务使用 `runtime\python\python.exe ai-tutor-system\tutor_backend.py`。
+- pip 使用 `runtime\python\python.exe -m pip`。
+- MinerU 使用包内 Python 模块入口，不调用从开发环境复制的 `mineru.exe`。
+
+启动与安装流程不依赖目标机器安装 uv，也不调用 `uv` 命令。
 
 ## 依赖锁定
 
@@ -65,6 +89,8 @@ runtime\python\python.exe -m pip install
 
 - `python_ready`
 - `base_dependencies_ready`
+- `uvicorn_importable`
+- `raganything_importable`
 - `mineru_package_installed`
 - `mineru_cli_runnable`
 - `mineru_models_ready`
@@ -75,7 +101,7 @@ runtime\python\python.exe -m pip install
 
 启动决策：
 
-1. Python 或基础依赖损坏：停止启动，显示中文错误和日志路径。
+1. Python、Uvicorn、RAGAnything 或其他基础依赖损坏：停止启动，显示缺失模块、自动修复入口和日志路径。
 2. MinerU 未安装：询问用户是否安装。
 3. 用户选择安装：打开独立安装窗口，显示阶段和日志；安装成功后重新检查。
 4. 用户选择暂不安装：继续启动两个服务，并把 MinerU 标记为不可用。
@@ -161,6 +187,7 @@ MinerU 不是系统启动的硬依赖。
 安装和模型下载日志存放在：
 
 ```text
+runtime/logs/bootstrap.log
 runtime/logs/mineru-install.log
 runtime/logs/mineru-model-download.log
 runtime/logs/runtime-check.json
@@ -183,6 +210,9 @@ runtime/logs/runtime-check.json
 
 - 包内不包含开发机绝对路径。
 - console-script 启动器不从开发 `.venv` 复制。
+- 启动过程不要求目标机器存在 uv、系统 Python 或系统 pip。
+- 直接双击 `start_services.bat` 可以启动 8002 和 8003，不需要先手动运行安装命令。
+- 包内 Python 可以直接导入 `uvicorn`、`raganything`、`fastapi`、`httpx`、`pydantic`、`numpy`、`pypdf`、`docx` 和 `openpyxl`。
 - 未安装 MinerU 时服务可启动。
 - 用户拒绝安装后基础功能可用。
 - 安装失败时返回中文错误和日志路径。
@@ -194,11 +224,12 @@ runtime/logs/runtime-check.json
 
 1. 虚拟机没有系统 Python、MinerU、模型缓存和项目源码。
 2. 将 zip 解压到包含中文和空格的路径。
-3. 双击启动并选择暂不安装，确认两个服务和基础解析可用。
-4. 重新启动并选择安装，确认 MinerU 自动安装成功。
-5. 上传一份扫描 PDF，确认模型下载、进度显示和最终解析成功。
-6. 上传 Word、PPT、Excel 和文本型 PDF，确认轻量解析路径正常。
-7. 移动整个解压目录后再次启动，确认无绝对路径依赖。
-8. 断网重启，确认已安装依赖和已下载模型可复用。
+3. 确认虚拟机没有 uv，直接双击 `start_services.bat`。
+4. 选择暂不安装 MinerU，确认 8002、8003 和基础解析可用，不执行任何手动 `pip install`。
+5. 重新启动并选择安装，确认 MinerU 自动安装成功。
+6. 上传一份扫描 PDF，确认模型下载、进度显示和最终解析成功。
+7. 上传 Word、PPT、Excel 和文本型 PDF，确认轻量解析路径正常。
+8. 移动整个解压目录后再次启动，确认无绝对路径依赖。
+9. 断网重启，确认已安装依赖和已下载模型可复用。
 
 只有完整通过上述验收，才能将压缩包标记为“解压后双击即可使用”。
