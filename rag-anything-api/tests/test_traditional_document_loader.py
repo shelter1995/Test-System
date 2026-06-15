@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from rag_engines.traditional.document_loader import UnsupportedDocumentType, load_document_text
+from rag_engines.traditional.document_loader import (
+    UnsupportedDocumentType,
+    _resolve_mineru_runtime_config,
+    load_document_text,
+)
 from rag_engines.traditional.document_parsers import DocumentParsingError, ParsedDocument, ParserUnavailable
 
 
@@ -80,6 +84,22 @@ def test_image_routes_to_mineru(monkeypatch, tmp_path: Path):
     assert result.text == "图片OCR结果"
     assert result.metadata["source_type"] == "image"
     assert result.metadata["extension"] == ".png"
+
+
+def test_mineru_runtime_config_prefers_python_module_command(monkeypatch, tmp_path: Path):
+    command = ["portable-python.exe", "-m", "mineru.cli.client"]
+    fake_config = SimpleNamespace(
+        RAGANYTHING_OUTPUT_ROOT=tmp_path / "output",
+        MINERU_COMMAND=command,
+        MINERU_CLI_PATH="",
+        MINERU_PATH="",
+    )
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+
+    output_root, resolved = _resolve_mineru_runtime_config()
+
+    assert output_root == tmp_path / "output" / "traditional_parser"
+    assert resolved == command
 
 
 def test_parser_errors_are_mapped_to_unsupported_type(monkeypatch, tmp_path: Path):

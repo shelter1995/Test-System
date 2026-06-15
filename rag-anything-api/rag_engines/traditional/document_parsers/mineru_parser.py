@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import subprocess
 from pathlib import Path
+from typing import Sequence
 
 from .common import DocumentParsingError, ParsedDocument, ParserUnavailable
 
@@ -27,11 +28,18 @@ def should_use_mineru_for_pdf(text: str, page_count: int) -> bool:
     return False
 
 
-def parse_with_mineru(path: str | Path, output_root: str | Path, mineru_path: str) -> ParsedDocument:
+def parse_with_mineru(
+    path: str | Path,
+    output_root: str | Path,
+    mineru_path: str | Sequence[str],
+) -> ParsedDocument:
     source_path = Path(path)
     out_root = Path(output_root)
-    binary = str(mineru_path or "").strip()
-    if not binary:
+    if isinstance(mineru_path, str):
+        command_prefix = [mineru_path.strip()] if mineru_path.strip() else []
+    else:
+        command_prefix = [str(item).strip() for item in mineru_path if str(item).strip()]
+    if not command_prefix:
         raise ParserUnavailable("MinerU CLI not configured.")
     if not source_path.exists() or not source_path.is_file():
         raise FileNotFoundError(str(source_path))
@@ -41,7 +49,7 @@ def parse_with_mineru(path: str | Path, output_root: str | Path, mineru_path: st
     output_dir.mkdir(parents=True, exist_ok=True)
 
     cmd = [
-        binary,
+        *command_prefix,
         "-p",
         str(source_path),
         "-o",
@@ -59,7 +67,7 @@ def parse_with_mineru(path: str | Path, output_root: str | Path, mineru_path: st
             timeout=MINERU_PARSE_TIMEOUT_SECONDS,
         )
     except FileNotFoundError as exc:
-        raise ParserUnavailable(f"MinerU CLI not found: {binary}") from exc
+        raise ParserUnavailable(f"MinerU CLI not found: {' '.join(command_prefix)}") from exc
     except subprocess.TimeoutExpired as exc:
         raise DocumentParsingError(
             f"MinerU parsing timed out after {MINERU_PARSE_TIMEOUT_SECONDS} seconds."

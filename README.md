@@ -166,7 +166,7 @@ powershell -ExecutionPolicy Bypass -File packaging\create_shortcut.ps1
 
 ## 便携打包
 
-生成可分发的 Windows 便携包（包含虚拟环境和所有依赖）：
+生成可分发的 Windows 便携包：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
@@ -174,7 +174,11 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 产出：`dist-portable/Test-System-Portable.zip`
 
-便携包解压后运行 `start_services.bat` 即可使用。用户需在 8003 的模型设置中配置统一 LLM、嵌入和重排模型的 API Key。
+便携包包含独立 CPython 3.13.10 和基础依赖，不复制开发环境 `.venv`，目标电脑无需安装 Python、pip 或 uv。解压后双击 `start_services.bat` 即可启动。
+
+为控制压缩包大小，MinerU 及模型不预先打包。首次启动会询问是否联网安装 MinerU；用户可以暂不安装并使用基础文档解析。首次解析扫描 PDF 或图片时，MinerU 模型会下载到包内 `runtime/models/mineru/`。
+
+用户仍需在模型设置中配置统一 LLM、嵌入和重排模型的 API Key。详细说明见 [packaging/README.md](packaging/README.md)。
 
 ## 文档
 

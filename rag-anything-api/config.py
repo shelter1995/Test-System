@@ -50,6 +50,13 @@ def _safe_bool(value: str, default: bool) -> bool:
     return default
 
 
+def _module_available(name: str) -> bool:
+    try:
+        return find_spec(name) is not None
+    except (ImportError, ModuleNotFoundError):
+        return False
+
+
 def _discover_winget_ffmpeg() -> str:
     local_app_data = os.getenv("LOCALAPPDATA", "")
     if not local_app_data:
@@ -158,6 +165,7 @@ WHISPER_AVAILABLE = find_spec("whisper") is not None
 MINERU_PATH = shutil.which("mineru")
 LIBREOFFICE_PATH = os.getenv("LIBREOFFICE_PATH", "").strip()
 MINERU_CLI_PATH = os.getenv("MINERU_CLI_PATH", "").strip()
+MINERU_PYTHON = os.getenv("MINERU_PYTHON", "").strip()
 TRADITIONAL_PARSER_DEPENDENCIES = detect_traditional_parser_dependencies()
 if not TRADITIONAL_PARSER_DEPENDENCIES["ffmpeg"]["path"] and FFMPEG_PATH:
     TRADITIONAL_PARSER_DEPENDENCIES["ffmpeg"] = {"available": True, "path": FFMPEG_PATH}
@@ -170,6 +178,12 @@ if not LIBREOFFICE_PATH:
 if not MINERU_CLI_PATH:
     MINERU_CLI_PATH = str(TRADITIONAL_PARSER_DEPENDENCIES["mineru"]["path"])
 MINERU_PATH = str(TRADITIONAL_PARSER_DEPENDENCIES["mineru"]["path"])
+if MINERU_CLI_PATH and MINERU_CLI_PATH != MINERU_PYTHON:
+    MINERU_COMMAND = [MINERU_CLI_PATH]
+elif MINERU_PYTHON and _module_available("mineru.cli.client"):
+    MINERU_COMMAND = [MINERU_PYTHON, "-m", "mineru.cli.client"]
+else:
+    MINERU_COMMAND = []
 WHISPER_AVAILABLE = bool(TRADITIONAL_PARSER_DEPENDENCIES["whisper"]["available"])
 
 # VLM 图片理解（MiniMax Coding Plan 专用接口）
@@ -223,10 +237,8 @@ TRADITIONAL_CHUNK_SIZE = _safe_int(os.getenv("TRADITIONAL_CHUNK_SIZE", "1200"), 
 TRADITIONAL_CHUNK_OVERLAP = _safe_int(os.getenv("TRADITIONAL_CHUNK_OVERLAP", "120"), 120)
 
 
-# 初始数据库 ID（仅用于第一次无 registry 文件时兼容）
-DEFAULT_DATABASE_IDS = [
-    "商务彩铃",
-]
+# 新安装环境从空知识库列表开始。历史数据仅通过磁盘发现逻辑恢复。
+DEFAULT_DATABASE_IDS: list[str] = []
 
 
 def _read_registry() -> dict[str, Any]:

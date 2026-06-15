@@ -30,6 +30,25 @@ def test_detect_traditional_parser_dependencies_reports_all_keys(monkeypatch):
     assert result["whisper"] == {"available": True, "path": "/tools/whisper.exe"}
 
 
+def test_mineru_python_without_installed_module_is_reported_unavailable(monkeypatch):
+    from rag_engines.traditional import dependencies
+
+    monkeypatch.setenv("MINERU_PYTHON", "C:/portable/python.exe")
+    monkeypatch.delenv("MINERU_CLI_PATH", raising=False)
+    monkeypatch.setattr(dependencies.shutil, "which", lambda name: None)
+
+    def missing_spec(name: str):
+        if name == "mineru.cli.client":
+            raise ModuleNotFoundError(name)
+        return None
+
+    monkeypatch.setattr(dependencies, "find_spec", missing_spec)
+
+    result = dependencies.detect_traditional_parser_dependencies()
+
+    assert result["mineru"] == {"available": False, "path": ""}
+
+
 def test_config_exposes_traditional_parser_and_kb_query_settings(monkeypatch):
     monkeypatch.setenv("LIBREOFFICE_PATH", "C:/custom/soffice.exe")
     monkeypatch.setenv("MINERU_CLI_PATH", "C:/custom/mineru.exe")

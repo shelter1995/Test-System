@@ -1,65 +1,68 @@
 param(
-    [string]$OutputRoot = "dist-portable"
+    [string]$OutputRoot = "dist-portable",
+    [string]$PythonHome = "",
+    [string]$FfmpegBin = "",
+    [string]$LibreOfficePath = "",
+    [switch]$NoArchive
 )
 
 $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
-$PackageName = "Test-System-Portable"
-$OutDir = Join-Path $Root $OutputRoot
-$PackageDir = Join-Path $OutDir $PackageName
+$Builder = Join-Path $PSScriptRoot "portable_builder.py"
+$RequiredPython = "3.13.10"
 
-if (Test-Path $PackageDir) {
-    Remove-Item $PackageDir -Recurse -Force
+if (-not (Test-Path $Builder)) {
+    throw "Portable builder was not found: $Builder"
 }
 
-New-Item -ItemType Directory -Force -Path $PackageDir | Out-Null
-
-$Include = @(
-    "ai-tutor-system",
-    "rag-anything-api",
-    "assets",
-    "packaging",
-    "README.md",
-    "SETUP.md",
-    "CHANGELOG.md",
-    "使用说明.md",
-    "部署说明.md",
-    "rag_database_guide.md",
-    "requirements-dev.txt",
-    "start_services.bat"
-)
-
-foreach ($Item in $Include) {
-    $Source = Join-Path $Root $Item
-    $Target = Join-Path $PackageDir $Item
-    if (Test-Path $Source) {
-        Copy-Item $Source $Target -Recurse -Force
+if (-not $PythonHome) {
+    if (-not (Get-Command uv -ErrorAction SilentlyContinue)) {
+        throw "uv is required on the build machine to acquire Python $RequiredPython."
     }
+
+    $PythonExe = (& uv python find $RequiredPython 2>$null | Select-Object -First 1)
+    if (-not $PythonExe) {
+        Write-Host "Python $RequiredPython was not found. Installing it on the build machine..."
+        & uv python install $RequiredPython
+        if ($LASTEXITCODE -ne 0) {
+            throw "uv python install $RequiredPython failed."
+        }
+        $PythonExe = (& uv python find $RequiredPython | Select-Object -First 1)
+    }
+    if (-not $PythonExe) {
+        throw "Unable to locate Python $RequiredPython after installation."
+    }
+    $PythonHome = Split-Path -Parent $PythonExe
 }
 
-$Venv = Join-Path $Root ".venv"
-if (Test-Path $Venv) {
-    Copy-Item $Venv (Join-Path $PackageDir ".venv") -Recurse -Force
+$PackagePython = Join-Path $PythonHome "python.exe"
+if (-not (Test-Path $PackagePython)) {
+    throw "Python executable was not found: $PackagePython"
 }
 
-$RemovePaths = @(
-    "rag-anything-api\storage",
-    "rag-anything-api\output",
-    "ai-tutor-system\tutor_data",
-    ".pytest_cache",
-    "__pycache__"
+$DetectedVersion = & $PackagePython -c "import platform; print(platform.python_version())"
+if ($DetectedVersion.Trim() -ne $RequiredPython) {
+    throw "Portable package requires Python $RequiredPython, got $DetectedVersion."
+}
+
+$Args = @(
+    $Builder,
+    "--root", $Root,
+    "--output-root", $OutputRoot,
+    "--python-home", $PythonHome
 )
 
-foreach ($Relative in $RemovePaths) {
-    Get-ChildItem $PackageDir -Recurse -Force -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -like "*$Relative*" } |
-        Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+if ($FfmpegBin) {
+    $Args += @("--ffmpeg-bin", $FfmpegBin)
+}
+if ($LibreOfficePath) {
+    $Args += @("--libreoffice-path", $LibreOfficePath)
+}
+if ($NoArchive) {
+    $Args += "--no-archive"
 }
 
-$ZipPath = Join-Path $OutDir "$PackageName.zip"
-if (Test-Path $ZipPath) {
-    Remove-Item $ZipPath -Force
+& $PackagePython @Args
+if ($LASTEXITCODE -ne 0) {
+    throw "Portable package build failed."
 }
-
-Compress-Archive -Path (Join-Path $PackageDir "*") -DestinationPath $ZipPath -Force
-Write-Host "Portable package created: $ZipPath"

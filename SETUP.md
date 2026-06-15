@@ -367,7 +367,7 @@ Test-System/
 
 ## 10.1 便携打包
 
-生成可分发的 Windows 便携包（包含虚拟环境和所有依赖）：
+生成可分发的 Windows 便携包：
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
@@ -382,7 +382,16 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 3. 运行 `start_services.bat`
 4. 浏览器自动打开 http://localhost:8002
 
-便携包包含完整的 Python 虚拟环境，无需单独安装 Python 或依赖。
+便携包包含独立 CPython 3.13.10 和基础运行依赖，不复制开发 `.venv`。目标电脑无需安装 Python、pip 或 uv。
+
+首次双击 `start_services.bat` 时会检查 MinerU。用户可以选择联网安装固定版本，或暂不安装并先使用文本、Office 和文本型 PDF 等基础解析能力。MinerU 模型在首次实际需要时下载到 `runtime/models/mineru/`。
+
+如果自动安装失败，可双击 `install_mineru.bat` 重试，并查看：
+
+```text
+runtime/logs/mineru-install.log
+runtime/logs/runtime-check.json
+```
 
 ---
 
@@ -390,10 +399,10 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 ### MinerU 安装失败
 
-```bash
-# 跳过 MinerU，知识库仍可通过文本导入正常工作
-# 如需完整 PDF 解析能力，参考：https://github.com/opendatalab/MinerU
-```
+1. 确认目标电脑可以访问 Python 包下载源。
+2. 双击 `install_mineru.bat` 重试。
+3. 查看 `runtime/logs/mineru-install.log`。
+4. 暂不安装 MinerU 时，两个服务仍可启动；扫描 PDF 和图片 OCR 会提示缺少组件。
 
 ### 依赖缺失
 

@@ -60,6 +60,7 @@ def main() -> None:
         ("pypdf", "pypdf"),
         ("docx", "python-docx"),
         ("openpyxl", "openpyxl"),
+        ("openai", "openai"),
     ]
 
     missing = []
@@ -67,8 +68,8 @@ def main() -> None:
         if not check_dependency(module, package):
             missing.append(package)
 
-    # MinerU 是可选的。新版 MinerU 提供 mineru CLI，不再提供旧的 magic_pdf 模块。
-    mineru_ok = check_command("mineru", "mineru[core]")
+    # 便携包通过包内 Python 模块调用 MinerU，不依赖可迁移性差的 console-script exe。
+    mineru_ok = check_dependency("mineru", "mineru[core]") or check_command("mineru", "mineru[core]")
     if not mineru_ok:
         print('[WARN] mineru[core] 未安装，PDF/Office 文档解析不可用（文本导入正常）')
         print('[WARN] 如需解析文档: pip install -U "mineru[core]"')

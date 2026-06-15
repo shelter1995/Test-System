@@ -3,10 +3,11 @@ setlocal EnableExtensions
 chcp 65001 >nul
 
 set "ROOT=%~dp0"
-set "VENV=%ROOT%.venv"
-set "VENV_SCRIPTS=%VENV%\Scripts"
-set "PYTHON=%VENV_SCRIPTS%\python.exe"
-set "ACTIVATE=%VENV_SCRIPTS%\activate.bat"
+set "PYTHON=%ROOT%runtime\python\python.exe"
+set "RUNTIME_MANAGER=%ROOT%packaging\portable_runtime.py"
+set "RUNTIME_LOGS=%ROOT%runtime\logs"
+set "RUNTIME_STATUS=%RUNTIME_LOGS%\runtime-check.json"
+set "RUNTIME_VARS=%RUNTIME_LOGS%\runtime-check.cmd"
 set "RAG_DIR=%ROOT%rag-anything-api"
 set "TUTOR_DIR=%ROOT%ai-tutor-system"
 set "RAG_HEALTH=http://localhost:8003/health"
@@ -15,117 +16,150 @@ set "APP_URL=http://localhost:8002"
 set "OPEN_BROWSER=1"
 set "PAUSE_AT_END=1"
 
+call :configure_runtime
+
 if /I "%~1"=="rag" goto run_rag
 if /I "%~1"=="tutor" goto run_tutor
 call :parse_args %*
 
 echo ==================================================
-echo   Test-System launcher
+echo   Test-System 启动器
 echo ==================================================
-echo.
-echo Model settings:
-echo   Open http://localhost:8002 and choose Model Settings to edit inference, embedding, and rerank models.
 echo.
 
 if not exist "%PYTHON%" (
-    echo [ERROR] Python was not found at:
-    echo         %PYTHON%
+    echo [错误] 便携包内的 Python 不存在：
+    echo        %PYTHON%
+    echo 请重新解压完整压缩包。
+    pause
+    exit /b 1
+)
+
+if not exist "%RUNTIME_MANAGER%" (
+    echo [错误] 运行时检查器不存在：
+    echo        %RUNTIME_MANAGER%
+    pause
+    exit /b 1
+)
+
+if not exist "%RUNTIME_LOGS%" mkdir "%RUNTIME_LOGS%"
+"%PYTHON%" "%RUNTIME_MANAGER%" check --root "%ROOT%." --json-output "%RUNTIME_STATUS%" --cmd-output "%RUNTIME_VARS%" >nul
+if errorlevel 1 (
+    echo [错误] 无法完成运行时检查。详情：
+    type "%RUNTIME_STATUS%"
+    pause
+    exit /b 1
+)
+
+call "%RUNTIME_VARS%"
+if not "%BASE_READY%"=="1" (
+    echo [错误] 基础运行依赖不完整，服务无法启动。
+    echo 缺少模块: %MISSING_BASE_MODULES%
+    echo 检查日志：%RUNTIME_STATUS%
+    pause
+    exit /b 1
+)
+
+if not "%MINERU_READY%"=="1" (
+    echo 检测到复杂文档智能解析组件 MinerU 尚未安装。
+    echo 安装后可处理扫描 PDF、图片和复杂排版文档。
+    echo 安装需要联网，并会占用较多磁盘空间。
     echo.
-    echo Run setup first, or recreate the virtual environment.
-    pause
-    exit /b 1
+    choice /C YN /N /M "是否立即安装 MinerU？[Y/N] "
+    if errorlevel 2 goto skip_mineru
+    "%PYTHON%" "%RUNTIME_MANAGER%" install-mineru --root "%ROOT%."
+    if errorlevel 1 (
+        echo.
+        echo [警告] MinerU 安装失败，系统将以基础解析模式启动。
+        echo 日志：%RUNTIME_LOGS%\mineru-install.log
+    ) else (
+        echo MinerU 安装完成。
+    )
 )
 
-if not exist "%ACTIVATE%" (
-    echo [ERROR] Virtual environment activation script was not found:
-    echo         %ACTIVATE%
-    pause
-    exit /b 1
-)
-
-echo Checking service ports...
+:skip_mineru
+echo.
+echo 正在检查服务端口...
 call :check_url "%RAG_HEALTH%"
 if errorlevel 1 (
-    echo Starting RAG service on port 8003...
+    echo 正在启动 RAG 服务（8003）...
     start "Test-System RAG 8003" "%ComSpec%" /k ""%~f0" rag"
 ) else (
-    echo RAG service is already running.
+    echo RAG 服务已经运行。
 )
 
 call :check_url "%TUTOR_STATUS%"
 if errorlevel 1 (
-    echo Starting Tutor service on port 8002...
+    echo 正在启动 AI 陪练服务（8002）...
     start "Test-System Tutor 8002" "%ComSpec%" /k ""%~f0" tutor"
 ) else (
-    echo Tutor service is already running.
+    echo AI 陪练服务已经运行。
 )
 
 echo.
-echo Both service windows have been requested. Waiting for readiness...
-
-call :wait_url "%RAG_HEALTH%" "RAG service" 120
+echo 正在等待服务就绪...
+call :wait_url "%RAG_HEALTH%" "RAG 服务" 120
 if errorlevel 1 (
-    echo.
-    echo [ERROR] RAG service did not become ready.
+    echo [错误] RAG 服务未能在规定时间内启动。
     pause
     exit /b 1
 )
 
-call :wait_url "%TUTOR_STATUS%" "Tutor service" 120
+call :wait_url "%TUTOR_STATUS%" "AI 陪练服务" 120
 if errorlevel 1 (
-    echo.
-    echo [ERROR] Tutor service did not become ready.
+    echo [错误] AI 陪练服务未能在规定时间内启动。
     pause
     exit /b 1
 )
 
 echo.
-echo Services are ready.
-if "%OPEN_BROWSER%"=="1" (
-    echo Opening %APP_URL%
-    start "" "%APP_URL%"
-) else (
-    echo Browser launch skipped.
-)
-echo.
-echo You can close this launcher window. Service windows must stay open.
+echo 服务已就绪。
+if "%OPEN_BROWSER%"=="1" start "" "%APP_URL%"
 if "%PAUSE_AT_END%"=="1" pause
 exit /b 0
 
 :run_rag
-set "PATH=%VENV_SCRIPTS%;%PATH%"
+call :configure_runtime
 cd /d "%RAG_DIR%"
-call "%ACTIVATE%"
-python start.py
+"%PYTHON%" start.py
 pause
 exit /b %ERRORLEVEL%
 
 :run_tutor
-set "PATH=%VENV_SCRIPTS%;%PATH%"
+call :configure_runtime
 cd /d "%TUTOR_DIR%"
-call "%ACTIVATE%"
-python tutor_backend.py
+"%PYTHON%" tutor_backend.py
 pause
 exit /b %ERRORLEVEL%
 
+:configure_runtime
+set "PYTHONUTF8=1"
+set "PYTHONPATH=%ROOT%runtime\optional-site-packages;%ROOT%runtime\site-packages;%ROOT%rag-anything-api"
+set "HF_HOME=%ROOT%runtime\models\mineru\huggingface"
+set "HUGGINGFACE_HUB_CACHE=%ROOT%runtime\models\mineru\huggingface\hub"
+set "MODELSCOPE_CACHE=%ROOT%runtime\models\mineru\modelscope"
+set "MINERU_TOOLS_CONFIG_JSON=%ROOT%runtime\models\mineru\mineru.json"
+set "MINERU_PYTHON=%PYTHON%"
+set "PATH=%ROOT%runtime\python;%ROOT%runtime\tools\ffmpeg\bin;%ROOT%runtime\tools\LibreOffice\program;%PATH%"
+if exist "%ROOT%runtime\tools\LibreOffice\program\soffice.exe" set "LIBREOFFICE_PATH=%ROOT%runtime\tools\LibreOffice\program\soffice.exe"
+exit /b 0
+
 :check_url
-powershell -NoProfile -ExecutionPolicy Bypass -Command "try { $r = Invoke-WebRequest -Uri '%~1' -UseBasicParsing -TimeoutSec 2; if ($r.StatusCode -ge 200 -and $r.StatusCode -lt 500) { exit 0 } else { exit 1 } } catch { exit 1 }" >nul 2>nul
+"%PYTHON%" "%RUNTIME_MANAGER%" check-url "%~1" --timeout 2 >nul 2>nul
 exit /b %ERRORLEVEL%
 
 :wait_url
 set "WAIT_URL=%~1"
 set "WAIT_NAME=%~2"
 set "WAIT_MAX=%~3"
-echo Waiting for %WAIT_NAME%...
 for /L %%I in (1,1,%WAIT_MAX%) do (
     call :check_url "%WAIT_URL%"
     if not errorlevel 1 (
-        echo %WAIT_NAME% is ready.
+        echo %WAIT_NAME% 已就绪。
         exit /b 0
     )
     timeout /t 1 /nobreak >nul
 )
-echo Timeout waiting for %WAIT_NAME% at %WAIT_URL%
 exit /b 1
 
 :parse_args

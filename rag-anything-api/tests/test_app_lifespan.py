@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 
 import app as rag_api
+from database_registry import DatabaseRegistry
 
 
 class FakeRegistry:
@@ -53,3 +54,16 @@ def test_lifespan_initializes_registry_and_service(monkeypatch, tmp_path):
     assert response.json()["engine"] == "ready"
     assert rag_api.startup_error is None
     assert isinstance(rag_api.rag_service, FakeService)
+
+
+def test_fresh_registry_does_not_seed_legacy_default_database(monkeypatch, tmp_path):
+    registry_file = tmp_path / "storage" / "databases.json"
+    monkeypatch.setattr(rag_api.config, "DATABASE_REGISTRY_FILE", registry_file)
+    monkeypatch.setattr(rag_api.config, "LEGACY_LIGHTRAG_DIR", tmp_path / "storage" / "lightrag")
+    monkeypatch.setattr(rag_api.config, "RAGANYTHING_STORAGE_ROOT", tmp_path / "storage" / "raganything")
+    monkeypatch.setattr(rag_api.config, "RAGANYTHING_OUTPUT_ROOT", tmp_path / "output")
+
+    rag_api.registry = DatabaseRegistry(registry_file)
+    rag_api._ensure_registry_seeded()
+
+    assert rag_api.registry.list_databases() == []

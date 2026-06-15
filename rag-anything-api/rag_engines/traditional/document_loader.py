@@ -97,10 +97,13 @@ def _read_pptx(path: Path) -> str:
     return "\n".join(lines)
 
 
-def _resolve_mineru_runtime_config() -> tuple[Path, str]:
+def _resolve_mineru_runtime_config() -> tuple[Path, str | list[str]]:
     import config
 
     output_root = Path(getattr(config, "RAGANYTHING_OUTPUT_ROOT", Path.cwd() / "output")) / "traditional_parser"
+    command = getattr(config, "MINERU_COMMAND", None)
+    if command:
+        return output_root, list(command)
     mineru_path = str(getattr(config, "MINERU_CLI_PATH", "") or getattr(config, "MINERU_PATH", "") or "")
     return output_root, mineru_path
 
