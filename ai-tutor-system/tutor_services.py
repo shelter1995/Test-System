@@ -333,6 +333,7 @@ class AIService:
 2. 如果知识库中没有相关标准，基于行业最佳实践
 3. 客观、具体、有建设性
 4. 每个维度的 feedback 字段必须写出具体评分依据，说明为什么给这个分数
+5. 适用政企或高层场景时，关注销售是否把产品能力转译为政策依据、考核价值、风险控制、减负成效和汇报价值；普通场景不能因为没提这些内容而机械扣分
 
 【对话上下文】
 - 轮次：第{round_num}轮
@@ -368,7 +369,7 @@ class AIService:
                 return self._fallback_evaluation()
 
             try:
-                evaluation = _extract_json_object(result["content"])
+                evaluation = _extract_json_object(strip_thought_content(result["content"]))
             except (json.JSONDecodeError, ValueError) as e:
                 logger.warning(
                     "AI evaluation JSON parse failed: %s; using fallback evaluation",
@@ -456,7 +457,7 @@ class AIService:
                 max_tokens=300,
             )
             if result["success"]:
-                return result["content"]
+                return strip_thought_content(result["content"])
             return f"你好，我是{client_unit}的{scenario['ai_role']}，听说你们有{product}产品？"
         except Exception:
             return f"你好，我是{client_unit}的{scenario['ai_role']}，听说你们有{product}产品？"

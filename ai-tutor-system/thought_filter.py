@@ -13,7 +13,7 @@ class ThoughtTokenFilter:
 
     def feed(self, text: str) -> str:
         output = []
-        for char in str(text or ""):
+        for char in (text or ""):
             if self.tag_mode:
                 self.tag_buffer += char
                 if char == ">":
