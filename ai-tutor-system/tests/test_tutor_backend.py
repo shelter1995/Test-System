@@ -180,3 +180,74 @@ def test_api_status_uses_one_fresh_runtime_snapshot(monkeypatch):
     assert response.status_code == 200
     assert response.json()["ai_model"] == "new-model"
     assert calls == [True]
+
+
+def _custom_scenario(name="持久场景"):
+    return {
+        "id": "custom_saved",
+        "name": name,
+        "ai_role": "客户负责人",
+        "user_role": "销售代表",
+        "description": "持久化测试",
+        "customer_traits": [],
+        "ai_strategy": [],
+        "success_criteria": [],
+        "is_custom": True,
+    }
+
+
+def test_load_scenarios_merges_only_custom_records(tmp_path):
+    import json
+    path = tmp_path / "scenarios.json"
+    path.write_text(
+        json.dumps(
+            {
+                "price_sensitive": {"id": "price_sensitive", "name": "过期默认配置"},
+                "custom_saved": _custom_scenario(),
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    loaded = tutor_backend._load_scenarios(path)
+
+    assert loaded["price_sensitive"]["name"] == "价格敏感型客户"
+    assert loaded["custom_saved"]["name"] == "持久场景"
+
+
+def test_load_scenarios_tolerates_invalid_json(tmp_path):
+    path = tmp_path / "scenarios.json"
+    path.write_text("{invalid", encoding="utf-8")
+
+    loaded = tutor_backend._load_scenarios(path)
+
+    assert loaded == tutor_backend.config.DEFAULT_SCENARIOS
+
+
+def test_create_scenario_rolls_back_when_save_fails(monkeypatch):
+    original = tutor_backend.scenarios.copy()
+    monkeypatch.setattr(
+        tutor_backend,
+        "_save_custom_scenarios",
+        lambda *args, **kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+
+    try:
+        response = TestClient(tutor_backend.app).post(
+            "/scenarios/create",
+            json={
+                "name": "保存失败场景",
+                "ai_role": "客户",
+                "user_role": "销售",
+                "description": "测试",
+                "customer_traits": [],
+                "ai_strategy": [],
+                "success_criteria": [],
+            },
+        )
+        assert response.status_code == 500
+        assert all(item.get("name") != "保存失败场景" for item in tutor_backend.scenarios.values())
+    finally:
+        tutor_backend.scenarios.clear()
+        tutor_backend.scenarios.update(original)

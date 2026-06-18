@@ -59,10 +59,48 @@ if STATIC_DIR.exists():
 from generation_api import router as generation_router
 app.include_router(generation_router)
 
+# ==================== 场景持久化 ====================
+
+
+def _load_scenarios(path: Path | str | None = None) -> dict:
+    """加载场景：默认场景 + 持久化的自定义场景。"""
+    merged = {key: dict(value) for key, value in config.DEFAULT_SCENARIOS.items()}
+    scenarios_path = Path(path or config.SCENARIOS_FILE)
+    if not scenarios_path.exists():
+        return merged
+    try:
+        saved = json.loads(scenarios_path.read_text(encoding="utf-8"))
+        if not isinstance(saved, dict):
+            raise ValueError("场景文件根节点必须是对象")
+        for scenario_id, item in saved.items():
+            if not isinstance(item, dict) or not item.get("is_custom"):
+                continue
+            value = dict(item)
+            value["id"] = str(value.get("id") or scenario_id)
+            merged[str(scenario_id)] = value
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        logger.error("读取自定义场景失败: %s", exc)
+    return merged
+
+
+def _save_custom_scenarios(values: dict, path: Path | str | None = None) -> None:
+    """原子保存自定义场景到 JSON 文件。"""
+    scenarios_path = Path(path or config.SCENARIOS_FILE)
+    scenarios_path.parent.mkdir(parents=True, exist_ok=True)
+    custom = {
+        key: value
+        for key, value in values.items()
+        if isinstance(value, dict) and value.get("is_custom")
+    }
+    temp_path = scenarios_path.with_name(f"{scenarios_path.name}.tmp")
+    temp_path.write_text(json.dumps(custom, ensure_ascii=False, indent=2), encoding="utf-8")
+    temp_path.replace(scenarios_path)
+
+
 # ==================== 全局状态 ====================
 
 sessions = {}  # 内存活跃会话缓存
-scenarios = config.DEFAULT_SCENARIOS.copy()
+scenarios = _load_scenarios()
 
 # 服务实例
 ai_service = get_ai_service()
@@ -334,13 +372,12 @@ async def create_scenario(scenario: ScenarioCreate):
     }
 
     scenarios[scenario_id] = new_scenario
-
     try:
-        scenarios_file = Path(config.SCENARIOS_FILE)
-        with open(scenarios_file, "w", encoding="utf-8") as f:
-            json.dump(scenarios, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error("保存场景失败: %s", e)
+        _save_custom_scenarios(scenarios)
+    except OSError as exc:
+        scenarios.pop(scenario_id, None)
+        logger.error("保存场景失败: %s", exc)
+        raise HTTPException(status_code=500, detail="自定义场景保存失败") from exc
 
     return {
         "message": "场景创建成功",
