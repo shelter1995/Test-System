@@ -53,3 +53,34 @@ def test_unified_llm_available_is_quiet_when_rag_service_is_not_ready(monkeypatc
 
     assert client.available() is False
     assert "统一 LLM 设置不可用" not in caplog.text
+
+
+def test_model_info_force_refresh_reloads_8003_settings():
+    from unified_llm_client import UnifiedLLMClient
+
+    class Response:
+        def __init__(self, model):
+            self.model = model
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"llm": {"provider": "openai-compatible", "model": self.model, "has_api_key": True}}
+
+    class ChangingSession:
+        def __init__(self):
+            self.models = iter(["old-model", "new-model"])
+            self.get_calls = 0
+
+        def get(self, *args, **kwargs):
+            self.get_calls += 1
+            return Response(next(self.models))
+
+    client = UnifiedLLMClient("http://localhost:8003")
+    client._session = ChangingSession()
+
+    assert client.model_info()["model"] == "old-model"
+    assert client.model_info()["model"] == "old-model"
+    assert client.model_info(refresh=True)["model"] == "new-model"
+    assert client._session.get_calls == 2

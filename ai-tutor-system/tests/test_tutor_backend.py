@@ -161,3 +161,22 @@ def test_pdf_export_uses_wrapped_paragraphs_for_dimension_feedback():
 
     assert 'wordWrap="CJK"' in source
     assert 'Paragraph(text(value.get("feedback", "")), styles["table_cell"])' in source
+
+
+def test_api_status_uses_one_fresh_runtime_snapshot(monkeypatch):
+    calls = []
+
+    def runtime_status(refresh=False):
+        calls.append(refresh)
+        return {
+            "available": True,
+            "provider": "openai-compatible",
+            "model": "new-model",
+        }
+
+    monkeypatch.setattr(tutor_backend.ai_service, "runtime_status", runtime_status, raising=False)
+    response = TestClient(tutor_backend.app).get("/api/status")
+
+    assert response.status_code == 200
+    assert response.json()["ai_model"] == "new-model"
+    assert calls == [True]

@@ -20,8 +20,8 @@ class UnifiedLLMClient:
         self._session = requests.Session()
         self._model_info: dict[str, Any] | None = None
 
-    def _settings(self) -> dict[str, Any]:
-        if self._model_info is not None:
+    def _settings(self, force_refresh: bool = False) -> dict[str, Any]:
+        if self._model_info is not None and not force_refresh:
             return self._model_info
         response = self._session.get(f"{self.base_url}/settings/models", timeout=min(self.timeout, 10))
         response.raise_for_status()
@@ -29,6 +29,9 @@ class UnifiedLLMClient:
         llm = data.get("llm") if isinstance(data, dict) else {}
         self._model_info = llm if isinstance(llm, dict) else {}
         return self._model_info
+
+    def model_info(self, refresh: bool = False) -> dict[str, Any]:
+        return dict(self._settings(force_refresh=refresh))
 
     @property
     def model(self) -> str:

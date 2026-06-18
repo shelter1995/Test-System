@@ -237,6 +237,25 @@ class AIService:
     def provider_name(self) -> str:
         return str(getattr(self._client, "provider", "unified") or "unified")
 
+    def runtime_status(self, refresh: bool = False) -> dict[str, Any]:
+        try:
+            getter = getattr(self._client, "model_info", None)
+            if callable(getter):
+                info = getter(refresh=refresh)
+                return {
+                    "available": bool(info.get("has_api_key")),
+                    "provider": str(info.get("provider") or "unified"),
+                    "model": str(info.get("model") or ""),
+                }
+            return {
+                "available": self.available,
+                "provider": self.provider_name,
+                "model": self.model_name,
+            }
+        except Exception as exc:
+            logger.debug("统一 LLM 运行状态暂不可用: %s", exc)
+            return {"available": False, "provider": "未配置", "model": ""}
+
     def generate_response(
         self,
         system_prompt: str,
