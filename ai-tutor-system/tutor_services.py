@@ -12,6 +12,7 @@ from datetime import datetime
 import requests
 
 import tutor_config as config
+from thought_filter import strip_thought_content
 from rag_client import RAGClient, get_rag_client
 from unified_llm_client import create_unified_llm_client
 
@@ -258,7 +259,7 @@ class AIService:
                 max_tokens=800,
             )
             if result["success"]:
-                content = result["content"]
+                content = strip_thought_content(result["content"])
                 logger.info("AI generated response: %s...", content[:100])
                 return content
             else:

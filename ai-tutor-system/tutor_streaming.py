@@ -6,6 +6,7 @@ import asyncio
 import logging
 from typing import List, Dict, AsyncGenerator
 
+from thought_filter import ThoughtTokenFilter
 from tutor_models import SSEEvent
 from tutor_services import (
     RAGService,
@@ -105,14 +106,22 @@ class StreamingPipeline:
         )
 
         full_response = ""
+        thought_filter = ThoughtTokenFilter()
         try:
             for token in self.ai.generate_response_stream(
                 system_prompt=system_prompt,
                 conversation_history=conversation_history,
                 user_message=user_message,
             ):
-                full_response += token
-                yield SSEEvent.token(token)
+                visible_token = thought_filter.feed(token)
+                if not visible_token:
+                    continue
+                full_response += visible_token
+                yield SSEEvent.token(visible_token)
+            tail = thought_filter.flush()
+            if tail:
+                full_response += tail
+                yield SSEEvent.token(tail)
         except Exception as e:
             logger.error("AI streaming interrupted: %s", e)
             yield SSEEvent.error("AI generation interrupted, please retry", "ai_stream_error")
@@ -205,6 +214,9 @@ def _build_system_prompt(
 2. 用真实的客户口吻提问："我们比较关注...""想了解一下...""这方面能不能..."
 3. 自然穿插反馈："原来是这样""嗯，了解了""哦..."
 4. 你是真实的客户，不是在面试销售，不要连续发问
+
+【政企/高层场景补充】
+适用政企或高层客户时，你可以自然追问政策依据、考核价值、风险控制、落地责任和汇报价值；但不要脱离知识库，不要把普通企业客户强行演成政府领导，也不要连续抛出多个宏观问题。
 
 现在用自然的中文客户语言回复销售代表，不要输出其他内容。"""
 
