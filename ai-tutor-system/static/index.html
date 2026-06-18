@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>统一工作台</title>
     <link rel="icon" href="data:,">
-    <link rel="stylesheet" href="/static/css/style.css?v=3.0">
+    <link rel="stylesheet" href="/static/css/style.css?v=3.1">
 </head>
 <body>
     <div class="app-shell">
@@ -205,8 +205,8 @@
                                     <div class="start-form">
                                         <div class="form-group">
                                             <label>客户单位</label>
-                                            <input type="text" id="clientUnit" placeholder="例如：某某科技有限公司"
-                                                   value="某某科技有限公司">
+                                            <input type="text" id="clientUnit" placeholder="例如：合肥某连锁门店"
+                                                   value="合肥某连锁门店">
                                         </div>
                                         <div class="form-row">
                                             <div class="form-group">
@@ -222,7 +222,7 @@
                                             </div>
                                             <div class="form-group">
                                                 <label>产品名称</label>
-                                                <input type="text" id="productName" placeholder="例如：商务视频彩铃">
+                                                <input type="text" id="productName" placeholder="例如：小微ICT">
                                             </div>
                                         </div>
                                         <div class="form-row">
@@ -453,35 +453,35 @@
                                 <div class="modal-body">
                                     <div class="form-group">
                                         <label>场景名称</label>
-                                        <input type="text" id="customScenarioName" placeholder="例如：VIP大客户">
+                                        <input type="text" id="customScenarioName" placeholder="例如：小微企业老板">
                                     </div>
                                     <div class="form-group">
                                         <label>AI角色（客户）</label>
-                                        <input type="text" id="customAiRole" placeholder="例如：集团采购总监">
+                                        <input type="text" id="customAiRole" placeholder="例如：连锁门店负责人">
                                     </div>
                                     <div class="form-group">
                                         <label>用户角色</label>
-                                        <input type="text" id="customUserRole" placeholder="例如：大客户经理" value="销售代表">
+                                        <input type="text" id="customUserRole" placeholder="例如：客户经理" value="销售代表">
                                     </div>
                                     <div class="form-group">
                                         <label>场景描述</label>
                                         <textarea id="customScenarioDesc" rows="3"
-                                                  placeholder="描述这个场景的特点和挑战"></textarea>
+                                                  placeholder="描述小微客户在门店联网、云电脑、安全防护或成本控制上的典型挑战"></textarea>
                                     </div>
                                     <div class="form-group">
                                         <label>客户特点（每行一个）</label>
                                         <textarea id="customCustomerTraits" rows="3"
-                                                  placeholder="例如：&#10;决策周期长&#10;关注服务质量&#10;需要定制方案"></textarea>
+                                                  placeholder="例如：&#10;预算敏感&#10;缺少专职IT人员&#10;希望快速开通和稳定售后"></textarea>
                                     </div>
                                     <div class="form-group">
                                         <label>AI策略（每行一个）</label>
                                         <textarea id="customAiStrategy" rows="3"
-                                                  placeholder="例如：&#10;提出质疑&#10;要求更高权限&#10;表示需要汇报"></textarea>
+                                                  placeholder="例如：&#10;追问套餐边界&#10;担心后续维护复杂&#10;要求说明与自建方案差异"></textarea>
                                     </div>
                                     <div class="form-group">
                                         <label>成功标准（每行一个）</label>
                                         <textarea id="customSuccessCriteria" rows="3"
-                                                  placeholder="例如：&#10;建立信任关系&#10;获得内部推荐&#10;预约下次沟通"></textarea>
+                                                  placeholder="例如：&#10;确认当前网络和终端痛点&#10;明确试点门店范围&#10;预约方案演示或上门勘查"></textarea>
                                     </div>
                                 </div>
                                 <div class="modal-footer">
@@ -530,18 +530,18 @@
     <script src="/static/js/knowledge.js?v=2.4"></script>
 
     <!-- 知识库问答模块 -->
-    <script src="/static/js/knowledge-chat.js?v=2.7"></script>
+    <script src="/static/js/knowledge-chat.js?v=2.8"></script>
 
     <!-- 内容生成模块 -->
-    <script src="/static/js/generation.js?v=1.1"></script>
+    <script src="/static/js/generation.js?v=1.2"></script>
 
     <!-- 模型设置模块 -->
-    <script src="/static/js/model-settings.js"></script>
+    <script src="/static/js/model-settings.js?v=1.1"></script>
 
     <!-- 总览启动页 -->
-    <script src="/static/js/overview.js?v=1.1"></script>
+    <script src="/static/js/overview.js?v=1.2"></script>
 
     <!-- 原有陪练系统逻辑 -->
-    <script src="/static/js/app_with_health_check.js?v=2.1"></script>
+    <script src="/static/js/app_with_health_check.js?v=2.2"></script>
 </body>
 </html>

@@ -1,5 +1,5 @@
 /**
- * AI话术陪练系统 — 前端逻辑（SSE 流式 v2.1）
+ * AI话术陪练系统 — 前端逻辑（SSE 流式 v2.2）
  */
 // ==================== 配置 ====================
 const CONFIG = {
@@ -219,6 +219,47 @@ async function getHistory() {
     } catch (error) {
         console.error('获取历史记录错误:', error);
         return [];
+    }
+}
+
+// ==================== 场景加载 ====================
+
+function renderScenarios(payload) {
+    if (!elements.scenarioSelect) return;
+    const previous = elements.scenarioSelect.value;
+    const scenarios = payload && payload.preset ? payload.preset : {};
+    elements.scenarioSelect.replaceChildren();
+
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = '请选择客户角色...';
+    elements.scenarioSelect.appendChild(placeholder);
+
+    Object.values(scenarios).forEach((scenario) => {
+        if (!scenario || !scenario.id || !scenario.name) return;
+        const option = document.createElement('option');
+        option.value = scenario.id;
+        option.textContent = scenario.name;
+        elements.scenarioSelect.appendChild(option);
+    });
+
+    const custom = document.createElement('option');
+    custom.value = 'custom';
+    custom.textContent = '+ 自定义场景';
+    elements.scenarioSelect.appendChild(custom);
+
+    if (Array.from(elements.scenarioSelect.options).some((option) => option.value === previous)) {
+        elements.scenarioSelect.value = previous;
+    }
+}
+
+async function loadScenarios() {
+    try {
+        const response = await fetch(`${CONFIG.TUTOR_API}/scenarios`);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        renderScenarios(await response.json());
+    } catch (error) {
+        console.warn('加载陪练场景失败:', error.message);
     }
 }
 
@@ -1139,10 +1180,7 @@ elements.createScenarioBtn.addEventListener('click', async () => {
             const data = await response.json();
             showToast('场景创建成功！', 'success');
             elements.customScenarioModal.classList.remove('active');
-            const option = document.createElement('option');
-            option.value = data.scenario_id;
-            option.textContent = data.scenario.name;
-            elements.scenarioSelect.appendChild(option);
+            await loadScenarios();
             elements.scenarioSelect.value = data.scenario_id;
         } else {
             showToast('创建场景失败', 'error');
@@ -1268,9 +1306,10 @@ window.TutorDatabaseDropdown = {
 
 // ==================== 初始化 ====================
 
-console.log('AI话术陪练系统已加载（SSE 流式 v2.1）');
+console.log('AI话术陪练系统已加载（SSE 流式 v2.2）');
 console.log('RAG服务:', CONFIG.RAG_API);
 console.log('陪练服务:', CONFIG.TUTOR_API);
 
 healthCheckLoop();
 populateTutorDatabaseDropdown();
+loadScenarios();
