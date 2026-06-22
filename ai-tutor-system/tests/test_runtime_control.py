@@ -137,6 +137,22 @@ def test_default_allowed_hosts_excludes_testclient(runtime_control):
     assert server.should_exit is False
 
 
+@pytest.mark.parametrize("host", ["127.0.0.1", "::1"])
+def test_default_allowed_hosts_accept_loopback(runtime_control, host):
+    app = FastAPI()
+    server = SimpleNamespace(should_exit=False)
+    app.state.uvicorn_server = server
+    runtime_control.install_shutdown_route(app, token="secret")
+
+    response = TestClient(app, client=(host, 50000)).post(
+        "/__desktop/shutdown", headers={TOKEN_HEADER: "secret"}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "shutting_down"}
+    assert server.should_exit is True
+
+
 @pytest.mark.parametrize("headers", [{}, {TOKEN_HEADER: "wrong"}])
 def test_missing_or_wrong_token_returns_403(runtime_control, headers):
     response = TestClient(make_app(runtime_control)).post(
