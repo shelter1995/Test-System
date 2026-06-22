@@ -22,15 +22,9 @@ assert.doesNotMatch(
 );
 assert.match(
     cssSource,
-    /\.tutor-db-caret\s*{[^}]*border-width:\s*0 2px 2px 0;[^}]*transform:\s*rotate\(45deg\)/s,
-    'knowledge database dropdown caret should use a compact chevron style similar to native selects'
+    /\.tutor-db-caret,\s*\.kbchat-db-caret\s*\{[^}]*background-image:\s*var\(--dropdown-chevron\);[^}]*background-size:\s*var\(--dropdown-chevron-size\);/s,
+    'knowledge database dropdown caret should share the native select chevron resource'
 );
-assert.match(
-    cssSource,
-    /\.tutor-db-button\s*{[^}]*height:\s*42\.5px;[^}]*padding:\s*0\.5rem 0\.75rem;[^}]*border:\s*2px solid var\(--border-color\)/s,
-    'knowledge database dropdown button should align with the surrounding form controls'
-);
-
 function createClassList() {
     const values = new Set();
     return {

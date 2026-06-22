@@ -348,7 +348,7 @@
                         '<div id="kbChatDbPicker" class="kbchat-db-picker">' +
                             '<button id="kbChatDbButton" class="kbchat-db-button" type="button" aria-haspopup="listbox" aria-expanded="false">' +
                                 '<span id="kbChatDbButtonText">选择知识库</span>' +
-                                '<span class="kbchat-db-caret">⌄</span>' +
+                                '<span class="kbchat-db-caret" aria-hidden="true"></span>' +
                             '</button>' +
                             '<div id="kbChatDbMenu" class="kbchat-db-menu" role="listbox"></div>' +
                         '</div>' +
