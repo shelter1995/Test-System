@@ -368,6 +368,10 @@
         refreshTimer = setInterval(function () {
             if (isOverviewActive()) refresh(false);
         }, 30000);
+
+        window.addEventListener('model-settings:saved', function () {
+            refresh(true);
+        });
     }
 
     window.OverviewDashboard = {

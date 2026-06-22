@@ -55,7 +55,7 @@ class StreamingPipeline:
             ),
             asyncio.to_thread(
                 self.rag.search,
-                f"{scenario.get('name', '')} 应对话术 销售技巧",
+                f"{scenario.get('name', '')} 应对话术 销售技巧 政策 考核 风险 高层汇报",
                 database,
                 3,
             ),

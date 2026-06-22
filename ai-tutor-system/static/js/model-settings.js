@@ -183,6 +183,7 @@
             var saved = await requestJson('/settings/models', { method: 'PUT', body: JSON.stringify(collectForm()) });
             state.settings = saved;
             render();
+            window.dispatchEvent(new CustomEvent('model-settings:saved', { detail: saved }));
             showStatus('设置已保存。页面配置会写入本地配置文件；环境变量仍作为未填写密钥时的后备来源。', 'success');
         } catch (err) {
             showStatus('保存失败：' + err.message, 'error');
