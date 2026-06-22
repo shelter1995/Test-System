@@ -281,6 +281,65 @@ def test_standard_root_build_installer_output_is_allowed(tmp_path: Path):
     assert stage == root / ".build" / "installer" / "Test-System"
 
 
+def test_public_builder_resolves_default_version_once_for_relative_root(
+    tmp_path: Path, monkeypatch
+):
+    builder = _load_builder()
+    builder._run = _fake_run
+    root, python_home, desktop_publish = _source_tree(tmp_path)
+    _configure_builder(builder, root)
+    monkeypatch.chdir(tmp_path)
+
+    stage = builder.build_install_image(
+        Path("source"),
+        tmp_path / "output",
+        python_home,
+        desktop_publish,
+        uv_executable="fake-uv.exe",
+    )
+
+    manifest = json.loads(
+        (stage / "runtime" / "install-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["product"]["version"] == "2.3.4"
+
+
+def test_cli_resolves_default_version_once_for_relative_root(
+    tmp_path: Path, monkeypatch, capsys
+):
+    builder = _load_builder()
+    builder._run = _fake_run
+    root, python_home, desktop_publish = _source_tree(tmp_path)
+    _configure_builder(builder, root)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "installer_builder.py",
+            "--root",
+            "source",
+            "--output-root",
+            str(tmp_path / "output"),
+            "--python-home",
+            str(python_home),
+            "--desktop-publish",
+            str(desktop_publish),
+            "--uv-executable",
+            "fake-uv.exe",
+        ],
+    )
+
+    builder.main()
+
+    stage = tmp_path / "output" / "Test-System"
+    manifest = json.loads(
+        (stage / "runtime" / "install-manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["product"]["version"] == "2.3.4"
+    assert "Install image created:" in capsys.readouterr().out
+
+
 @pytest.mark.parametrize("source_name", ["assets", "packaging"])
 def test_output_inside_copied_source_is_rejected_before_creation(
     tmp_path: Path, source_name: str
