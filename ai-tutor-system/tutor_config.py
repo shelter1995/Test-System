@@ -4,36 +4,36 @@ AI话术陪练系统配置文件
 
 # 从.env文件加载环境变量
 import importlib.util
+import hashlib
 import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
+def _load_runtime_paths_module():
+    module_path = Path(__file__).resolve().with_name("runtime_paths.py")
+    identity = os.path.normcase(str(module_path))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    module_name = f"_test_system_tutor_runtime_paths_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
+    return module
 
 
-_RUNTIME_PATHS_MODULE = "_test_system_tutor_runtime_paths"
-if _RUNTIME_PATHS_MODULE not in sys.modules:
-    runtime_paths_spec = importlib.util.spec_from_file_location(
-        _RUNTIME_PATHS_MODULE,
-        Path(__file__).resolve().with_name("runtime_paths.py"),
-    )
-    runtime_paths_module = importlib.util.module_from_spec(runtime_paths_spec)
-    sys.modules[_RUNTIME_PATHS_MODULE] = runtime_paths_module
-    runtime_paths_spec.loader.exec_module(runtime_paths_module)
-else:
-    runtime_paths_module = sys.modules[_RUNTIME_PATHS_MODULE]
+runtime_paths_module = _load_runtime_paths_module()
 get_runtime_paths = runtime_paths_module.get_runtime_paths
 
 # 安装版优先从外置数据目录加载配置，源码模式仍使用本地 .env。
-SOURCE_DIR = Path(__file__).resolve().parent
-data_dir_value = os.getenv("TEST_SYSTEM_DATA_DIR", "").strip()
-data_dir = Path(data_dir_value) if data_dir_value else None
-if data_dir is not None and data_dir.is_absolute():
-    ENV_PATH = (data_dir / "config" / "tutor.env").resolve()
-else:
-    ENV_PATH = (SOURCE_DIR / ".env").resolve()
+ENV_PATH = runtime_paths_module.load_runtime_env()
 if ENV_PATH.exists():
-    load_dotenv(ENV_PATH, override=False)
     print(f"[INFO] 已加载.env配置文件")
 
 # ==================== 历史兼容配置 ====================

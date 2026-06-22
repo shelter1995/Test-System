@@ -3,7 +3,10 @@
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 @dataclass(frozen=True)
@@ -52,5 +55,21 @@ def resolve_runtime_paths(
     )
 
 
+def load_runtime_env() -> Path:
+    """Load the tutor dotenv selected for this checkout without overriding OS values."""
+    source_root = Path(__file__).resolve().parent.parent
+    data_dir_value = os.getenv("TEST_SYSTEM_DATA_DIR", "").strip()
+    data_dir = Path(data_dir_value) if data_dir_value else None
+    if data_dir is not None and data_dir.is_absolute():
+        env_path = (data_dir / "config" / "tutor.env").resolve()
+    else:
+        env_path = (source_root / "ai-tutor-system" / ".env").resolve()
+    if env_path.exists():
+        load_dotenv(env_path, override=False)
+    return env_path
+
+
+@lru_cache(maxsize=1)
 def get_runtime_paths() -> RuntimePaths:
+    load_runtime_env()
     return resolve_runtime_paths()

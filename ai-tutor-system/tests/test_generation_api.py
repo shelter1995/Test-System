@@ -11,11 +11,13 @@ from uuid import uuid4
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 # 将 ai-tutor-system 目录加入 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import generation_api
 from generation_api import _resolve_artifact_path, router
 from fastapi import FastAPI
 
@@ -28,6 +30,14 @@ def _make_app() -> FastAPI:
 
 
 client = TestClient(_make_app())
+
+
+@pytest.fixture(autouse=True)
+def isolate_runtime_path_cache(monkeypatch):
+    monkeypatch.delenv("TEST_SYSTEM_GENERATION_OUTPUT_DIR", raising=False)
+    generation_api.runtime_paths_module.get_runtime_paths.cache_clear()
+    yield
+    generation_api.runtime_paths_module.get_runtime_paths.cache_clear()
 
 
 # ==================== POST /generation/jobs ====================
@@ -246,13 +256,46 @@ class TestDownloadArtifact:
             "../report.md",
             "generation_output/../secret.md",
             "C:/absolute/report.md",
+            r"C:\absolute\report.md",
+            r"C:relative.md",
+            r"\\server\share\report.md",
+            r"\\?\C:\report.md",
+            r"\rooted\report.md",
+            "generation_output/bad\x00name.md",
+            r"generation_output\..\secret.md",
         ],
     )
     def test_external_artifact_root_rejects_unsafe_paths(self, tmp_path, path):
-        with pytest.raises(Exception) as exc_info:
+        with pytest.raises(HTTPException) as exc_info:
             _resolve_artifact_path(path, artifact_root=tmp_path / "external-output")
 
-        assert exc_info.value.status_code in {400, 403}
+        assert exc_info.value.status_code == 400
+
+    def test_external_artifact_root_escape_is_forbidden(self, tmp_path, monkeypatch):
+        artifact_root = tmp_path / "external-output"
+        artifact_root.mkdir()
+        outside = tmp_path / "outside"
+        original_resolve = Path.resolve
+
+        def resolve_with_external_link(path, *args, **kwargs):
+            if path == artifact_root / "linked" / "report.md":
+                return outside / "report.md"
+            return original_resolve(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "resolve", resolve_with_external_link)
+
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_artifact_path(
+                "generation_output/linked/report.md",
+                artifact_root=artifact_root,
+            )
+
+        assert exc_info.value.status_code == 403
+
+    def test_download_rejects_percent_encoded_nul(self):
+        resp = client.get("/generation/artifacts/download?path=generation_output/bad%00name.md")
+
+        assert resp.status_code == 400
 
 
 # ==================== DELETE /generation/artifacts ====================

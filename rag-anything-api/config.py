@@ -5,6 +5,7 @@
 
 import json
 import importlib.util
+import hashlib
 import os
 import shutil
 import sys
@@ -16,17 +17,27 @@ from dotenv import load_dotenv
 from rag_engines.traditional.dependencies import detect_traditional_parser_dependencies
 
 
-_RUNTIME_PATHS_MODULE = "_test_system_rag_runtime_paths"
-if _RUNTIME_PATHS_MODULE not in sys.modules:
-    runtime_paths_spec = importlib.util.spec_from_file_location(
-        _RUNTIME_PATHS_MODULE,
-        Path(__file__).resolve().with_name("runtime_paths.py"),
-    )
-    runtime_paths_module = importlib.util.module_from_spec(runtime_paths_spec)
-    sys.modules[_RUNTIME_PATHS_MODULE] = runtime_paths_module
-    runtime_paths_spec.loader.exec_module(runtime_paths_module)
-else:
-    runtime_paths_module = sys.modules[_RUNTIME_PATHS_MODULE]
+
+def _load_runtime_paths_module():
+    module_path = Path(__file__).resolve().with_name("runtime_paths.py")
+    identity = os.path.normcase(str(module_path))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    module_name = f"_test_system_rag_runtime_paths_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+runtime_paths_module = _load_runtime_paths_module()
 absolute_env_path = runtime_paths_module.absolute_env_path
 
 
