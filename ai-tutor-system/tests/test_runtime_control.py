@@ -1,7 +1,9 @@
 import asyncio
+import ast
 import importlib.util
+import sys
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
@@ -35,6 +37,48 @@ def make_app(runtime_control, token="secret"):
     return app
 
 
+def make_fake_uvicorn(monkeypatch):
+    records = SimpleNamespace(configs=[], servers=[])
+    module = ModuleType("uvicorn")
+
+    class FakeConfig:
+        def __init__(self, app, **kwargs):
+            self.app = app
+            self.kwargs = kwargs
+            self.reload = kwargs.get("reload", False)
+            records.configs.append(self)
+
+    class FakeServer:
+        def __init__(self, config):
+            self.config = config
+            self.should_exit = False
+            self.ran = False
+            records.servers.append(self)
+
+        def run(self):
+            assert self.config.app.state.uvicorn_server is self
+            self.ran = True
+
+    module.Config = FakeConfig
+    module.Server = FakeServer
+    monkeypatch.setitem(sys.modules, "uvicorn", module)
+    return records
+
+
+def execute_main_block(path, namespace):
+    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    main_block = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.If)
+        and isinstance(node.test, ast.Compare)
+        and isinstance(node.test.left, ast.Name)
+        and node.test.left.id == "__name__"
+    )
+    code = compile(ast.Module(body=main_block.body, type_ignores=[]), str(path), "exec")
+    exec(code, namespace)
+
+
 def test_no_configured_token_returns_404(runtime_control, monkeypatch):
     monkeypatch.delenv("TEST_SYSTEM_SHUTDOWN_TOKEN", raising=False)
     app = FastAPI()
@@ -43,6 +87,54 @@ def test_no_configured_token_returns_404(runtime_control, monkeypatch):
     response = TestClient(app).post("/__desktop/shutdown")
 
     assert response.status_code == 404
+
+
+def test_environment_token_authorizes_shutdown(runtime_control, monkeypatch):
+    monkeypatch.setenv("TEST_SYSTEM_SHUTDOWN_TOKEN", "env-secret")
+    app = FastAPI()
+    server = SimpleNamespace(should_exit=False)
+    app.state.uvicorn_server = server
+    runtime_control.install_shutdown_route(app, allowed_hosts=ALLOWED_HOSTS)
+
+    response = TestClient(app).post(
+        "/__desktop/shutdown", headers={TOKEN_HEADER: "env-secret"}
+    )
+
+    assert response.status_code == 200
+    assert server.should_exit is True
+
+
+def test_explicit_token_takes_precedence_over_environment(runtime_control, monkeypatch):
+    monkeypatch.setenv("TEST_SYSTEM_SHUTDOWN_TOKEN", "env-secret")
+    app = make_app(runtime_control, token="explicit-secret")
+    server = SimpleNamespace(should_exit=False)
+    app.state.uvicorn_server = server
+    client = TestClient(app)
+
+    env_response = client.post(
+        "/__desktop/shutdown", headers={TOKEN_HEADER: "env-secret"}
+    )
+    explicit_response = client.post(
+        "/__desktop/shutdown", headers={TOKEN_HEADER: "explicit-secret"}
+    )
+
+    assert env_response.status_code == 403
+    assert explicit_response.status_code == 200
+    assert server.should_exit is True
+
+
+def test_default_allowed_hosts_excludes_testclient(runtime_control):
+    app = FastAPI()
+    server = SimpleNamespace(should_exit=False)
+    app.state.uvicorn_server = server
+    runtime_control.install_shutdown_route(app, token="secret")
+
+    response = TestClient(app).post(
+        "/__desktop/shutdown", headers={TOKEN_HEADER: "secret"}
+    )
+
+    assert response.status_code == 403
+    assert server.should_exit is False
 
 
 @pytest.mark.parametrize("headers", [{}, {TOKEN_HEADER: "wrong"}])
@@ -115,11 +207,35 @@ def test_shutdown_route_is_absent_from_openapi(runtime_control):
     assert "/__desktop/shutdown" not in schema["paths"]
 
 
-def test_backend_installs_route_and_uses_controlled_uvicorn_server():
+def test_backend_main_uses_configured_controlled_uvicorn_server(monkeypatch):
     source = BACKEND_PATH.read_text(encoding="utf-8")
-
     assert source.count("install_shutdown_route(app)") == 1
-    assert "server = uvicorn.Server(" in source
-    assert "app.state.uvicorn_server = server" in source
-    assert "server.run()" in source
-    assert "uvicorn.run(" not in source
+    records = make_fake_uvicorn(monkeypatch)
+    app = SimpleNamespace(state=SimpleNamespace())
+    config = SimpleNamespace(
+        TUTOR_SERVICE_HOST="configured-tutor-host",
+        TUTOR_SERVICE_PORT=18002,
+        RAG_SERVICE_URL="http://configured-rag",
+    )
+
+    execute_main_block(
+        BACKEND_PATH,
+        {
+            "__name__": "__main__",
+            "app": app,
+            "config": config,
+            "check_port_available": lambda port: True,
+        },
+    )
+
+    assert len(records.configs) == 1
+    assert records.configs[0].app is app
+    assert records.configs[0].kwargs == {
+        "host": "configured-tutor-host",
+        "port": 18002,
+        "log_level": "info",
+    }
+    assert records.configs[0].reload is False
+    assert len(records.servers) == 1
+    assert app.state.uvicorn_server is records.servers[0]
+    assert records.servers[0].ran is True
