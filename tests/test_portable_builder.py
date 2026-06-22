@@ -3,7 +3,10 @@ from __future__ import annotations
 import importlib.util
 import json
 import subprocess
+import sys
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +17,7 @@ def _load_builder():
     spec = importlib.util.spec_from_file_location("portable_builder", module_path)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -97,22 +101,64 @@ def test_builder_excludes_venv_user_data_and_model_caches():
     assert not builder.should_exclude(Path("packaging/portable_runtime.py"))
 
 
-def test_validate_python_runtime_requires_exact_31310(tmp_path: Path):
-    builder = _load_builder()
+def _python_home(tmp_path: Path) -> Path:
     python_home = tmp_path / "python"
     python_home.mkdir()
     (python_home / "python.exe").write_bytes(b"exe")
+    return python_home
+
+
+def _runtime_result(command, *, version="3.13.10", machine="AMD64", bits="64bit"):
+    return subprocess.CompletedProcess(
+        command,
+        0,
+        stdout=json.dumps({"version": version, "machine": machine, "bits": bits}),
+        stderr="",
+    )
+
+
+def test_validate_python_runtime_returns_structured_amd64_info(tmp_path: Path):
+    builder = _load_builder()
+    python_home = _python_home(tmp_path)
+    calls = []
 
     def fake_run(command, **kwargs):
-        return subprocess.CompletedProcess(command, 0, stdout="3.13.12\n", stderr="")
+        calls.append(command)
+        return _runtime_result(command, machine="amd64")
 
-    try:
+    info = builder.validate_python_runtime(python_home, run=fake_run)
+
+    assert info == builder.PythonRuntimeInfo(version="3.13.10", machine="AMD64", bits="64bit")
+    assert len(calls) == 1
+    assert "json.dumps" in calls[0][2]
+
+
+@pytest.mark.parametrize(
+    ("field", "actual", "expected"),
+    [
+        ("version", "3.13.12", "3.13.10"),
+        ("machine", "x86_64", "AMD64"),
+        ("bits", "32bit", "64bit"),
+    ],
+)
+def test_validate_python_runtime_rejects_non_target_runtime(
+    tmp_path: Path, field: str, actual: str, expected: str
+):
+    builder = _load_builder()
+    python_home = _python_home(tmp_path)
+
+    values = {"version": "3.13.10", "machine": "AMD64", "bits": "64bit"}
+    values[field] = actual
+
+    def fake_run(command, **kwargs):
+        return _runtime_result(command, **values)
+
+    with pytest.raises(ValueError) as exc_info:
         builder.validate_python_runtime(python_home, run=fake_run)
-    except ValueError as exc:
-        assert "3.13.10" in str(exc)
-        assert "3.13.12" in str(exc)
-    else:
-        raise AssertionError("Expected exact-version validation failure")
+
+    message = str(exc_info.value)
+    assert f"expected {expected}" in message
+    assert f"actual {actual}" in message
 
 
 def test_base_install_command_targets_package_site_packages(tmp_path: Path):
@@ -135,15 +181,34 @@ def test_portable_base_requirements_include_lightrag_openai_client():
     assert "openai==2.36.0" in requirements.splitlines()
 
 
+def test_portable_base_requirements_are_pinned_for_cpython_31310_x64_without_mineru():
+    lines = (ROOT / "packaging" / "requirements-portable-base.txt").read_text(
+        encoding="utf-8"
+    ).splitlines()
+
+    assert lines[0] == "# CPython 3.13.10 x64 lock target; all runtime dependencies must remain pinned."
+    dependencies = [line for line in lines if line and not line.startswith("#")]
+    assert dependencies
+    assert all("==" in dependency for dependency in dependencies)
+    assert all("mineru" not in dependency.lower() for dependency in dependencies)
+
+
 def test_manifest_uses_relative_paths(tmp_path: Path):
     builder = _load_builder()
     package_dir = tmp_path / "Test-System-Portable"
     manifest_path = package_dir / "runtime" / "portable-manifest.json"
 
-    builder.write_manifest(manifest_path, python_version="3.13.10", ffmpeg_available=True, libreoffice_available=False)
+    builder.write_manifest(
+        manifest_path,
+        python_info=builder.PythonRuntimeInfo("3.13.10", "AMD64", "64bit"),
+        ffmpeg_available=True,
+        libreoffice_available=False,
+    )
 
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["python"]["path"] == "runtime/python/python.exe"
+    assert data["python"]["machine"] == "AMD64"
+    assert data["python"]["bits"] == "64bit"
     assert data["base_site_packages"]["path"] == "runtime/site-packages"
     assert data["mineru"]["bundled"] is False
     assert str(tmp_path) not in manifest_path.read_text(encoding="utf-8")
@@ -175,9 +240,17 @@ def test_bootstrap_log_does_not_leak_build_machine_package_path(tmp_path: Path):
         (target / "bin" / "uvicorn.exe").write_bytes(b"absolute launcher")
         return subprocess.CompletedProcess(command, 0, stdout=f"installed into {package_dir}", stderr="")
 
-    builder._install_base_dependencies(package_dir, run=fake_run)
+    builder._install_base_dependencies(package_dir, run=fake_run, uv_executable="fake-uv.exe")
 
     log_text = (package_dir / "runtime" / "logs" / "bootstrap.log").read_text(encoding="utf-8")
     assert str(package_dir) not in log_text
     assert "%PACKAGE_ROOT%" in log_text
     assert not (package_dir / "runtime" / "site-packages" / "bin").exists()
+
+
+def test_install_base_dependencies_reports_missing_uv(tmp_path: Path, monkeypatch):
+    builder = _load_builder()
+    monkeypatch.setattr(builder.shutil, "which", lambda name: None)
+
+    with pytest.raises(RuntimeError, match="uv executable was not found"):
+        builder._install_base_dependencies(tmp_path)
