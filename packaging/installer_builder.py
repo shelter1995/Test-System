@@ -5,8 +5,10 @@ import hashlib
 import importlib.util
 import json
 import shutil
+import stat
 import subprocess
 import sys
+import uuid
 from pathlib import Path
 from types import ModuleType
 
@@ -46,8 +48,46 @@ EXCLUDED_PARTS = {
     "build",
     "__pycache__",
 }
+RESERVED_DESKTOP_NAMES = {
+    "version.json",
+    "runtime",
+    "packaging",
+    "assets",
+    "ai-tutor-system",
+    "rag-anything-api",
+}
 
 _run = subprocess.run
+
+
+def _replace_path(source: Path, destination: Path) -> None:
+    source.replace(destination)
+
+
+def _acquire_lock(lock_path: Path, owner: str) -> None:
+    try:
+        with lock_path.open("x", encoding="utf-8", newline="") as stream:
+            stream.write(owner)
+    except FileExistsError as exc:
+        raise RuntimeError("another installer build is already running in this output root") from exc
+
+
+def _release_lock(lock_path: Path, owner: str) -> None:
+    try:
+        if lock_path.read_text(encoding="utf-8") == owner:
+            lock_path.unlink()
+    except FileNotFoundError:
+        pass
+
+
+def _resolve_uv_executable(candidate: str | None) -> str:
+    discovered = candidate or shutil.which("uv")
+    if not discovered:
+        raise FileNotFoundError("uv executable was not found on PATH")
+    resolved = Path(discovered)
+    if not resolved.is_file():
+        raise FileNotFoundError(f"uv executable is not a file: {resolved}")
+    return str(resolved.resolve())
 
 
 def _load_module(path: Path, name: str) -> ModuleType:
@@ -58,6 +98,61 @@ def _load_module(path: Path, name: str) -> ModuleType:
     sys.modules[name] = module
     spec.loader.exec_module(module)
     return module
+
+
+def collect_tracked_files(root: Path) -> set[Path]:
+    result = subprocess.run(
+        ["git", "-C", str(root), "ls-files", "-z", "--"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or b"").decode(errors="replace").strip()
+        raise RuntimeError(f"git ls-files failed for source root: {detail}")
+    return {
+        Path(item.decode(errors="surrogateescape"))
+        for item in (result.stdout or b"").split(b"\0")
+        if item
+    }
+
+
+def is_reparse_point(path) -> bool:
+    if path.is_symlink():
+        return True
+    attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    return bool(attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+
+
+def _is_within(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+        return True
+    except ValueError:
+        return False
+
+
+def _paths_overlap(first: Path, second: Path) -> bool:
+    first = first.resolve(strict=False)
+    second = second.resolve(strict=False)
+    return _is_within(first, second) or _is_within(second, first)
+
+
+def _validate_safe_path(path: Path, approved_root: Path) -> None:
+    approved_root = approved_root.absolute()
+    path = path.absolute()
+    try:
+        relative = path.relative_to(approved_root)
+    except ValueError as exc:
+        raise ValueError(f"Path escapes approved source root: {path}") from exc
+    current = approved_root
+    for part in (Path("."), *relative.parts):
+        current = current if part == Path(".") else current / part
+        if is_reparse_point(current):
+            raise ValueError(f"symlink or reparse point is not allowed: {current}")
+    resolved_root = approved_root.resolve(strict=True)
+    resolved = path.resolve(strict=True)
+    if not _is_within(resolved, resolved_root):
+        raise ValueError(f"Resolved path escapes approved source root: {path}")
 
 
 def _is_excluded(relative_path: Path) -> bool:
@@ -71,39 +166,96 @@ def _is_excluded(relative_path: Path) -> bool:
     return False
 
 
-def _copy_source_item(source: Path, target: Path, root: Path) -> None:
-    if _is_excluded(source.relative_to(root)):
-        return
-    if source.is_dir():
-        target.mkdir(parents=True, exist_ok=True)
-        for child in source.iterdir():
-            _copy_source_item(child, target / child.name, root)
-        return
-    target.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(source, target)
+def _allowed_source_destination(relative: Path) -> Path | None:
+    if relative.is_absolute() or ".." in relative.parts or not relative.parts:
+        return None
+    if _is_excluded(relative):
+        return None
+    if relative.parts[0] in SOURCE_DIRECTORIES:
+        return relative
+    if len(relative.parts) == 1 and relative.name in (*USER_DOCUMENTS, "version.json"):
+        return relative
+    if (
+        len(relative.parts) == 2
+        and relative.parts[0] == "packaging"
+        and relative.parts[1] in PACKAGING_FILES
+    ):
+        return relative
+    return None
 
 
-def _copy_application_sources(root: Path, stage: Path) -> None:
-    for name in SOURCE_DIRECTORIES:
+def _plan_application_sources(root: Path, tracked_files: set[Path]) -> list[tuple[Path, Path]]:
+    planned: list[tuple[Path, Path]] = []
+    for relative in sorted(tracked_files, key=lambda item: item.as_posix()):
+        destination = _allowed_source_destination(relative)
+        if destination is None:
+            continue
+        source = root / relative
+        if not source.exists():
+            raise FileNotFoundError(f"Tracked source file is missing: {source}")
+        _validate_safe_path(source, root)
+        if not source.is_file():
+            raise ValueError(f"Tracked source must be a regular file: {source}")
+        planned.append((source, destination))
+    return planned
+
+
+def _copy_application_sources(stage: Path, planned: list[tuple[Path, Path]]) -> None:
+    for source, relative in planned:
+        target = stage / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _plan_desktop_publish(desktop_publish: Path, source_destinations: set[Path]) -> list[tuple[Path, Path]]:
+    if not desktop_publish.is_dir():
+        raise FileNotFoundError(f"desktop publish directory not found: {desktop_publish}")
+    _validate_safe_path(desktop_publish, desktop_publish)
+    planned: list[tuple[Path, Path]] = []
+    pending = [desktop_publish]
+    while pending:
+        directory = pending.pop()
+        for child in directory.iterdir():
+            _validate_safe_path(child, desktop_publish)
+            relative = child.relative_to(desktop_publish)
+            if relative.parts[0].lower() in RESERVED_DESKTOP_NAMES:
+                raise ValueError(f"Desktop publish uses reserved top-level name: {relative.parts[0]}")
+            if child.is_dir():
+                pending.append(child)
+                continue
+            if not child.is_file():
+                raise ValueError(f"Desktop publish item must be a regular file: {child}")
+            if relative in source_destinations:
+                raise ValueError(f"Desktop publish destination collision: {relative}")
+            planned.append((child, relative))
+    if not any(relative == Path("TestSystem.exe") for _, relative in planned):
+        raise FileNotFoundError(
+            f"Desktop publish is missing TestSystem.exe: {desktop_publish / 'TestSystem.exe'}"
+        )
+    return planned
+
+
+def _copy_desktop_publish(stage: Path, planned: list[tuple[Path, Path]]) -> None:
+    for source, relative in planned:
+        target = stage / relative
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _validate_topology(
+    root: Path,
+    target: Path,
+    stage: Path,
+    desktop_publish: Path,
+    python_home: Path,
+) -> None:
+    for name in (*SOURCE_DIRECTORIES, "packaging"):
         source = root / name
-        if source.exists():
-            _copy_source_item(source, stage / name, root)
-    for name in USER_DOCUMENTS:
-        source = root / name
-        if source.is_file():
-            shutil.copy2(source, stage / name)
-    version_file = root / "version.json"
-    if version_file.is_file():
-        shutil.copy2(version_file, stage / "version.json")
-
-    packaging_source = root / "packaging"
-    packaging_target = stage / "packaging"
-    if packaging_source.is_dir():
-        for name in PACKAGING_FILES:
-            source = packaging_source / name
-            if source.is_file():
-                packaging_target.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(source, packaging_target / name)
+        if source.exists() and (_paths_overlap(target, source) or _paths_overlap(stage, source)):
+            raise ValueError(f"Installer output paths overlap copied source: {source}")
+    for label, source in (("desktop publish", desktop_publish), ("python home", python_home)):
+        if _paths_overlap(source, target) or _paths_overlap(source, stage):
+            raise ValueError(f"{label} must not overlap installer target or staging path")
 
 
 def _requirements_sha256(path: Path) -> str:
@@ -172,41 +324,54 @@ def _build_install_image(
     uv_executable: str | None,
     webview_sdk_version: str,
 ) -> Path:
-    root = root.resolve()
-    output_root = (root / output_root).resolve() if not output_root.is_absolute() else output_root.resolve()
-    python_home = python_home.resolve()
-    desktop_publish = desktop_publish.resolve()
-    version_file = version_file.resolve()
+    root = root.absolute()
+    output_root = (root / output_root).absolute() if not output_root.is_absolute() else output_root.absolute()
+    python_home = python_home.absolute()
+    desktop_publish = desktop_publish.absolute()
+    version_file = (root / version_file).absolute() if not version_file.is_absolute() else version_file.absolute()
     target = output_root / PACKAGE_NAME
-    temporary = output_root / f".{PACKAGE_NAME}.building"
+    owner = uuid.uuid4().hex
+    temporary = output_root / f".{PACKAGE_NAME}.building-{owner}"
+    backup = output_root / f".{PACKAGE_NAME}.backup-{owner}"
+    lock_path = output_root / f".{PACKAGE_NAME}.lock"
+
+    _validate_topology(root, target, temporary, desktop_publish, python_home)
+    tracked_files = collect_tracked_files(root)
+    planned_sources = _plan_application_sources(root, tracked_files)
+    source_destinations = {destination for _, destination in planned_sources}
+    try:
+        version_relative = version_file.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("version file must be a tracked file inside the source root") from exc
+    if version_relative not in tracked_files:
+        raise ValueError("version file must be tracked by git")
+    _validate_safe_path(version_file, root)
+    planned_desktop = _plan_desktop_publish(desktop_publish, source_destinations)
+    resolved_uv = _resolve_uv_executable(uv_executable)
 
     output_root.mkdir(parents=True, exist_ok=True)
-    shutil.rmtree(target, ignore_errors=True)
-    shutil.rmtree(temporary, ignore_errors=True)
+    _acquire_lock(lock_path, owner)
+    stage_owned = False
 
     try:
-        if not desktop_publish.is_dir():
-            raise FileNotFoundError(f"desktop publish directory not found: {desktop_publish}")
-        host = desktop_publish / "TestSystem.exe"
-        if not host.is_file():
-            raise FileNotFoundError(f"Desktop publish is missing TestSystem.exe: {host}")
-
         portable = _load_module(root / "packaging" / "portable_builder.py", "_installer_portable_builder")
         product_versions = _load_module(root / "packaging" / "product_version.py", "_installer_product_version")
         python_info = portable.validate_python_runtime(python_home, run=_run)
         product_version = product_versions.read_product_version(version_file).text
 
         temporary.mkdir(parents=True)
-        _copy_application_sources(root, temporary)
+        stage_owned = True
+        _copy_application_sources(temporary, planned_sources)
         if version_file != root / "version.json":
             shutil.copy2(version_file, temporary / "version.json")
-        shutil.copytree(desktop_publish, temporary, dirs_exist_ok=True)
+        _copy_desktop_publish(temporary, planned_desktop)
 
         portable._copy_python_runtime(python_home, temporary)
         portable._install_base_dependencies(
             temporary,
             run=_run,
-            uv_executable=uv_executable,
+            uv_executable=resolved_uv,
+            log_path=output_root / "build-logs" / "bootstrap.log",
         )
         portable._create_env_files(temporary)
         ffmpeg_available = bool(ffmpeg_bin) and portable._copy_ffmpeg(temporary, ffmpeg_bin)
@@ -222,12 +387,22 @@ def _build_install_image(
             libreoffice_available=libreoffice_available,
         )
 
-        temporary.replace(target)
+        had_target = target.exists()
+        if had_target:
+            _replace_path(target, backup)
+        try:
+            _replace_path(temporary, target)
+        except BaseException:
+            if had_target and backup.exists() and not target.exists():
+                _replace_path(backup, target)
+            raise
+        if backup.exists():
+            shutil.rmtree(backup)
         return target
-    except BaseException:
-        shutil.rmtree(temporary, ignore_errors=True)
-        shutil.rmtree(target, ignore_errors=True)
-        raise
+    finally:
+        if stage_owned:
+            shutil.rmtree(temporary, ignore_errors=True)
+        _release_lock(lock_path, owner)
 
 
 def build_install_image(
@@ -267,17 +442,20 @@ def main() -> None:
     parser.add_argument("--webview-sdk-version", default="1.0.4022.49")
     args = parser.parse_args()
 
-    result = _build_install_image(
-        args.root,
-        args.output_root,
-        args.python_home,
-        args.desktop_publish,
-        version_file=args.version_file or args.root / "version.json",
-        ffmpeg_bin=args.ffmpeg_bin,
-        libreoffice_path=args.libreoffice_path,
-        uv_executable=args.uv_executable,
-        webview_sdk_version=args.webview_sdk_version,
-    )
+    try:
+        result = _build_install_image(
+            args.root,
+            args.output_root,
+            args.python_home,
+            args.desktop_publish,
+            version_file=args.version_file or args.root / "version.json",
+            ffmpeg_bin=args.ffmpeg_bin,
+            libreoffice_path=args.libreoffice_path,
+            uv_executable=args.uv_executable,
+            webview_sdk_version=args.webview_sdk_version,
+        )
+    except (FileNotFoundError, ValueError, RuntimeError, OSError) as exc:
+        parser.exit(1, f"error: {exc}\n")
     print(f"Install image created: {result}")
 
 

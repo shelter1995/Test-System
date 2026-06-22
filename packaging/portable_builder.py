@@ -3,8 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -171,6 +173,7 @@ def _install_base_dependencies(
     *,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
     uv_executable: str | None = None,
+    log_path: Path | None = None,
 ) -> None:
     python_exe = package_dir / "runtime" / "python" / "python.exe"
     requirements = package_dir / "packaging" / "requirements-portable-base.txt"
@@ -181,14 +184,29 @@ def _install_base_dependencies(
         raise RuntimeError("uv executable was not found; install uv or pass uv_executable.")
     command = build_base_install_command(uv_executable, python_exe, requirements, target)
     result = run(command, capture_output=True, text=True, check=False)
-    log_path = package_dir / "runtime" / "logs" / "bootstrap.log"
+    log_path = log_path or package_dir / "runtime" / "logs" / "bootstrap.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_text = f"$ {' '.join(command)}\n\nSTDOUT\n{result.stdout or ''}\n\nSTDERR\n{result.stderr or ''}\n"
-    package_text = str(package_dir)
-    log_text = log_text.replace(uv_executable, "uv").replace(package_text, "%PACKAGE_ROOT%").replace(
-        package_text.replace("\\", "/"),
-        "%PACKAGE_ROOT%",
+    log_text = re.sub(
+        r"([A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@",
+        r"\1<redacted>@",
+        log_text,
     )
+    sensitive_paths = (
+        (str(package_dir), "%PACKAGE_ROOT%"),
+        (str(python_exe.parent), "%PYTHON_HOME%"),
+        (str(uv_executable), "%UV_EXECUTABLE%"),
+        (str(Path.home()), "%USER_HOME%"),
+        (tempfile.gettempdir(), "%TEMP%"),
+    )
+    replacements: list[tuple[str, str]] = []
+    for value, replacement in sensitive_paths:
+        if value:
+            replacements.extend(
+                ((value, replacement), (value.replace("\\", "/"), replacement))
+            )
+    for value, replacement in sorted(set(replacements), key=lambda item: len(item[0]), reverse=True):
+        log_text = log_text.replace(value, replacement)
     log_path.write_text(log_text, encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(f"Base dependency installation failed. See {log_path}")

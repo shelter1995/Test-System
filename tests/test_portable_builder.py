@@ -4,6 +4,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -254,3 +255,52 @@ def test_install_base_dependencies_reports_missing_uv(tmp_path: Path, monkeypatc
 
     with pytest.raises(RuntimeError, match="uv executable was not found"):
         builder._install_base_dependencies(tmp_path)
+
+
+def test_failed_dependency_log_can_be_external_and_redacts_sensitive_values(tmp_path: Path):
+    builder = _load_builder()
+    package_dir = tmp_path / "stage-secret"
+    python_home = package_dir / "runtime" / "python"
+    python_home.mkdir(parents=True)
+    (python_home / "python.exe").write_bytes(b"exe")
+    (package_dir / "packaging").mkdir()
+    (package_dir / "packaging" / "requirements-portable-base.txt").write_text(
+        "fastapi==0\n", encoding="utf-8"
+    )
+    uv_executable = r"C:\Users\builder\bin\uv-secret.exe"
+    log_path = tmp_path / "build-logs" / "bootstrap.log"
+
+    def failed_run(command, **kwargs):
+        output = "\n".join(
+            (
+                str(package_dir),
+                str(python_home),
+                uv_executable,
+                str(Path.home()),
+                tempfile.gettempdir(),
+                "https://build-user:build-password@example.invalid/simple",
+            )
+        )
+        return subprocess.CompletedProcess(command, 1, stdout=output, stderr=output)
+
+    with pytest.raises(RuntimeError, match="Base dependency installation failed"):
+        builder._install_base_dependencies(
+            package_dir,
+            run=failed_run,
+            uv_executable=uv_executable,
+            log_path=log_path,
+        )
+
+    text = log_path.read_text(encoding="utf-8")
+    for secret in (
+        str(package_dir),
+        str(python_home),
+        uv_executable,
+        str(Path.home()),
+        tempfile.gettempdir(),
+        "build-user",
+        "build-password",
+    ):
+        assert secret not in text
+    assert "%PACKAGE_ROOT%" in text
+    assert "https://<redacted>@example.invalid/simple" in text
