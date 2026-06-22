@@ -8,8 +8,16 @@ venv/
 *.egg-info/
 dist/
 dist-portable/
+dist-installer/
 build/
+.build/
+.cache/prerequisites/
 .pytest_cache/
+
+# Windows desktop installer build output
+desktop-host/**/bin/
+desktop-host/**/obj/
+installer/includes/version.iss
 
 # IDE
 .vscode/
