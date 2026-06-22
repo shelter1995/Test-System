@@ -34,6 +34,8 @@ def _source_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     _write(root / "LICENSE", "license")
     _write(root / "README.md", "readme")
     _write(root / "使用说明.md", "guide")
+    _write(root / ".git" / "config", "excluded")
+    _write(root / "generation_output" / "result.txt", "excluded")
     _write(root / "docs" / "superpowers" / "secret.md", "excluded")
     _write(root / "ai-tutor-system" / "app.py")
     _write(root / "ai-tutor-system" / ".env.example", "API_KEY=\nSAFE=true\n")
@@ -41,10 +43,12 @@ def _source_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     _write(root / "ai-tutor-system" / "tutor_data" / "private.json")
     _write(root / "rag-anything-api" / "api.py")
     _write(root / "rag-anything-api" / ".env.example", "SECRET=\n")
+    _write(root / "rag-anything-api" / "output" / "result.txt", "excluded")
     _write(root / "rag-anything-api" / "storage" / "output" / "result.txt")
     _write(root / "assets" / "logo.txt")
     _write(root / "models" / "cache" / "model.bin")
     _write(root / "dist" / "old.bin")
+    _write(root / "build" / "generated.txt", "excluded")
     _write(root / "packaging" / "portable_builder.py", (ROOT / "packaging" / "portable_builder.py").read_text(encoding="utf-8"))
     _write(root / "packaging" / "product_version.py", (ROOT / "packaging" / "product_version.py").read_text(encoding="utf-8"))
     _write(root / "packaging" / "internal_release_script.py", "raise SystemExit")
@@ -105,12 +109,16 @@ def test_build_install_image_stages_runtime_files_and_excludes_build_data(tmp_pa
         assert (stage / relative).exists(), relative
 
     for relative in (
+        ".git/config",
+        "generation_output/result.txt",
         "docs",
         "ai-tutor-system/tests",
         "ai-tutor-system/tutor_data",
         "rag-anything-api/storage/output",
+        "rag-anything-api/output/result.txt",
         "models",
         "dist",
+        "build/generated.txt",
         "runtime/optional-site-packages",
         "runtime/models",
         "packaging/internal_release_script.py",
