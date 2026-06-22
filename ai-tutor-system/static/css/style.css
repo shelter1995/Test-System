@@ -45,6 +45,7 @@
     /* 工作台布局 */
     --sidebar-width: 220px;
     --topbar-height: 56px;
+    --workspace-frame-max: 1200px;
     --bg-sidebar: #1e293b;
     --text-sidebar: #94a3b8;
     --text-sidebar-active: #ffffff;
@@ -4386,4 +4387,42 @@ select.form-control:disabled,
 .kbchat-db-button:disabled {
     cursor: not-allowed;
     opacity: 0.65;
+}
+
+/* 统一业务页面外框 */
+.kbchat-page,
+#generationApp,
+.welcome-card,
+.chat-container,
+.report-container {
+    width: 100%;
+    max-width: var(--workspace-frame-max);
+    margin-inline: auto;
+    min-width: 0;
+    box-sizing: border-box;
+}
+
+#tutorApp #chatPage,
+#tutorApp #reportPage {
+    padding: 0.5rem 1.5rem 1rem;
+    box-sizing: border-box;
+}
+
+#tutorApp .start-container {
+    overflow-y: visible;
+}
+
+#tutorApp #startPage {
+    overflow: visible;
+}
+
+@media (max-width: 900px) {
+    #tutorApp #chatPage,
+    #tutorApp #reportPage {
+        padding: 0.5rem 1rem 1rem;
+    }
+
+    .start-container {
+        padding: 0.5rem 1rem 1rem;
+    }
 }

@@ -52,6 +52,6 @@ assert.match(
     'custom database pickers should use the same chevron resource and size as native selects'
 );
 assert.ok(
-    htmlSource.includes('/static/css/style.css?v=3.4'),
+    htmlSource.includes('/static/css/style.css?v=3.8'),
     'stylesheet cache version should change with the unified dropdown contract'
 );

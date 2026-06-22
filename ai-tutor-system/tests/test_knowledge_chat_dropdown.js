@@ -29,6 +29,6 @@ assert.ok(
     'knowledge chat script cache version should change with the dropdown markup'
 );
 assert.ok(
-    htmlSource.includes('/static/css/style.css?v=3.4'),
+    htmlSource.includes('/static/css/style.css?v=3.8'),
     'stylesheet cache version should change with the dropdown caret styling'
 );
