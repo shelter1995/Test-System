@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 # 将 ai-tutor-system 目录加入 Python 路径
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from generation_api import router
+from generation_api import _resolve_artifact_path, router
 from fastapi import FastAPI
 
 
@@ -229,6 +229,30 @@ class TestDownloadArtifact:
             "/generation/artifacts/download?path=generation_output/nonexistent.md"
         )
         assert resp.status_code == 404
+
+    def test_resolves_public_path_under_external_artifact_root(self, tmp_path):
+        artifact_root = tmp_path / "external-output"
+
+        resolved = _resolve_artifact_path(
+            "generation_output/report.md",
+            artifact_root=artifact_root,
+        )
+
+        assert resolved == (artifact_root / "report.md").resolve()
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "../report.md",
+            "generation_output/../secret.md",
+            "C:/absolute/report.md",
+        ],
+    )
+    def test_external_artifact_root_rejects_unsafe_paths(self, tmp_path, path):
+        with pytest.raises(Exception) as exc_info:
+            _resolve_artifact_path(path, artifact_root=tmp_path / "external-output")
+
+        assert exc_info.value.status_code in {400, 403}
 
 
 # ==================== DELETE /generation/artifacts ====================

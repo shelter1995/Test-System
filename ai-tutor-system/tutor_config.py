@@ -3,13 +3,37 @@ AI话术陪练系统配置文件
 """
 
 # 从.env文件加载环境变量
+import importlib.util
 import os
+import sys
+from pathlib import Path
+
 from dotenv import load_dotenv
 
-# 尝试加载.env文件
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(env_path):
-    load_dotenv(env_path)
+
+_RUNTIME_PATHS_MODULE = "_test_system_tutor_runtime_paths"
+if _RUNTIME_PATHS_MODULE not in sys.modules:
+    runtime_paths_spec = importlib.util.spec_from_file_location(
+        _RUNTIME_PATHS_MODULE,
+        Path(__file__).resolve().with_name("runtime_paths.py"),
+    )
+    runtime_paths_module = importlib.util.module_from_spec(runtime_paths_spec)
+    sys.modules[_RUNTIME_PATHS_MODULE] = runtime_paths_module
+    runtime_paths_spec.loader.exec_module(runtime_paths_module)
+else:
+    runtime_paths_module = sys.modules[_RUNTIME_PATHS_MODULE]
+get_runtime_paths = runtime_paths_module.get_runtime_paths
+
+# 安装版优先从外置数据目录加载配置，源码模式仍使用本地 .env。
+SOURCE_DIR = Path(__file__).resolve().parent
+data_dir_value = os.getenv("TEST_SYSTEM_DATA_DIR", "").strip()
+data_dir = Path(data_dir_value) if data_dir_value else None
+if data_dir is not None and data_dir.is_absolute():
+    ENV_PATH = (data_dir / "config" / "tutor.env").resolve()
+else:
+    ENV_PATH = (SOURCE_DIR / ".env").resolve()
+if ENV_PATH.exists():
+    load_dotenv(ENV_PATH, override=False)
     print(f"[INFO] 已加载.env配置文件")
 
 # ==================== 历史兼容配置 ====================
@@ -27,11 +51,11 @@ TUTOR_SERVICE_HOST = os.getenv("TUTOR_SERVICE_HOST", "0.0.0.0")
 TUTOR_SERVICE_PORT = int(os.getenv("TUTOR_SERVICE_PORT", "8002"))
 
 # ==================== 数据存储 ====================
-import os
-DATA_DIR = os.path.join(os.path.dirname(__file__), "tutor_data")
-SCENARIOS_FILE = os.path.join(DATA_DIR, "scenarios.json")
-SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
-HISTORY_DIR = os.path.join(DATA_DIR, "history")
+RUNTIME_PATHS = get_runtime_paths()
+DATA_DIR = str(RUNTIME_PATHS.tutor_data)
+SCENARIOS_FILE = str(RUNTIME_PATHS.tutor_data / "scenarios.json")
+SESSIONS_DIR = str(RUNTIME_PATHS.tutor_data / "sessions")
+HISTORY_DIR = str(RUNTIME_PATHS.tutor_data / "history")
 
 # 确保目录存在
 os.makedirs(DATA_DIR, exist_ok=True)

@@ -9,7 +9,9 @@
 - DELETE /generation/artifacts         删除历史产物
 """
 
+import importlib.util
 import re
+import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
@@ -17,23 +19,37 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
 
+
+_RUNTIME_PATHS_MODULE = "_test_system_tutor_runtime_paths"
+if _RUNTIME_PATHS_MODULE not in sys.modules:
+    runtime_paths_spec = importlib.util.spec_from_file_location(
+        _RUNTIME_PATHS_MODULE,
+        Path(__file__).resolve().with_name("runtime_paths.py"),
+    )
+    runtime_paths_module = importlib.util.module_from_spec(runtime_paths_spec)
+    sys.modules[_RUNTIME_PATHS_MODULE] = runtime_paths_module
+    runtime_paths_spec.loader.exec_module(runtime_paths_module)
+else:
+    runtime_paths_module = sys.modules[_RUNTIME_PATHS_MODULE]
+get_runtime_paths = runtime_paths_module.get_runtime_paths
+
 router = APIRouter(prefix="/generation", tags=["generation"])
 
 
-def _resolve_artifact_path(path: str) -> Path:
+def _resolve_artifact_path(path: str, artifact_root: Path | None = None) -> Path:
     """Resolve and validate a generation artifact path."""
-    root = Path(__file__).parent.parent
-    artifact_root = (root / "generation_output").resolve()
-    if ".." in Path(path).parts:
-        raise HTTPException(status_code=400, detail="Invalid path")
-    try:
-        resolved = (root / path).resolve()
-        resolved.relative_to(root.resolve())
-    except (ValueError, TypeError):
+    requested = Path(path)
+    if requested.is_absolute() or ".." in requested.parts:
         raise HTTPException(status_code=400, detail="Invalid path")
 
+    parts = requested.parts
+    if not parts or parts[0] != "generation_output":
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    root = Path(artifact_root or get_runtime_paths().generation_output).resolve()
+    resolved = root.joinpath(*parts[1:]).resolve()
     try:
-        resolved.relative_to(artifact_root)
+        resolved.relative_to(root)
     except ValueError:
         raise HTTPException(status_code=403, detail="Access denied")
 
