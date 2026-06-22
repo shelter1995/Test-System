@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
+VERSION_PATTERN = re.compile(r"^[0-9]+\.[0-9]+\.[0-9]+$")
+MAX_FILE_VERSION_COMPONENT = 65535
 
 
 @dataclass(frozen=True)
@@ -23,7 +24,7 @@ class ProductVersion:
 
 
 def read_product_version(path: str | Path) -> ProductVersion:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
+    payload = json.loads(Path(path).read_text(encoding="utf-8-sig"))
     if not isinstance(payload, dict) or set(payload) != {"version"}:
         raise ValueError("version.json must contain only the version key")
 
@@ -32,6 +33,11 @@ def read_product_version(path: str | Path) -> ProductVersion:
         raise ValueError("version must use MAJOR.MINOR.PATCH")
 
     major, minor, patch = (int(component) for component in text.split("."))
+    if any(
+        component > MAX_FILE_VERSION_COMPONENT
+        for component in (major, minor, patch)
+    ):
+        raise ValueError("version components must be between 0 and 65535")
     return ProductVersion(text=text, major=major, minor=minor, patch=patch)
 
 
@@ -44,7 +50,10 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    version = read_product_version(args.path)
+    try:
+        version = read_product_version(args.path)
+    except (OSError, UnicodeError, ValueError) as exc:
+        parser.error(str(exc))
     values = {
         None: version.text,
         "major": version.major,
