@@ -18,13 +18,15 @@ def _load_builder():
     return module
 
 
-def test_launcher_uses_bundled_python_without_copied_venv():
+def test_launcher_prefers_bundled_python_and_supports_source_checkout_venv():
     text = (ROOT / "start_services.bat").read_text(encoding="utf-8")
 
-    assert r"runtime\python\python.exe" in text
-    assert 'set "VENV=' not in text
-    assert "activate.bat" not in text
-    assert r".venv\Scripts" not in text
+    assert r'set "PORTABLE_PYTHON=%ROOT%runtime\python\python.exe"' in text
+    assert r'set "DEV_PYTHON=%ROOT%.venv\Scripts\python.exe"' in text
+    assert 'set "PYTHON=%PORTABLE_PYTHON%"' in text
+    assert 'if not exist "%PYTHON%" if exist "%DEV_PYTHON%"' in text
+    assert 'set "RUNTIME_MODE=development"' in text
+    assert 'if /I "%RUNTIME_MODE%"=="development" goto runtime_ready' in text
     assert '"%PYTHON%" start.py' in text
     assert '"%PYTHON%" tutor_backend.py' in text
 

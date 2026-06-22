@@ -3,7 +3,14 @@ setlocal EnableExtensions
 chcp 65001 >nul
 
 set "ROOT=%~dp0"
-set "PYTHON=%ROOT%runtime\python\python.exe"
+set "PORTABLE_PYTHON=%ROOT%runtime\python\python.exe"
+set "DEV_PYTHON=%ROOT%.venv\Scripts\python.exe"
+set "PYTHON=%PORTABLE_PYTHON%"
+set "RUNTIME_MODE=portable"
+if not exist "%PYTHON%" if exist "%DEV_PYTHON%" (
+    set "PYTHON=%DEV_PYTHON%"
+    set "RUNTIME_MODE=development"
+)
 set "RUNTIME_MANAGER=%ROOT%packaging\portable_runtime.py"
 set "RUNTIME_LOGS=%ROOT%runtime\logs"
 set "RUNTIME_STATUS=%RUNTIME_LOGS%\runtime-check.json"
@@ -28,9 +35,10 @@ echo ==================================================
 echo.
 
 if not exist "%PYTHON%" (
-    echo [错误] 便携包内的 Python 不存在：
-    echo        %PYTHON%
-    echo 请重新解压完整压缩包。
+    echo [错误] 未找到可用的 Python：
+    echo        便携运行时：%PORTABLE_PYTHON%
+    echo        开发虚拟环境：%DEV_PYTHON%
+    echo 便携包请重新解压完整压缩包；源码仓库请先创建 .venv 并安装依赖。
     pause
     exit /b 1
 )
@@ -41,6 +49,8 @@ if not exist "%RUNTIME_MANAGER%" (
     pause
     exit /b 1
 )
+
+if /I "%RUNTIME_MODE%"=="development" goto runtime_ready
 
 if not exist "%RUNTIME_LOGS%" mkdir "%RUNTIME_LOGS%"
 "%PYTHON%" "%RUNTIME_MANAGER%" check --root "%ROOT%." --json-output "%RUNTIME_STATUS%" --cmd-output "%RUNTIME_VARS%" >nul
@@ -78,6 +88,7 @@ if not "%MINERU_READY%"=="1" (
 )
 
 :skip_mineru
+:runtime_ready
 echo.
 echo 正在检查服务端口...
 call :check_url "%RAG_HEALTH%"
@@ -134,6 +145,7 @@ exit /b %ERRORLEVEL%
 
 :configure_runtime
 set "PYTHONUTF8=1"
+if /I "%RUNTIME_MODE%"=="development" goto configure_development_runtime
 set "PYTHONPATH=%ROOT%runtime\optional-site-packages;%ROOT%runtime\site-packages;%ROOT%rag-anything-api"
 set "HF_HOME=%ROOT%runtime\models\mineru\huggingface"
 set "HUGGINGFACE_HUB_CACHE=%ROOT%runtime\models\mineru\huggingface\hub"
@@ -142,6 +154,12 @@ set "MINERU_TOOLS_CONFIG_JSON=%ROOT%runtime\models\mineru\mineru.json"
 set "MINERU_PYTHON=%PYTHON%"
 set "PATH=%ROOT%runtime\python;%ROOT%runtime\tools\ffmpeg\bin;%ROOT%runtime\tools\LibreOffice\program;%PATH%"
 if exist "%ROOT%runtime\tools\LibreOffice\program\soffice.exe" set "LIBREOFFICE_PATH=%ROOT%runtime\tools\LibreOffice\program\soffice.exe"
+exit /b 0
+
+:configure_development_runtime
+set "PYTHONPATH=%ROOT%rag-anything-api;%PYTHONPATH%"
+set "MINERU_PYTHON=%PYTHON%"
+set "PATH=%ROOT%.venv\Scripts;%PATH%"
 exit /b 0
 
 :check_url
