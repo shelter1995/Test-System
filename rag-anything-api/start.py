@@ -92,14 +92,18 @@ def main() -> None:
 
     import uvicorn
     import config
+    from app import app
 
-    uvicorn.run(
-        "app:app",
+    server_config = uvicorn.Config(
+        app,
         host=config.RAG_SERVICE_HOST,
         port=config.RAG_SERVICE_PORT,
         log_level="info",
         reload=False,
     )
+    server = uvicorn.Server(server_config)
+    app.state.uvicorn_server = server
+    server.run()
 
 
 if __name__ == "__main__":

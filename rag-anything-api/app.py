@@ -35,6 +35,7 @@ from raganything_service import RAGAnythingService
 from kb_answer import build_context_fallback_answer, build_kb_answer_prompt, extract_source_summaries
 from model_settings import ModelSettingsStore
 from rag_engines.traditional.model_clients import ModelEndpoint, OpenAICompatibleClient
+from runtime_control import install_shutdown_route
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -94,6 +95,7 @@ app = FastAPI(
     default_response_class=UTF8JSONResponse,
     lifespan=lifespan,
 )
+install_shutdown_route(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1881,9 +1883,12 @@ if __name__ == "__main__":
     print(f"  API文档: http://{config.RAG_SERVICE_HOST}:{config.RAG_SERVICE_PORT}/docs")
     print()
 
-    uvicorn.run(
+    server_config = uvicorn.Config(
         app,
         host=config.RAG_SERVICE_HOST,
         port=config.RAG_SERVICE_PORT,
         log_level="info",
     )
+    server = uvicorn.Server(server_config)
+    app.state.uvicorn_server = server
+    server.run()
