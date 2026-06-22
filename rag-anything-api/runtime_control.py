@@ -20,13 +20,20 @@ def install_shutdown_route(
 
     @app.post(SHUTDOWN_PATH, include_in_schema=False)
     async def shutdown(request: Request) -> dict[str, str]:
-        if expected_token is None:
+        if expected_token is None or not expected_token.strip():
             raise HTTPException(status_code=404, detail="Not Found")
         if request.client is None or request.client.host not in permitted_hosts:
             raise HTTPException(status_code=403, detail="Forbidden")
 
         supplied_token = request.headers.get(TOKEN_HEADER)
-        if supplied_token is None or not hmac.compare_digest(supplied_token, expected_token):
+        if supplied_token is None:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        try:
+            expected_bytes = expected_token.encode("ascii")
+            supplied_bytes = supplied_token.encode("ascii")
+        except UnicodeEncodeError:
+            raise HTTPException(status_code=403, detail="Forbidden") from None
+        if not hmac.compare_digest(supplied_bytes, expected_bytes):
             raise HTTPException(status_code=403, detail="Forbidden")
 
         server = getattr(request.app.state, "uvicorn_server", None)

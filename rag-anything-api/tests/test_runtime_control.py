@@ -84,6 +84,26 @@ def test_no_configured_token_returns_404(runtime_control, monkeypatch):
     assert response.status_code == 404
 
 
+@pytest.mark.parametrize("token_source", ["explicit", "environment"])
+@pytest.mark.parametrize("token_value", ["", " ", "\t\r\n"])
+def test_blank_token_is_treated_as_unconfigured(
+    runtime_control, monkeypatch, token_source, token_value
+):
+    app = FastAPI()
+    if token_source == "explicit":
+        monkeypatch.setenv("TEST_SYSTEM_SHUTDOWN_TOKEN", "fallback-secret")
+        runtime_control.install_shutdown_route(
+            app, token=token_value, allowed_hosts=ALLOWED_HOSTS
+        )
+    else:
+        monkeypatch.setenv("TEST_SYSTEM_SHUTDOWN_TOKEN", token_value)
+        runtime_control.install_shutdown_route(app, allowed_hosts=ALLOWED_HOSTS)
+
+    response = TestClient(app).post("/__desktop/shutdown")
+
+    assert response.status_code == 404
+
+
 def test_environment_token_authorizes_shutdown(runtime_control, monkeypatch):
     monkeypatch.setenv("TEST_SYSTEM_SHUTDOWN_TOKEN", "env-secret")
     app = FastAPI()
@@ -155,6 +175,31 @@ def test_missing_or_wrong_token_returns_403(runtime_control, headers):
     )
 
     assert response.status_code == 403
+
+
+def test_non_ascii_header_returns_403(runtime_control):
+    app = FastAPI()
+    server = SimpleNamespace(should_exit=False)
+    app.state.uvicorn_server = server
+    runtime_control.install_shutdown_route(app, token="secret")
+    route = next(route for route in app.routes if route.path == "/__desktop/shutdown")
+    request = Request(
+        {
+            "type": "http",
+            "app": app,
+            "headers": [(TOKEN_HEADER.lower().encode(), b"\xff")],
+            "method": "POST",
+            "path": "/__desktop/shutdown",
+            "query_string": b"",
+            "client": ("127.0.0.1", 50000),
+        }
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(route.endpoint(request))
+
+    assert exc_info.value.status_code == 403
+    assert server.should_exit is False
 
 
 def test_non_loopback_client_returns_403(runtime_control):
