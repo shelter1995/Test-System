@@ -39,6 +39,7 @@ def audit_install_image(
         _check_manifest(stage, failures)
         _check_forbidden_items(stage, failures)
         _check_required_files(stage, failures, webview_manifest=webview_manifest)
+        _check_rag_start_script(stage, failures)
         _check_version_consistency(stage, failures)
     except Exception as exc:
         failures.append(f"Audit crashed: {exc}")
@@ -183,6 +184,31 @@ def _check_required_files(
                     break
     if not webview2_found:
         failures.append("WebView2 Runtime prerequisite not found")
+
+
+def _check_rag_start_script(stage: Path, failures: list[str]) -> None:
+    start_script = stage / "rag-anything-api" / "start.py"
+    if not start_script.is_file():
+        failures.append("RAG start script missing: rag-anything-api/start.py")
+        return
+    try:
+        text = start_script.read_text(encoding="utf-8")
+    except OSError as exc:
+        failures.append(f"Unable to read RAG start script: {exc}")
+        return
+
+    missing_env_message = ".env 文件不存在"
+    offline_ok_message = "将使用环境变量或安装版数据目录中的配置"
+    if missing_env_message in text and offline_ok_message not in text:
+        failures.append("RAG start script still treats missing .env as a setup error")
+    lines = text.splitlines()
+    for index, line in enumerate(lines):
+        if missing_env_message not in line:
+            continue
+        nearby = "\n".join(lines[index:index + 4])
+        if "sys.exit(1)" in nearby:
+            failures.append("RAG start script may exit when .env is missing")
+            break
 
 
 def _check_version_consistency(stage: Path, failures: list[str]) -> None:

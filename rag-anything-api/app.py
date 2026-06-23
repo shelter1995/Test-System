@@ -68,6 +68,7 @@ async def initialize_service() -> None:
             storage_root=config.RAGANYTHING_STORAGE_ROOT,
             output_root=config.RAGANYTHING_OUTPUT_ROOT,
             registry=registry,
+            settings_provider=_runtime_model_settings,
         )
         _recover_interrupted_processing_documents(rag_service)
         traditional_service = create_traditional_engine()

@@ -204,6 +204,7 @@ class RAGAnythingService:
         output_root: str | Path,
         registry: DatabaseRegistry,
         rag_factory: Callable[[str, Path], Any] | None = None,
+        settings_provider: Callable[[], dict[str, Any]] | None = None,
         query_timeout: float | None = None,
         max_instances: int | None = None,
     ):
@@ -211,6 +212,7 @@ class RAGAnythingService:
         self.output_root = Path(output_root)
         self.registry = registry
         self.rag_factory = rag_factory or self._create_rag
+        self.settings_provider = settings_provider or self._default_model_settings
         self.query_timeout = float(query_timeout or config.QUERY_ALL_TIMEOUT)
         self.max_instances = max(1, int(max_instances or config.MAX_RAG_INSTANCES))
         self._instances: OrderedDict[str, Any] = OrderedDict()
@@ -218,6 +220,51 @@ class RAGAnythingService:
 
         self.storage_root.mkdir(parents=True, exist_ok=True)
         self.output_root.mkdir(parents=True, exist_ok=True)
+
+    def _default_model_settings(self) -> dict[str, Any]:
+        return {
+            "llm": {
+                "provider": "minimax",
+                "base_url": config.MINIMAX_BASE_URL,
+                "api_key": config.MINIMAX_API_KEY,
+                "model": config.MINIMAX_MODEL_M27,
+                "timeout": config.LLM_TIMEOUT_M27,
+            },
+            "embedding": {
+                "provider": "siliconflow",
+                "base_url": config.SILICONFLOW_BASE_URL,
+                "api_key": config.SILICONFLOW_API_KEY,
+                "model": config.SILICONFLOW_MODEL,
+                "dimension": config.EMBEDDING_DIM,
+            },
+            "rerank": {
+                "enabled": config.ENABLE_RERANK,
+                "provider": "siliconflow",
+                "base_url": config.RERANK_BASE_URL,
+                "api_key": config.RERANK_API_KEY,
+                "model": config.RERANK_MODEL,
+                "top_n": 5,
+                "timeout": config.EMBEDDING_TIMEOUT,
+            },
+        }
+
+    def _runtime_model_settings(self) -> dict[str, Any]:
+        try:
+            settings = self.settings_provider() or {}
+        except Exception as exc:
+            logger.warning("读取运行时模型设置失败，回退到兼容配置: %s", exc)
+            settings = {}
+        defaults = self._default_model_settings()
+        merged: dict[str, Any] = {}
+        for name, default_section in defaults.items():
+            current = settings.get(name) or {}
+            if not isinstance(current, dict):
+                current = {}
+            merged[name] = {**default_section, **current}
+        return merged
+
+    def _model_section(self, name: str) -> dict[str, Any]:
+        return self._runtime_model_settings().get(name) or {}
 
     def _db_working_dir(self, database_id: str) -> Path:
         return self.storage_root / database_id / "rag_storage"
@@ -264,14 +311,15 @@ class RAGAnythingService:
             return None
 
     async def _call_llm(self, prompt: str, system_prompt: str | None = None, history_messages: list | None = None, **kwargs) -> str:
-        llm_base = _normalize_base_url(config.MINIMAX_BASE_URL, "/v1")
+        llm = self._model_section("llm")
+        llm_base = _normalize_base_url(str(llm.get("base_url") or config.MINIMAX_BASE_URL), "/v1")
         kwargs.pop("keyword_extraction", None)
         response = await openai_complete_if_cache(
-            config.MINIMAX_MODEL_M27,
+            str(llm.get("model") or config.MINIMAX_MODEL_M27),
             prompt,
             system_prompt=system_prompt,
             history_messages=history_messages or [],
-            api_key=config.MINIMAX_API_KEY,
+            api_key=str(llm.get("api_key") or ""),
             base_url=llm_base,
             **kwargs,
         )
@@ -283,7 +331,8 @@ class RAGAnythingService:
         if config.HF_ENDPOINT:
             os.environ["HF_ENDPOINT"] = config.HF_ENDPOINT
 
-        embedding_base = _normalize_base_url(config.SILICONFLOW_BASE_URL, "/v1")
+        embedding = self._model_section("embedding")
+        embedding_base = _normalize_base_url(str(embedding.get("base_url") or config.SILICONFLOW_BASE_URL), "/v1")
 
         async def llm_model_func(prompt, system_prompt=None, history_messages=None, **kwargs):
             return await self._call_llm(
@@ -296,14 +345,14 @@ class RAGAnythingService:
         async def embedding_func_async(texts, **kwargs):
             return await openai_embed.func(
                 texts=texts,
-                model=config.SILICONFLOW_MODEL,
+                model=str(embedding.get("model") or config.SILICONFLOW_MODEL),
                 base_url=embedding_base,
-                api_key=config.SILICONFLOW_API_KEY,
+                api_key=str(embedding.get("api_key") or ""),
                 max_token_size=config.EMBEDDING_MAX_TOKENS,
             )
 
         embedding_func = EmbeddingFunc(
-            embedding_dim=config.EMBEDDING_DIM,
+            embedding_dim=int(embedding.get("dimension") or config.EMBEDDING_DIM),
             max_token_size=config.EMBEDDING_MAX_TOKENS,
             func=embedding_func_async,
         )
@@ -457,17 +506,19 @@ class RAGAnythingService:
     # ------------------------------------------------------------------
     def _build_rerank_func(self):
         """创建硅基流动 Rerank 函数。"""
-        if not config.ENABLE_RERANK or not config.RERANK_API_KEY:
+        rerank = self._model_section("rerank")
+        if not bool(rerank.get("enabled")) or not str(rerank.get("api_key") or ""):
             return None
 
-        api_key = config.RERANK_API_KEY
-        base_url = config.RERANK_BASE_URL
-        model = config.RERANK_MODEL
-        timeout = config.EMBEDDING_TIMEOUT
+        api_key = str(rerank.get("api_key") or "")
+        base_url = _normalize_base_url(str(rerank.get("base_url") or config.RERANK_BASE_URL), "/v1")
+        model = str(rerank.get("model") or config.RERANK_MODEL)
+        timeout = int(rerank.get("timeout") or config.EMBEDDING_TIMEOUT)
 
         async def rerank_model_func(query: str, documents: list, top_k: int = 5):
             if not documents:
                 return []
+            top_n = min(int(rerank.get("top_n") or top_k), top_k, len(documents))
             async with httpx.AsyncClient(timeout=timeout) as client:
                 resp = await client.post(
                     f"{base_url}/rerank",
@@ -479,7 +530,7 @@ class RAGAnythingService:
                         "model": model,
                         "query": query,
                         "documents": documents,
-                        "top_n": min(top_k, len(documents)),
+                        "top_n": top_n,
                     },
                 )
                 resp.raise_for_status()

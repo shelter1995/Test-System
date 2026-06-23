@@ -242,6 +242,24 @@ class TestArtifactAuditorRejects:
         with pytest.raises(verifier.AuditError, match="SHA"):
             verifier.audit_install_image(stage)
 
+    def test_rejects_rag_start_script_that_exits_without_env_file(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+            "TestSystem.exe": "fake-exe",
+            "runtime/python/python.exe": "fake-python",
+            ".cache/prerequisites/MicrosoftEdgeWebView2RuntimeInstallerX64.exe": "fake-webview2",
+            "rag-anything-api/start.py": (
+                'if not Path(".env").exists():\n'
+                '    print("[WARN] .env 文件不存在，请复制 .env.example 并填写 API 密钥")\n'
+                "    sys.exit(1)\n"
+            ),
+        })
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match=r"\.env"):
+            verifier.audit_install_image(stage)
+
 
 class TestArtifactAuditorAccepts:
     """Tests that the auditor passes a valid stage and produces a JSON report."""
@@ -255,6 +273,7 @@ class TestArtifactAuditorAccepts:
             ".cache/prerequisites/MicrosoftEdgeWebView2RuntimeInstallerX64.exe": "fake-webview2",
             "packaging/requirements-portable-base.txt": "pinned==1.0",
             "rag-anything-api/app.py": "# rag app",
+            "rag-anything-api/start.py": 'print("[WARN] .env 文件不存在，将使用环境变量或安装版数据目录中的配置")',
             "ai-tutor-system/tutor_backend.py": "# tutor backend",
         })
 
