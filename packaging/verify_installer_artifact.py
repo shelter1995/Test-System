@@ -141,10 +141,13 @@ def _check_required_files(
     webview2_found = False
     if webview_manifest is not None and webview_manifest.is_file():
         try:
-            data = json.loads(webview_manifest.read_text(encoding="utf-8"))
+            raw = webview_manifest.read_bytes()
+            if raw.startswith(b"\xef\xbb\xbf"):
+                raw = raw[3:]
+            data = json.loads(raw.decode("utf-8"))
             if data.get("sha256"):
                 webview2_found = True
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             pass
     if not webview2_found:
         webview2_dir = stage / ".cache" / "prerequisites"

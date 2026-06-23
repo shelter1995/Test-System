@@ -144,6 +144,6 @@ $manifest = @{
     signerSubject = $signer
 } | ConvertTo-Json -Depth 4
 
-$manifest | Set-Content -Path $ManifestPath -Encoding UTF8
+$manifest | Set-Content -Path $ManifestPath -Encoding ASCII
 Write-Status "Manifest written to: $ManifestPath"
 Write-Status "Prerequisite acquisition complete."
