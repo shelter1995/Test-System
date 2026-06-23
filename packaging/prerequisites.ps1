@@ -55,8 +55,20 @@ if ($Offline) {
     }
 
     $fileSize = (Get-Item $InstallerPath).Length
-    if ($fileSize -lt 10MB) {
-        Write-Error "Downloaded file is too small ($([math]::Round($fileSize / 1KB, 0)) KB). The download may have been incomplete or redirected to an HTML page. Try manually downloading from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ and place the Evergreen Standalone Installer at: $InstallerPath"
+    if ($fileSize -lt 50MB) {
+        $sizeKB = [math]::Round($fileSize / 1KB, 0)
+        Write-Error @"
+Downloaded file is too small ($sizeKB KB). This appears to be the WebView2 Bootstrapper (~2 MB), not the offline Evergreen Standalone Installer (~140+ MB).
+
+The Microsoft fwlink ($DownloadUrl) may serve the bootstrapper instead of the standalone installer.
+For offline installation, you must manually download the Evergreen Standalone Installer:
+  1. Visit https://developer.microsoft.com/en-us/microsoft-edge/webview2/
+  2. Under "Evergreen Standalone Installer", download the x64 version
+  3. Place the file at: $InstallerPath
+  4. Re-run this script (or build_installer.ps1)
+
+Expected minimum size: 50 MB. Actual: $sizeKB KB.
+"@
         exit 1
     }
     Write-Status "Downloaded: $([math]::Round($fileSize / 1MB, 1)) MB"
@@ -110,12 +122,13 @@ try {
         0xAA64 { "ARM64" }
         default { "Unknown ($machineType)" }
     }
-    if ($machineType -ne 0x8664 -and $machineType -ne 0x014C) {
-        Write-Error "WebView2 Runtime PE architecture is $machineName (0x$($machineType.ToString('X4'))), expected AMD64 or I386 bootstrapper"
+    if ($machineType -ne 0x8664) {
+        if ($machineType -eq 0x014C) {
+            Write-Error "WebView2 Runtime PE architecture is I386. This is the online bootstrapper, not the offline standalone installer. Download the x64 Evergreen Standalone Installer from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ and place it at: $InstallerPath"
+        } else {
+            Write-Error "WebView2 Runtime PE architecture is $machineName (0x$($machineType.ToString('X4'))), expected AMD64 (0x8664)"
+        }
         exit 1
-    }
-    if ($machineType -eq 0x014C) {
-        Write-Status "PE architecture is I386 (universal bootstrapper, will install x64 runtime on x64 systems)"
     }
     Write-Status "PE architecture: $machineName"
 } catch [Exception] {
@@ -141,7 +154,7 @@ $manifest = @{
     architecture = "AMD64"
     size = $fileSize
     sha256 = $sha256
-    signerSubject = $signer
+    signerSubject = $signerSubject
 } | ConvertTo-Json -Depth 4
 
 $manifest | Set-Content -Path $ManifestPath -Encoding ASCII

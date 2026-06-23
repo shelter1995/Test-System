@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1 `
 - 选择安装：使用包内 Python 联网安装固定版本 `mineru[core]==3.3.1`；
 - 暂不安装：两个服务继续启动，文本、Office 和文本型 PDF 使用基础解析；
 - 首次解析扫描 PDF 或图片时，MinerU 自动下载模型；
-- 模型缓存保存在 `runtime/models/mineru/`，不会写入系统 Python 目录。
+- 模型缓存保存在用户数据目录下 `models/mineru/`，不会写入系统 Python 目录。
 
 也可以双击 `install_mineru.bat` 重新安装。
 

@@ -47,6 +47,16 @@ def test_data_directory_page_defaults_to_local_app_data_and_persists_install_ide
     assert re.search(r"DeleteFile\s*\(", text)
 
 
+def test_output_base_filename_includes_x64_architecture():
+    text = _script()
+    assert r"OutputBaseFilename=Test-System-Setup-{#MyAppVersion}-x64" in text
+
+
+def test_output_dir_uses_installer_output_dir_define():
+    text = _script()
+    assert r"OutputDir={#InstallerOutputDir}" in text
+
+
 def test_shortcuts_target_desktop_host_exe_with_icon_and_never_batch_files():
     text = _strip_comments(_script())
 

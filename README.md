@@ -176,7 +176,7 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 便携包包含独立 CPython 3.13.10 和基础依赖，不复制开发环境 `.venv`，目标电脑无需安装 Python、pip 或 uv。解压后双击 `start_services.bat` 即可启动。
 
-为控制压缩包大小，MinerU 及模型不预先打包。首次启动会询问是否联网安装 MinerU；用户可以暂不安装并使用基础文档解析。首次解析扫描 PDF 或图片时，MinerU 模型会下载到包内 `runtime/models/mineru/`。
+为控制压缩包大小，MinerU 及模型不预先打包。首次启动会询问是否联网安装 MinerU；用户可以暂不安装并使用基础文档解析。首次解析扫描 PDF 或图片时，MinerU 模型会下载到用户选择的数据目录下 `models/mineru/`。
 
 用户仍需在模型设置中配置统一 LLM、嵌入和重排模型的 API Key。详细说明见 [packaging/README.md](packaging/README.md)。
 

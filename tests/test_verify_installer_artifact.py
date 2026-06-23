@@ -109,6 +109,17 @@ class TestArtifactAuditorRejects:
         with pytest.raises(verifier.AuditError, match=r"\.venv"):
             verifier.audit_install_image(stage)
 
+    def test_rejects_env_file(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+            "rag-anything-api/.env": "SECRET_KEY=test",
+        })
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match=r"\.env"):
+            verifier.audit_install_image(stage)
+
     def test_rejects_user_data(self, tmp_path: Path):
         stage = _stage_tree(tmp_path / "stage", {
             "runtime/install-manifest.json": json.dumps(_make_manifest()),
@@ -155,6 +166,69 @@ class TestArtifactAuditorRejects:
         verifier = _load_verifier()
         with pytest.raises(verifier.AuditError, match="WebView2"):
             verifier.audit_install_image(stage)
+
+    def test_rejects_webview2_bootstrapper_size(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+        })
+        webview_manifest = tmp_path / "webview2-runtime.json"
+        webview_manifest.write_text(json.dumps({
+            "name": "Microsoft Edge WebView2 Runtime",
+            "url": "https://go.microsoft.com/fwlink/p/?LinkId=2124703",
+            "file": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+            "version": "1.3.241.15",
+            "architecture": "AMD64",
+            "size": 1688792,
+            "sha256": "f91077e2c116dcf6377e555d0d4a3a564d242351ad6718b6954658d4f74819c1",
+            "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation",
+        }), encoding="utf-8")
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match="bootstrapper"):
+            verifier.audit_install_image(stage, webview_manifest=webview_manifest)
+
+    def test_rejects_webview2_wrong_architecture(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+        })
+        webview_manifest = tmp_path / "webview2-runtime.json"
+        webview_manifest.write_text(json.dumps({
+            "name": "Microsoft Edge WebView2 Runtime",
+            "url": "https://example.com",
+            "file": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+            "version": "1.3.241.15",
+            "architecture": "I386",
+            "size": 150000000,
+            "sha256": "f" * 64,
+            "signerSubject": "CN=Microsoft Corporation, O=Microsoft Corporation",
+        }), encoding="utf-8")
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match="architecture"):
+            verifier.audit_install_image(stage, webview_manifest=webview_manifest)
+
+    def test_rejects_webview2_missing_signer(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+        })
+        webview_manifest = tmp_path / "webview2-runtime.json"
+        webview_manifest.write_text(json.dumps({
+            "name": "Microsoft Edge WebView2 Runtime",
+            "url": "https://example.com",
+            "file": "MicrosoftEdgeWebView2RuntimeInstallerX64.exe",
+            "version": "1.3.241.15",
+            "architecture": "AMD64",
+            "size": 150000000,
+            "sha256": "f" * 64,
+            "signerSubject": None,
+        }), encoding="utf-8")
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match="signer"):
+            verifier.audit_install_image(stage, webview_manifest=webview_manifest)
 
     def test_rejects_malformed_sha256(self, tmp_path: Path):
         manifest = _make_manifest()

@@ -256,9 +256,12 @@ Write-Step "Generating Inno Setup version include"
 $includesDir = Join-Path $InstallerDir "includes"
 $null = New-Item -ItemType Directory -Path $includesDir -Force
 $versionIss = Join-Path $includesDir "version.iss"
+$null = New-Item -ItemType Directory -Path $FinalDir -Force
+$resolvedOutputDir = (Resolve-Path $FinalDir).Path
 @"
 #define MyAppVersion "$ProductVersion"
 #define MyAppFileVersion "$FileVersion"
+#define InstallerOutputDir "$resolvedOutputDir"
 "@ | Set-Content -Path $versionIss -Encoding ASCII
 Write-Result "Generated: $versionIss"
 
@@ -294,35 +297,14 @@ if (-not (Test-Path $isccExe -PathType Leaf)) {
 $isccResult = Invoke-Tool -Exe $isccExe -Arguments @($IssScript) -WorkingDir $RepoRoot
 Write-Result "Inno Setup compiled successfully"
 
+if (-not (Test-Path $InstallerPath -PathType Leaf)) {
+    throw "Inno Setup did not produce the expected output: $InstallerPath"
+}
+Write-Result "Installer output: $InstallerPath"
+
 # ---------------------------------------------------------------------------
 # 9b. Sign final installer (if certificate specified)
 # ---------------------------------------------------------------------------
-$setupExe = Join-Path $RepoRoot "dist-installer\Test-System-Setup-$ProductVersion-x64.exe"
-# Inno Setup's OutputDir is relative; the output goes to the repo root's dist-installer
-$setupCandidate = Join-Path $RepoRoot "Output\Test-System-Setup-$ProductVersion.exe"
-if (Test-Path $setupCandidate) {
-    $null = New-Item -ItemType Directory -Path $FinalDir -Force
-    Move-Item $setupCandidate $InstallerPath -Force
-}
-# Also check if it's directly in the output dir
-$setupCandidate2 = Join-Path $RepoRoot "dist-installer\Test-System-Setup-$ProductVersion.exe"
-if (Test-Path $setupCandidate2) {
-    $null = New-Item -ItemType Directory -Path $FinalDir -Force
-    Move-Item $setupCandidate2 $InstallerPath -Force
-}
-
-if (-not (Test-Path $InstallerPath -PathType Leaf)) {
-    Write-Host "Looking for setup output..."
-    $searchResults = Get-ChildItem -Path $RepoRoot -Recurse -Filter "Test-System-Setup-*.exe" -ErrorAction SilentlyContinue
-    if ($searchResults) {
-        $source = $searchResults[0].FullName
-        $null = New-Item -ItemType Directory -Path $FinalDir -Force
-        Move-Item $source $InstallerPath -Force
-        Write-Result "Found setup at: $InstallerPath"
-    } else {
-        throw "Inno Setup did not produce the expected output file. Looked for: Test-System-Setup-$ProductVersion*.exe"
-    }
-}
 
 if ($CertificateThumbprint) {
     Write-Step "Signing final installer"

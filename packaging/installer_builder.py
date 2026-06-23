@@ -373,7 +373,6 @@ def _build_install_image(
             uv_executable=resolved_uv,
             log_path=output_root / "build-logs" / "bootstrap.log",
         )
-        portable._create_env_files(temporary)
         ffmpeg_available = bool(ffmpeg_bin) and portable._copy_ffmpeg(temporary, ffmpeg_bin)
         libreoffice_available = bool(libreoffice_path) and portable._copy_libreoffice(
             temporary, libreoffice_path

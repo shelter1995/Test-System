@@ -11,6 +11,8 @@ EXPECTED_PYTHON_VERSION = "3.13.10"
 EXPECTED_PYTHON_MACHINE = "AMD64"
 EXPECTED_PYTHON_BITS = "64bit"
 WEBVIEW2_PREFIX = "MicrosoftEdgeWebView2RuntimeInstaller"
+WEBVIEW2_MIN_SIZE = 50 * 1024 * 1024  # 50 MB — bootstrapper is ~2 MB, standalone is ~140 MB
+WEBVIEW2_EXPECTED_ARCH = "AMD64"
 FORBIDDEN_TOP_LEVEL = {".venv", "__pycache__", ".git", ".pytest_cache"}
 FORBIDDEN_SUBDIR = {"tutor_data", "generation_output", "sessions"}
 FORBIDDEN_FILES = {".env"}
@@ -113,6 +115,8 @@ def _check_forbidden_items(stage: Path, failures: list[str]) -> None:
             failures.append(f"Forbidden top-level item present: {entry.name}")
         if entry.is_dir():
             for subpath in entry.rglob("*"):
+                if subpath.is_file() and subpath.name == ".env":
+                    failures.append(f".env file found in install image: {subpath.relative_to(stage)}")
                 if subpath.is_dir() and subpath.name.lower() in FORBIDDEN_SUBDIR:
                     failures.append(f"User data directory found in install image: {subpath.relative_to(stage)}")
                 if subpath.is_dir() and subpath.name.lower() in FORBIDDEN_MODEL_DIRS:
@@ -145,8 +149,29 @@ def _check_required_files(
             if raw.startswith(b"\xef\xbb\xbf"):
                 raw = raw[3:]
             data = json.loads(raw.decode("utf-8"))
-            if data.get("sha256"):
+            sha = data.get("sha256", "")
+            if sha and re.fullmatch(r"[0-9a-f]{64}", sha):
                 webview2_found = True
+                # Validate size: must be 50MB+ (reject bootstrapper)
+                size = data.get("size", 0)
+                if isinstance(size, int) and size < WEBVIEW2_MIN_SIZE:
+                    failures.append(
+                        f"WebView2 prerequisite is a bootstrapper "
+                        f"({size / 1024 / 1024:.0f} MB), "
+                        f"not the offline standalone installer (min {WEBVIEW2_MIN_SIZE / 1024 / 1024:.0f} MB)"
+                    )
+                # Validate architecture
+                arch = data.get("architecture", "")
+                if arch != WEBVIEW2_EXPECTED_ARCH:
+                    failures.append(
+                        f"WebView2 architecture is '{arch}', expected '{WEBVIEW2_EXPECTED_ARCH}'"
+                    )
+                # Validate signer subject
+                signer = data.get("signerSubject", "")
+                if not signer or "Microsoft Corporation" not in str(signer):
+                    failures.append(
+                        f"WebView2 signerSubject is missing or not Microsoft Corporation: {signer}"
+                    )
         except (json.JSONDecodeError, OSError, UnicodeDecodeError):
             pass
     if not webview2_found:

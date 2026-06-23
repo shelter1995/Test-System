@@ -115,12 +115,13 @@ def test_build_install_image_stages_runtime_files_and_excludes_build_data(tmp_pa
         "assets/logo.txt",
         "runtime/python/python.exe",
         "runtime/site-packages/fastapi/__init__.py",
-        "ai-tutor-system/.env",
-        "rag-anything-api/.env",
+        "ai-tutor-system/.env.example",
+        "rag-anything-api/.env.example",
     ):
         assert (stage / relative).exists(), relative
-
     for relative in (
+        "ai-tutor-system/.env",
+        "rag-anything-api/.env",
         ".git/config",
         "generation_output/result.txt",
         "docs",
@@ -193,7 +194,7 @@ def test_install_image_copies_only_tracked_business_files(tmp_path: Path):
     )
 
     assert (stage / "ai-tutor-system/.env.example").exists()
-    assert (stage / "ai-tutor-system/.env").exists()
+    assert not (stage / "ai-tutor-system/.env").exists()
     for relative in untracked:
         assert not (stage / relative).exists(), relative
 
