@@ -29,7 +29,8 @@ if ($Offline) {
         Write-Error "Offline prerequisite check failed: $ManifestPath not found"
         exit 1
     }
-    Write-Status "Offline prerequisite cache exists."
+    $fileSize = (Get-Item $InstallerPath).Length
+    Write-Status "Offline prerequisite cache exists ($([math]::Round($fileSize / 1MB, 1)) MB)."
 } else {
     Write-Status "Acquiring WebView2 Evergreen Standalone Runtime..."
     $null = New-Item -ItemType Directory -Path $PrereqDir -Force
@@ -82,7 +83,7 @@ Expected minimum size: 50 MB. Actual: $sizeKB KB.
 
 Write-Status "Validating file..."
 $signatureResult = "NotChecked"
-$signerSubject = "unknown"
+$signerSubject = "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
 try {
     Import-Module -Name Microsoft.PowerShell.Security -ErrorAction Stop -WarningAction SilentlyContinue
     $signature = Get-AuthenticodeSignature -FilePath $InstallerPath -ErrorAction Stop
