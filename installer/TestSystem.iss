@@ -44,6 +44,19 @@ Filename: "{app}\TestSystem.exe"; Description: "Launch Test-System"; Flags: nowa
 Filename: "{app}\TestSystem.exe"; Parameters: "--install-mineru"; Description: "Install MinerU enhanced parsing components"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
+function CoCreateGuid(out Guid: TGUID): Integer; external 'CoCreateGuid@ole32.dll stdcall';
+
+function CreateInstallId: string;
+var
+  Guid: TGUID;
+begin
+  OleCheck(CoCreateGuid(Guid));
+  Result := Format('%.8x-%.4x-%.4x-%.2x%.2x-%.2x%.2x%.2x%.2x%.2x%.2x', [
+    Guid.D1, Guid.D2, Guid.D3,
+    Guid.D4[0], Guid.D4[1], Guid.D4[2], Guid.D4[3],
+    Guid.D4[4], Guid.D4[5], Guid.D4[6], Guid.D4[7]]);
+end;
+
 var
   DataDirPage: TInputDirWizardPage;
   ExistingDataDir: string;
@@ -135,7 +148,7 @@ begin
   begin
     if not RegQueryStringValue(HKCU, 'Software\Test-System', 'InstallId', CurrentInstallId) then
     begin
-      CurrentInstallId := CreateGUID();
+      CurrentInstallId := CreateInstallId;
     end;
   end;
 
