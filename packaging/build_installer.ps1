@@ -98,10 +98,16 @@ if (-not $PythonHome) {
     if (Test-Path $candidate) {
         $PythonHome = $candidate
     } else {
-        throw "PythonHome not specified and no cached CPython found at $candidate. Set -PythonHome or run the portable builder first."
+        # Try uv-managed Python
+        $uvPython = "$env:APPDATA\uv\python\cpython-3.13.10-windows-x86_64-none"
+        if (Test-Path $uvPython) {
+            $PythonHome = $uvPython
+        } else {
+            throw "PythonHome not specified and no cached CPython found. Set -PythonHome, run the portable builder first, or install via: uv python install 3.13.10"
+        }
     }
 }
-$PythonHome = Resolve-Path $PythonHome
+$PythonHome = (Resolve-Path $PythonHome).Path
 $PythonExe = Join-Path $PythonHome "python.exe"
 if (-not (Test-Path $PythonExe -PathType Leaf)) {
     throw "Python executable not found at $PythonExe"
@@ -326,7 +332,7 @@ if ($CertificateThumbprint) {
 # ---------------------------------------------------------------------------
 Write-Step "Writing build artifacts"
 
-$hash = (Get-FileHash -Path $InstallerPath -Algorithm SHA256).Hash
+$hash = ((certutil -hashfile $InstallerPath SHA256 | Select-Object -Index 1).Trim() -replace '\s+', '')
 $hash | Set-Content -Path $HashPath -Encoding ASCII
 
 $buildManifest = @{
