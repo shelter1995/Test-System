@@ -130,7 +130,7 @@ if (-not $fileVersion) {
 }
 Write-Status "File version: $fileVersion"
 
-$sha256 = (Get-FileHash -Path $InstallerPath -Algorithm SHA256).Hash
+$sha256 = ((certutil -hashfile $InstallerPath SHA256 | Select-Object -Index 1).Trim() -replace '\s+', '')
 $fileSize = (Get-Item $InstallerPath).Length
 
 $manifest = @{
