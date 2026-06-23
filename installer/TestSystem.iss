@@ -77,17 +77,10 @@ begin
 end;
 
 procedure SaveUtf8Json(FileName: string; Contents: string);
-var
-  Stream: Variant;
 begin
   ForceDirectories(ExtractFileDir(FileName));
-  Stream := CreateOleObject('ADODB.Stream');
-  Stream.Type := 2;
-  Stream.Charset := 'utf-8';
-  Stream.Open;
-  Stream.WriteText(Contents);
-  Stream.SaveToFile(FileName, 2);
-  Stream.Close;
+  if not SaveStringToFile(FileName, Contents, False) then
+    RaiseException('Failed to write: ' + FileName);
 end;
 
 function ProbeWritableDirectory(DirName: string): Boolean;
