@@ -291,6 +291,9 @@ if (-not (Test-Path $isccExe -PathType Leaf)) {
     $isccExe = "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
 }
 if (-not (Test-Path $isccExe -PathType Leaf)) {
+    $isccExe = "E:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+}
+if (-not (Test-Path $isccExe -PathType Leaf)) {
     throw "Inno Setup 6 ISCC.exe not found. Install Inno Setup 6 or adjust PATH."
 }
 
