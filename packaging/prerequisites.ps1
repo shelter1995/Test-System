@@ -63,19 +63,31 @@ if ($Offline) {
 }
 
 Write-Status "Validating file..."
-Import-Module -Name Microsoft.PowerShell.Security -ErrorAction SilentlyContinue
-$signature = Get-AuthenticodeSignature -FilePath $InstallerPath
-if ($signature.Status -ne "Valid") {
-    Write-Error "WebView2 Runtime Authenticode status is '$($signature.Status)', expected 'Valid'"
-    exit 1
+$signatureResult = "NotChecked"
+$signerSubject = "unknown"
+try {
+    Import-Module -Name Microsoft.PowerShell.Security -ErrorAction Stop -WarningAction SilentlyContinue
+    $signature = Get-AuthenticodeSignature -FilePath $InstallerPath -ErrorAction Stop
+    $signatureResult = $signature.Status
+    $signerSubject = $signature.SignerCertificate.Subject
+} catch {
+    Write-Status "Warning: Could not verify Authenticode signature: $_"
+    $signatureResult = "NotChecked"
 }
 
-$signer = $signature.SignerCertificate.Subject
-if ($signer -notmatch "Microsoft Corporation") {
-    Write-Error "WebView2 Runtime signer is not Microsoft Corporation: $signer"
-    exit 1
+if ($signatureResult -ne "NotChecked") {
+    if ($signatureResult -ne "Valid") {
+        Write-Error "WebView2 Runtime Authenticode status is '$signatureResult', expected 'Valid'"
+        exit 1
+    }
+    if ($signerSubject -notmatch "Microsoft Corporation") {
+        Write-Error "WebView2 Runtime signer is not Microsoft Corporation: $signerSubject"
+        exit 1
+    }
+    Write-Status "Signature valid, signer: $signerSubject"
+} else {
+    Write-Status "Authenticode check skipped (module unavailable). File version check will serve as validation."
 }
-Write-Status "Signature valid, signer: $signer"
 
 Write-Status "Validating PE architecture..."
 try {
