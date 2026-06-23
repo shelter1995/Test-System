@@ -104,23 +104,10 @@ public sealed class MineruInstallerRunner
         var sourceValue = source == MineruModelSource.HuggingFace ? "huggingface" : "modelscope";
         var manager = Path.Combine(_layout.InstallRoot, "packaging", "mineru_manager.py");
         var statusJson = Path.Combine(_layout.RuntimeRoot, "mineru-status.json");
-        var arguments = string.Join(
-            " ",
-            Quote(manager),
-            "install",
-            "--package-root",
-            Quote(_layout.InstallRoot),
-            "--data-root",
-            Quote(_layout.DataRoot),
-            "--source",
-            sourceValue,
-            "--status-json",
-            Quote(statusJson));
 
         var startInfo = new ProcessStartInfo
         {
             FileName = _layout.PythonExe,
-            Arguments = arguments,
             WorkingDirectory = _layout.InstallRoot,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -129,6 +116,16 @@ public sealed class MineruInstallerRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8,
         };
+        startInfo.ArgumentList.Add(manager);
+        startInfo.ArgumentList.Add("install");
+        startInfo.ArgumentList.Add("--package-root");
+        startInfo.ArgumentList.Add(_layout.InstallRoot);
+        startInfo.ArgumentList.Add("--data-root");
+        startInfo.ArgumentList.Add(_layout.DataRoot);
+        startInfo.ArgumentList.Add("--source");
+        startInfo.ArgumentList.Add(sourceValue);
+        startInfo.ArgumentList.Add("--status-json");
+        startInfo.ArgumentList.Add(statusJson);
         startInfo.Environment["PYTHONUTF8"] = "1";
         startInfo.Environment["PYTHONIOENCODING"] = "utf-8";
         startInfo.Environment["TEST_SYSTEM_DATA_DIR"] = _layout.DataRoot;
@@ -191,11 +188,6 @@ public sealed class MineruInstallerRunner
         {
             File.AppendAllText(logPath, line + Environment.NewLine, Encoding.UTF8);
         }
-    }
-
-    private static string Quote(string value)
-    {
-        return "\"" + value.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 }
 

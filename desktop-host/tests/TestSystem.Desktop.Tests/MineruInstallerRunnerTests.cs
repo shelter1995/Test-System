@@ -40,13 +40,17 @@ public sealed class MineruInstallerRunnerTests : IDisposable
 
         var startInfo = launcher.StartInfo!;
         Assert.Equal(layout.PythonExe, startInfo.FileName);
-        Assert.Contains("packaging\\mineru_manager.py", startInfo.Arguments);
-        Assert.Contains("--package-root", startInfo.Arguments);
-        Assert.Contains(Quote(layout.InstallRoot), startInfo.Arguments);
-        Assert.Contains("--data-root", startInfo.Arguments);
-        Assert.Contains(Quote(layout.DataRoot), startInfo.Arguments);
-        Assert.Contains("--source modelscope", startInfo.Arguments);
-        Assert.Contains("--status-json", startInfo.Arguments);
+        Assert.Empty(startInfo.Arguments);
+        Assert.Contains(Path.Combine("packaging", "mineru_manager.py"), startInfo.ArgumentList[0]);
+        Assert.Equal("install", startInfo.ArgumentList[1]);
+        Assert.Equal("--package-root", startInfo.ArgumentList[2]);
+        Assert.Equal(layout.InstallRoot, startInfo.ArgumentList[3]);
+        Assert.Equal("--data-root", startInfo.ArgumentList[4]);
+        Assert.Equal(layout.DataRoot, startInfo.ArgumentList[5]);
+        Assert.Equal("--source", startInfo.ArgumentList[6]);
+        Assert.Equal("modelscope", startInfo.ArgumentList[7]);
+        Assert.Equal("--status-json", startInfo.ArgumentList[8]);
+        Assert.EndsWith(Path.Combine("runtime", "mineru-status.json"), startInfo.ArgumentList[9]);
         Assert.False(startInfo.UseShellExecute);
         Assert.True(startInfo.CreateNoWindow);
         Assert.True(startInfo.RedirectStandardOutput);
@@ -142,17 +146,12 @@ public sealed class MineruInstallerRunnerTests : IDisposable
 
     private RuntimeLayout CreateLayout()
     {
-        var installRoot = Path.Combine(_root, "install");
+        var installRoot = Path.Combine(_root, "install") + Path.DirectorySeparatorChar;
         var dataRoot = Path.Combine(_root, "data");
         Directory.CreateDirectory(Path.Combine(installRoot, "runtime", "python"));
         File.WriteAllText(Path.Combine(installRoot, "runtime", "python", "python.exe"), "stub");
         Directory.CreateDirectory(dataRoot);
         return RuntimeLayout.Create(installRoot, dataRoot);
-    }
-
-    private static string Quote(string value)
-    {
-        return "\"" + value + "\"";
     }
 
     private sealed class FakeLauncher : IMineruProcessLauncher

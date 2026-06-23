@@ -81,8 +81,7 @@ def main() -> None:
         sys.exit(1)
 
     if not Path(".env").exists():
-        print("[WARN] .env 文件不存在，请复制 .env.example 并填写 API 密钥")
-        sys.exit(1)
+        print("[WARN] .env 文件不存在，将使用环境变量或安装版数据目录中的配置")
 
     print("[OK] 依赖检查通过")
     print(f"[INFO] Python: {sys.version.split()[0]}")

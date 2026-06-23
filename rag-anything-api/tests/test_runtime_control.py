@@ -326,7 +326,6 @@ def test_start_main_uses_configured_controlled_uvicorn_server(monkeypatch, tmp_p
     monkeypatch.setitem(sys.modules, "config", config_module)
     monkeypatch.setitem(sys.modules, "app", app_module)
     monkeypatch.chdir(tmp_path)
-    (tmp_path / ".env").touch()
     namespace = {
         "__name__": "start_under_test",
         "Path": Path,
