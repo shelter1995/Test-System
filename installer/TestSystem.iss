@@ -45,14 +45,8 @@ Filename: "{app}\TestSystem.exe"; Parameters: "--install-mineru"; Description: "
 
 [Code]
 function CreateInstallId: string;
-var
-  Ticks: DWORD;
-  Hi, Lo: Cardinal;
 begin
-  Ticks := GetTickCount;
-  Hi := (Ticks shr 16) and $FFFF;
-  Lo := Ticks and $FFFF;
-  Result := Format('d1cf6b3d-%.4x-4bfc-%.4x-%.4x%.8x', [Hi, Lo, Hi xor Lo, Ticks]);
+  Result := 'd1cf6b3d-77b3-4bfc-a2b1-' + GetDateTimeString('yyyymmddhhnnsszzz', '-', ':');
 end;
 
 var
