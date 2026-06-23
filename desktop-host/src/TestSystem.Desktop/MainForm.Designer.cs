@@ -10,6 +10,9 @@ public partial class MainForm
     private Button retryButton = null!;
     private Button openLogsButton = null!;
     private Button exitButton = null!;
+    private MenuStrip mainMenu = null!;
+    private ToolStripMenuItem installMenu = null!;
+    private ToolStripMenuItem installMineruMenuItem = null!;
 
     private void InitializeComponent()
     {
@@ -19,8 +22,12 @@ public partial class MainForm
         retryButton = new Button();
         openLogsButton = new Button();
         exitButton = new Button();
+        mainMenu = new MenuStrip();
+        installMenu = new ToolStripMenuItem();
+        installMineruMenuItem = new ToolStripMenuItem();
         ((System.ComponentModel.ISupportInitialize)webView).BeginInit();
         statusPanel.SuspendLayout();
+        mainMenu.SuspendLayout();
         SuspendLayout();
 
         webView.AllowExternalDrop = false;
@@ -29,7 +36,7 @@ public partial class MainForm
         webView.Dock = DockStyle.Fill;
         webView.Location = new Point(0, 0);
         webView.Name = "webView";
-        webView.Size = new Size(1184, 761);
+        webView.Size = new Size(1184, 737);
         webView.TabIndex = 0;
         webView.Visible = false;
         webView.ZoomFactor = 1D;
@@ -85,17 +92,39 @@ public partial class MainForm
         exitButton.Visible = false;
         exitButton.Click += ExitButton_Click;
 
+        mainMenu.Items.AddRange([installMenu]);
+        mainMenu.Location = new Point(0, 0);
+        mainMenu.Name = "mainMenu";
+        mainMenu.Size = new Size(1184, 24);
+        mainMenu.TabIndex = 2;
+        mainMenu.Text = "mainMenu";
+
+        installMenu.DropDownItems.AddRange([installMineruMenuItem]);
+        installMenu.Name = "installMenu";
+        installMenu.Size = new Size(44, 20);
+        installMenu.Text = "安装";
+
+        installMineruMenuItem.Name = "installMineruMenuItem";
+        installMineruMenuItem.Size = new Size(188, 22);
+        installMineruMenuItem.Text = "安装/修复增强解析组件";
+        installMineruMenuItem.Click += InstallMineruMenuItem_Click;
+
         AutoScaleDimensions = new SizeF(7F, 17F);
         AutoScaleMode = AutoScaleMode.Font;
         ClientSize = new Size(1184, 761);
         Controls.Add(webView);
         Controls.Add(statusPanel);
+        Controls.Add(mainMenu);
+        MainMenuStrip = mainMenu;
         MinimumSize = new Size(960, 640);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;
         Text = "Test-System";
         ((System.ComponentModel.ISupportInitialize)webView).EndInit();
         statusPanel.ResumeLayout(false);
+        mainMenu.ResumeLayout(false);
+        mainMenu.PerformLayout();
         ResumeLayout(false);
+        PerformLayout();
     }
 }

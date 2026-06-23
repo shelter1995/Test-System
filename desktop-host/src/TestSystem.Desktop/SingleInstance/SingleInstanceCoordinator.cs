@@ -42,6 +42,13 @@ public sealed class SingleInstanceCoordinator : IDisposable
         return new SingleInstanceCoordinator(names, mutex, createdNew);
     }
 
+    public static bool IsPrimaryInstanceRunning(Guid productId)
+    {
+        var names = BuildNames(productId);
+        using var mutex = new Mutex(initiallyOwned: false, names.MutexName, out var createdNew);
+        return !createdNew;
+    }
+
     public Task StartActivationServerAsync()
     {
         if (!IsPrimary)

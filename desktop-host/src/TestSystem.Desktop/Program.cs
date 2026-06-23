@@ -2,11 +2,18 @@ namespace TestSystem.Desktop;
 
 using TestSystem.Desktop.Configuration;
 using TestSystem.Desktop.Diagnostics;
+using TestSystem.Desktop.Mineru;
 using TestSystem.Desktop.Processes;
 using TestSystem.Desktop.SingleInstance;
 using TestSystem.Desktop.Startup;
 
-static class Program
+public enum ApplicationStartupMode
+{
+    MainApp,
+    MineruInstaller,
+}
+
+public static class Program
 {
     private static readonly Guid ProductId = Guid.Parse("D1CF6B3D-77B3-4BFC-A2B1-BE0A8A7CB35D");
 
@@ -14,11 +21,29 @@ static class Program
     ///  The main entry point for the application.
     /// </summary>
     [STAThread]
-    static int Main()
+    public static ApplicationStartupMode SelectStartupMode(string[] args)
+    {
+        return args.Any(arg => string.Equals(arg, "--install-mineru", StringComparison.OrdinalIgnoreCase))
+            ? ApplicationStartupMode.MineruInstaller
+            : ApplicationStartupMode.MainApp;
+    }
+
+    static int Main(string[] args)
     {
         ApplicationConfiguration.Initialize();
         try
         {
+            if (SelectStartupMode(args) == ApplicationStartupMode.MineruInstaller)
+            {
+                var mineruInstall = InstallConfiguration.Load(AppContext.BaseDirectory);
+                var mineruLayout = RuntimeLayout.Create(mineruInstall.InstallRoot, mineruInstall.DataDir);
+                mineruLayout.EnsureWritableDirectories();
+                Application.Run(new MineruInstallerForm(
+                    mineruLayout,
+                    mainAppMutexOwned: () => SingleInstanceCoordinator.IsPrimaryInstanceRunning(ProductId)));
+                return 0;
+            }
+
             using var singleInstance = SingleInstanceCoordinator.Create(ProductId);
             if (!singleInstance.IsPrimary)
             {

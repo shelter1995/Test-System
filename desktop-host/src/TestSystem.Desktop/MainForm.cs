@@ -19,6 +19,7 @@ public partial class MainForm : Form
     private readonly DownloadCoordinator _downloadCoordinator;
     private bool _allowClose;
     private bool _stopping;
+    private bool _launchMineruInstallerAfterClose;
 
     public MainForm(
         RuntimeLayout layout,
@@ -77,6 +78,11 @@ public partial class MainForm : Form
 
         webView.Dispose();
         _singleInstance.Dispose();
+        if (_launchMineruInstallerAfterClose)
+        {
+            LaunchMineruInstaller();
+        }
+
         _allowClose = true;
         BeginInvoke(Close);
     }
@@ -176,6 +182,32 @@ public partial class MainForm : Form
     private void ExitButton_Click(object? sender, EventArgs e)
     {
         Close();
+    }
+
+    private void InstallMineruMenuItem_Click(object? sender, EventArgs e)
+    {
+        var answer = MessageBox.Show(
+            "安装或修复增强解析组件需要先关闭当前后端服务，并打开独立安装窗口。是否现在重启到安装模式？",
+            "安装/修复增强解析组件",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Information);
+        if (answer != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _launchMineruInstallerAfterClose = true;
+        Close();
+    }
+
+    private void LaunchMineruInstaller()
+    {
+        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+        {
+            FileName = Application.ExecutablePath,
+            Arguments = "--install-mineru",
+            UseShellExecute = true,
+        });
     }
 
     private void ShowStartupError(StartupError? error)
