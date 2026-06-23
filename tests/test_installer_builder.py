@@ -52,9 +52,11 @@ def _source_tree(tmp_path: Path) -> tuple[Path, Path, Path]:
     _write(root / "build" / "generated.txt", "excluded")
     _write(root / "packaging" / "portable_builder.py", (ROOT / "packaging" / "portable_builder.py").read_text(encoding="utf-8"))
     _write(root / "packaging" / "product_version.py", (ROOT / "packaging" / "product_version.py").read_text(encoding="utf-8"))
+    _write(root / "packaging" / "mineru_manager.py", "print('mineru manager')\n")
     _write(root / "packaging" / "internal_release_script.py", "raise SystemExit")
     requirements = "# CPython 3.13.10 x64 lock target\nfastapi==0.136.1\n"
     _write(root / "packaging" / "requirements-portable-base.txt", requirements)
+    _write(root / "packaging" / "mineru-requirements.txt", "mineru[core]==3.3.1\n")
 
     python_home = tmp_path / "python"
     _write(python_home / "python.exe", "exe")
@@ -115,6 +117,8 @@ def test_build_install_image_stages_runtime_files_and_excludes_build_data(tmp_pa
         "assets/logo.txt",
         "runtime/python/python.exe",
         "runtime/site-packages/fastapi/__init__.py",
+        "packaging/mineru_manager.py",
+        "packaging/mineru-requirements.txt",
         "ai-tutor-system/.env.example",
         "rag-anything-api/.env.example",
     ):

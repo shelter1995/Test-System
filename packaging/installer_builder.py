@@ -28,6 +28,7 @@ USER_DOCUMENTS = (
 )
 PACKAGING_FILES = (
     "installer_builder.py",
+    "mineru_manager.py",
     "portable_builder.py",
     "portable_runtime.py",
     "product_version.py",

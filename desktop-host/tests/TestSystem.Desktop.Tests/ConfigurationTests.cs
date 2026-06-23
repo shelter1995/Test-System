@@ -127,7 +127,10 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal("8002", environment["TUTOR_SERVICE_PORT"]);
         Assert.Equal("http://127.0.0.1:8003", environment["RAG_SERVICE_URL"]);
         Assert.Equal(token, environment["TEST_SYSTEM_SHUTDOWN_TOKEN"]);
-        Assert.Equal(layout.OptionalSitePackages, environment["PYTHONPATH"]);
+        var bundledSitePackages = Path.Combine(layout.InstallRoot, "runtime", "site-packages");
+        Assert.Equal(
+            string.Join(Path.PathSeparator, new[] { layout.OptionalSitePackages, bundledSitePackages }),
+            environment["PYTHONPATH"]);
         Assert.Equal("1", environment["PYTHONUTF8"]);
         Assert.Equal("utf-8", environment["PYTHONIOENCODING"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "pip-cache"), environment["PIP_CACHE_DIR"]);

@@ -25,7 +25,7 @@ public static class RuntimeEnvironment
             ["TUTOR_SERVICE_PORT"] = "8002",
             ["RAG_SERVICE_URL"] = "http://127.0.0.1:8003",
             ["PYTHONHOME"] = Path.GetDirectoryName(layout.PythonExe)!,
-            ["PYTHONPATH"] = layout.OptionalSitePackages,
+            ["PYTHONPATH"] = BuildPythonPath(layout),
             ["PYTHONNOUSERSITE"] = "1",
             ["PYTHONUTF8"] = "1",
             ["PYTHONIOENCODING"] = "utf-8",
@@ -38,6 +38,17 @@ public static class RuntimeEnvironment
         };
 
         return env;
+    }
+
+    private static string BuildPythonPath(RuntimeLayout layout)
+    {
+        return string.Join(
+            Path.PathSeparator,
+            new[]
+            {
+                layout.OptionalSitePackages,
+                Path.Combine(layout.InstallRoot, "runtime", "site-packages"),
+            });
     }
 
     private static string BuildPath(RuntimeLayout layout)
