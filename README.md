@@ -180,6 +180,26 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 用户仍需在模型设置中配置统一 LLM、嵌入和重排模型的 API Key。详细说明见 [packaging/README.md](packaging/README.md)。
 
+## Windows 桌面安装包
+
+面向最终用户的 Windows 原生安装体验：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
+```
+
+产出：`dist-installer\Test-System-Setup-<版本>-x64.exe`
+
+安装包特点：
+- 双击安装，可选择程序和数据路径
+- 使用 WebView2 嵌入浏览器，无需单独打开浏览器
+- 关闭窗口会自动停止后端服务
+- 升级安装保留数据目录
+- 卸载默认保留数据（可选删除）
+- 可选安装 MinerU 增强解析组件
+
+面向开发者的详细发布流程见 [docs/releasing-windows.md](docs/releasing-windows.md)。普通用户使用便携包即可（见上文便携打包章节）。
+
 ## 文档
 
 - [SETUP.md](SETUP.md)：环境安装与启动说明

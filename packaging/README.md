@@ -66,3 +66,49 @@ runtime/logs/bootstrap.log
 runtime/logs/runtime-check.json
 runtime/logs/mineru-install.log
 ```
+
+## Windows 安装包
+
+构建 Windows 原生安装包（相比便携包增加 WebView2 桌面宿主和 Inno Setup 安装器）：
+
+### 获取 WebView2 运行时前提条件
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\prerequisites.ps1
+```
+
+离线模式（仅验证已缓存文件）：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\prerequisites.ps1 -Offline
+```
+
+### 一键构建安装包
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
+```
+
+产物：
+```text
+dist-installer\Test-System-Setup-<版本>-x64.exe
+dist-installer\Test-System-Setup-<版本>-x64.exe.sha256
+dist-installer\build-manifest.json
+```
+
+### 构建选项
+
+跳过测试（仅本地诊断，正式发布不得跳过）：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1 -SkipTests
+```
+
+指定自定义路径或代码签名：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1 `
+  -PythonHome "C:\cpython-3.13.10" `
+  -FfmpegBin "D:\tools\ffmpeg\bin" `
+  -LibreOfficePath "C:\Program Files\LibreOffice\program\soffice.exe" `
+  -CertificateThumbprint "YOUR_THUMBPRINT"
+```
+
+详细发布流程见 [docs/releasing-windows.md](../docs/releasing-windows.md)。
