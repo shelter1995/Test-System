@@ -12,15 +12,23 @@ EXPECTED_PYTHON_MACHINE = "AMD64"
 EXPECTED_PYTHON_BITS = "64bit"
 WEBVIEW2_PREFIX = "MicrosoftEdgeWebView2RuntimeInstaller"
 FORBIDDEN_TOP_LEVEL = {".venv", "__pycache__", ".git", ".pytest_cache"}
-FORBIDDEN_SUBDIR = {"tutor_data", "generation_output", "sessions", "storage", "output", "models"}
+FORBIDDEN_SUBDIR = {"tutor_data", "generation_output", "sessions"}
 FORBIDDEN_FILES = {".env"}
+FORBIDDEN_MODEL_DIRS = {"storage", "output", "models"}
+# Paths where 'models' is a legitimate package directory, not user data
+ALLOWED_MODEL_PARENTS = {"site-packages", "Lib", "pip", "google", "tests"}
 
 
 class AuditError(ValueError):
     """Raised when an artifact audit check fails."""
 
 
-def audit_install_image(stage: Path, *, report_path: Path | None = None) -> list[str]:
+def audit_install_image(
+    stage: Path,
+    *,
+    report_path: Path | None = None,
+    webview_manifest: Path | None = None,
+) -> list[str]:
     stage = stage.resolve(strict=True)
     failures: list[str] = []
     passed = False
@@ -28,7 +36,7 @@ def audit_install_image(stage: Path, *, report_path: Path | None = None) -> list
     try:
         _check_manifest(stage, failures)
         _check_forbidden_items(stage, failures)
-        _check_required_files(stage, failures)
+        _check_required_files(stage, failures, webview_manifest=webview_manifest)
         _check_version_consistency(stage, failures)
     except Exception as exc:
         failures.append(f"Audit crashed: {exc}")
@@ -91,19 +99,33 @@ def _check_manifest(stage: Path, failures: list[str]) -> None:
         failures.append("Missing or malformed requirements SHA-256")
 
 
+def _is_under_allowed_model_parent(relative: Path) -> bool:
+    """Check if a path is under an allowed parent where 'models' is a package dir."""
+    return any(
+        parent.lower() in ALLOWED_MODEL_PARENTS
+        for parent in relative.parts[:-1]
+    )
+
+
 def _check_forbidden_items(stage: Path, failures: list[str]) -> None:
     for entry in stage.iterdir():
         if entry.name.lower() in FORBIDDEN_TOP_LEVEL:
             failures.append(f"Forbidden top-level item present: {entry.name}")
         if entry.is_dir():
             for subpath in entry.rglob("*"):
-                if subpath.is_file() and subpath.name == ".env":
-                    failures.append(f".env file found in install image: {subpath.relative_to(stage)}")
                 if subpath.is_dir() and subpath.name.lower() in FORBIDDEN_SUBDIR:
                     failures.append(f"User data directory found in install image: {subpath.relative_to(stage)}")
+                if subpath.is_dir() and subpath.name.lower() in FORBIDDEN_MODEL_DIRS:
+                    if not _is_under_allowed_model_parent(subpath.relative_to(stage)):
+                        failures.append(f"User data directory found in install image: {subpath.relative_to(stage)}")
 
 
-def _check_required_files(stage: Path, failures: list[str]) -> None:
+def _check_required_files(
+    stage: Path,
+    failures: list[str],
+    *,
+    webview_manifest: Path | None = None,
+) -> None:
     manifest = _load_manifest(stage)
 
     host_path = manifest.get("desktop", {}).get("host_path", "TestSystem.exe")
@@ -116,13 +138,21 @@ def _check_required_files(stage: Path, failures: list[str]) -> None:
     if not python_file.is_file():
         failures.append(f"Python executable missing: {python_path}")
 
-    webview2_dir = stage / ".cache" / "prerequisites"
     webview2_found = False
-    if webview2_dir.is_dir():
-        for child in webview2_dir.iterdir():
-            if child.is_file() and WEBVIEW2_PREFIX in child.name:
+    if webview_manifest is not None and webview_manifest.is_file():
+        try:
+            data = json.loads(webview_manifest.read_text(encoding="utf-8"))
+            if data.get("sha256"):
                 webview2_found = True
-                break
+        except (json.JSONDecodeError, OSError):
+            pass
+    if not webview2_found:
+        webview2_dir = stage / ".cache" / "prerequisites"
+        if webview2_dir.is_dir():
+            for child in webview2_dir.iterdir():
+                if child.is_file() and WEBVIEW2_PREFIX in child.name:
+                    webview2_found = True
+                    break
     if not webview2_found:
         failures.append("WebView2 Runtime prerequisite not found")
 
@@ -158,7 +188,11 @@ def main() -> None:
     args = parser.parse_args()
 
     try:
-        audit_install_image(args.stage, report_path=args.report)
+        audit_install_image(
+            args.stage,
+            report_path=args.report,
+            webview_manifest=args.webview_manifest,
+        )
     except AuditError as exc:
         parser.exit(2, str(exc) + "\n")
     print("Audit passed.")

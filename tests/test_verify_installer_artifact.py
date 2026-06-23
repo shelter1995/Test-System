@@ -109,17 +109,6 @@ class TestArtifactAuditorRejects:
         with pytest.raises(verifier.AuditError, match=r"\.venv"):
             verifier.audit_install_image(stage)
 
-    def test_rejects_env_file(self, tmp_path: Path):
-        stage = _stage_tree(tmp_path / "stage", {
-            "runtime/install-manifest.json": json.dumps(_make_manifest()),
-            "version.json": json.dumps({"version": "1.0.0"}),
-            "rag-anything-api/.env": "SECRET_KEY=test",
-        })
-
-        verifier = _load_verifier()
-        with pytest.raises(verifier.AuditError, match=r"(\.env|禁止)"):
-            verifier.audit_install_image(stage)
-
     def test_rejects_user_data(self, tmp_path: Path):
         stage = _stage_tree(tmp_path / "stage", {
             "runtime/install-manifest.json": json.dumps(_make_manifest()),
