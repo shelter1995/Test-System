@@ -89,12 +89,11 @@ def test_finish_page_offers_main_app_and_optional_mineru_installer():
     assert "postinstall" in text
 
 
-def test_upgrade_checks_running_host_and_preserves_recorded_data_dir():
+def test_upgrade_uses_app_mutex_and_preserves_recorded_data_dir():
     text = _script()
 
-    assert "CheckForRunningApp" in text
+    assert "AppMutex={#MyAppId}" in text
     assert "TestSystem.exe" in text
-    assert "InitializeSetup" in text
     assert "RegQueryStringValue(HKCU, 'Software\\Test-System', 'DataDir'" in text
     assert "ExistingDataDir" in text
     assert "DataDirPage.Values[0] := ExistingDataDir" in text

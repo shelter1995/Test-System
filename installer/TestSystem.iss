@@ -22,6 +22,7 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\assets\test-system.ico
 CloseApplications=no
+AppMutex={#MyAppId}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -125,31 +126,6 @@ end;
 function GetInstallId(Param: string): string;
 begin
   Result := CurrentInstallId;
-end;
-
-function CheckForRunningApp(): Boolean;
-var
-  WmiService: Variant;
-  Processes: Variant;
-begin
-  Result := False;
-  try
-    WmiService := GetObject('winmgmts:\\.\root\cimv2');
-    Processes := WmiService.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name = ''TestSystem.exe''');
-    Result := (Processes.Count > 0);
-  except
-    Result := False;
-  end;
-end;
-
-function InitializeSetup(): Boolean;
-begin
-  Result := True;
-  if CheckForRunningApp() then
-  begin
-    MsgBox('Please close Test-System before installing or upgrading.', mbError, MB_OK);
-    Result := False;
-  end;
 end;
 
 procedure InitializeWizard();
