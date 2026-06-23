@@ -110,9 +110,12 @@ try {
         0xAA64 { "ARM64" }
         default { "Unknown ($machineType)" }
     }
-    if ($machineType -ne 0x8664) {
-        Write-Error "WebView2 Runtime PE architecture is $machineName, expected AMD64"
+    if ($machineType -ne 0x8664 -and $machineType -ne 0x014C) {
+        Write-Error "WebView2 Runtime PE architecture is $machineName (0x$($machineType.ToString('X4'))), expected AMD64 or I386 bootstrapper"
         exit 1
+    }
+    if ($machineType -eq 0x014C) {
+        Write-Status "PE architecture is I386 (universal bootstrapper, will install x64 runtime on x64 systems)"
     }
     Write-Status "PE architecture: $machineName"
 } catch [Exception] {
