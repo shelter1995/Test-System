@@ -1,5 +1,6 @@
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using System.Runtime.InteropServices;
 using TestSystem.Desktop.Configuration;
 using TestSystem.Desktop.Diagnostics;
 using TestSystem.Desktop.Processes;
@@ -11,6 +12,8 @@ namespace TestSystem.Desktop;
 
 public partial class MainForm : Form
 {
+    private static readonly TimeSpan WebViewInitializationTimeout = TimeSpan.FromSeconds(30);
+
     private readonly RuntimeLayout _layout;
     private readonly IBackendSupervisor _supervisor;
     private readonly StartupCoordinator _startupCoordinator;
@@ -100,20 +103,38 @@ public partial class MainForm : Form
             return;
         }
 
-        await InitializeWebViewAsync().ConfigureAwait(true);
+        try
+        {
+            await InitializeWebViewAsync().ConfigureAwait(true);
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or TimeoutException or COMException or UnauthorizedAccessException or IOException)
+        {
+            _log.Write("内置浏览器初始化失败：" + ex);
+            SetStatus(
+                "内置浏览器初始化失败，前端服务已启动。\r\n"
+                + "请查看日志目录中的 desktop-host.log。\r\n"
+                + "临时访问地址：http://127.0.0.1:8002/",
+                showActions: true);
+        }
     }
 
     private async Task InitializeWebViewAsync()
     {
         Directory.CreateDirectory(_layout.WebViewUserData);
+        webView.Visible = true;
+        webView.CreateControl();
+        webView.BringToFront();
+        mainMenu.BringToFront();
+
         var environment = await CoreWebView2Environment.CreateAsync(
             browserExecutableFolder: null,
-            userDataFolder: _layout.WebViewUserData).ConfigureAwait(true);
-        await webView.EnsureCoreWebView2Async(environment).ConfigureAwait(true);
+            userDataFolder: _layout.WebViewUserData).WaitAsync(WebViewInitializationTimeout).ConfigureAwait(true);
+        await webView.EnsureCoreWebView2Async(environment).WaitAsync(WebViewInitializationTimeout).ConfigureAwait(true);
         ConfigureWebView();
-        statusPanel.Visible = false;
-        webView.Visible = true;
         webView.CoreWebView2.Navigate("http://127.0.0.1:8002/");
+        statusPanel.Visible = false;
+        webView.BringToFront();
+        mainMenu.BringToFront();
     }
 
     private void ConfigureWebView()
