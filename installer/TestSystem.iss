@@ -44,26 +44,15 @@ Filename: "{app}\TestSystem.exe"; Description: "Launch Test-System"; Flags: nowa
 Filename: "{app}\TestSystem.exe"; Parameters: "--install-mineru"; Description: "Install MinerU enhanced parsing components"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
-function GenerateRandomHex(Count: Integer): string;
-var
-  I: Integer;
-  Chars: string;
-begin
-  Chars := '0123456789abcdef';
-  Result := '';
-  for I := 1 to Count do
-    Result := Result + Copy(Chars, Random(16) + 1, 1);
-end;
-
 function CreateInstallId: string;
+var
+  Ticks: DWORD;
+  Hi, Lo: Cardinal;
 begin
-  Randomize;
-  Result :=
-    GenerateRandomHex(8) + '-' +
-    GenerateRandomHex(4) + '-' +
-    GenerateRandomHex(4) + '-' +
-    GenerateRandomHex(4) + '-' +
-    GenerateRandomHex(12);
+  Ticks := GetTickCount;
+  Hi := (Ticks shr 16) and $FFFF;
+  Lo := Ticks and $FFFF;
+  Result := Format('d1cf6b3d-%.4x-4bfc-%.4x-%.4x%.8x', [Hi, Lo, Hi xor Lo, Ticks]);
 end;
 
 var
