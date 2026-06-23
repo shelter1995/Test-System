@@ -11,6 +11,7 @@ $InstallerName = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 $InstallerPath = Join-Path $PrereqDir $InstallerName
 $ManifestPath = Join-Path $PrereqDir "webview2-runtime.json"
 $DownloadUrl = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+$StandaloneUrl = "https://msedge.sf.dl.delivery.mp.microsoft.com/filestreamingservice/files/7aa64b7d-9989-44f8-b1ac-6871e165c982/MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 
 function Write-Status {
     param([string]$Message)
@@ -39,10 +40,15 @@ if ($Offline) {
     }
 
     try {
-        Write-Status "Downloading from Microsoft (this may take several minutes)..."
+        Write-Status "Downloading standalone installer from Microsoft CDN (this may take several minutes)..."
         $wc = New-Object System.Net.WebClient
         $wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
-        $wc.DownloadFile($DownloadUrl, $InstallerPath)
+        try {
+            $wc.DownloadFile($StandaloneUrl, $InstallerPath)
+        } catch {
+            Write-Status "CDN download failed, trying fwlink fallback..."
+            $wc.DownloadFile($DownloadUrl, $InstallerPath)
+        }
         $wc.Dispose()
     } catch {
         Write-Error "Failed to download WebView2 Runtime: $_"
@@ -148,7 +154,7 @@ $fileSize = (Get-Item $InstallerPath).Length
 
 $manifest = @{
     name = "Microsoft Edge WebView2 Runtime"
-    url = $DownloadUrl
+    url = $StandaloneUrl
     file = $InstallerName
     version = $fileVersion
     architecture = "AMD64"
