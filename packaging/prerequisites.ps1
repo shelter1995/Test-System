@@ -128,15 +128,21 @@ try {
         0xAA64 { "ARM64" }
         default { "Unknown ($machineType)" }
     }
-    if ($machineType -ne 0x8664) {
-        if ($machineType -eq 0x014C) {
-            Write-Error "WebView2 Runtime PE architecture is I386. This is the online bootstrapper, not the offline standalone installer. Download the x64 Evergreen Standalone Installer from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ and place it at: $InstallerPath"
-        } else {
-            Write-Error "WebView2 Runtime PE architecture is $machineName (0x$($machineType.ToString('X4'))), expected AMD64 (0x8664)"
-        }
+    # Standalone installer (~175+ MB) is a 32-bit wrapper containing both x86 and x64 runtimes.
+    # Only reject I386 if the file is too small (bootstrapper, ~2 MB).
+    if ($machineType -eq 0x014C -and $fileSize -lt 50MB) {
+        Write-Error "WebView2 Runtime PE architecture is I386 with small file size. This is the online bootstrapper, not the offline standalone installer. Download the x64 Evergreen Standalone Installer from https://developer.microsoft.com/en-us/microsoft-edge/webview2/ and place it at: $InstallerPath"
         exit 1
     }
-    Write-Status "PE architecture: $machineName"
+    if ($machineType -ne 0x8664 -and $machineType -ne 0x014C) {
+        Write-Error "WebView2 Runtime PE architecture is $machineName (0x$($machineType.ToString('X4'))), expected AMD64 (0x8664)"
+        exit 1
+    }
+    if ($machineType -eq 0x014C) {
+        Write-Status "PE architecture: I386 (standalone installer with bundled x64 runtime)"
+    } else {
+        Write-Status "PE architecture: $machineName"
+    }
 } catch [Exception] {
     Write-Error "Failed to validate PE architecture: $_"
     exit 1
