@@ -17,6 +17,22 @@ public sealed class MainFormSourceTests
             "Hidden WebView2 controls can stall initialization; make the control visible before EnsureCoreWebView2Async.");
     }
 
+    [Fact]
+    public void Menu_and_webview_are_separated_by_layout_container()
+    {
+        var designer = File.ReadAllText(FindSourceFile("desktop-host", "src", "TestSystem.Desktop", "MainForm.Designer.cs"));
+
+        Assert.Contains("private TableLayoutPanel rootLayout", designer);
+        Assert.Contains("private Panel contentPanel", designer);
+        Assert.Contains("rootLayout.Controls.Add(mainMenu, 0, 0)", designer);
+        Assert.Contains("rootLayout.Controls.Add(contentPanel, 0, 1)", designer);
+        Assert.Contains("contentPanel.Controls.Add(webView)", designer);
+        Assert.Contains("contentPanel.Controls.Add(statusPanel)", designer);
+        Assert.DoesNotContain("        Controls.Add(webView)", designer);
+        Assert.DoesNotContain("        Controls.Add(statusPanel)", designer);
+        Assert.DoesNotContain("        Controls.Add(mainMenu)", designer);
+    }
+
     private static string FindSourceFile(params string[] relativeParts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
