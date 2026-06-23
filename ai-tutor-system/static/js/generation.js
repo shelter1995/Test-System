@@ -653,7 +653,7 @@
                             escapeHtml(a.name) +
                         '</span>' +
                         '<span class="artifact-meta">' + sizeKB + ' KB</span>' +
-                        '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                        '<a href="' + downloadUrl + '" class="download-link">下载</a>' +
                         '<button type="button" class="artifact-delete-btn" data-artifact-path="' + escapeHtml(a.path || '') + '">删除</button>' +
                     '</div>'
                 );
@@ -703,7 +703,7 @@
                                 escapeHtml(a.name) +
                             '</span>' +
                             '<span class="topbar-dropdown-meta">' + sizeKB + ' KB</span>' +
-                            '<a href="' + downloadUrl + '" target="_blank" class="download-link">下载</a>' +
+                            '<a href="' + downloadUrl + '" class="download-link">下载</a>' +
                             '<button type="button" class="artifact-delete-btn topbar-delete-btn" data-artifact-path="' + escapeHtml(a.path || '') + '">删除</button>' +
                         '</div>'
                     );
