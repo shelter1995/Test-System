@@ -204,8 +204,8 @@ begin
   RegWriteStringValue(HKCU, 'Software\Test-System', 'DataDir', SelectedDataDir);
   RegWriteStringValue(HKCU, 'Software\Test-System', 'InstallId', CurrentInstallId);
   RegWriteStringValue(HKCU, 'Software\Test-System', 'Version', '{#MyAppVersion}');
-  SetPreviousData('DataDir', SelectedDataDir);
-  SetPreviousData('InstallId', CurrentInstallId);
+  SetPreviousData('DataDir', SelectedDataDir, '');
+  SetPreviousData('InstallId', CurrentInstallId, '');
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
