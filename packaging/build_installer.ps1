@@ -262,7 +262,7 @@ $resolvedOutputDir = (Resolve-Path $FinalDir).Path
 #define MyAppVersion "$ProductVersion"
 #define MyAppFileVersion "$FileVersion"
 #define InstallerOutputDir "$resolvedOutputDir"
-"@ | Set-Content -Path $versionIss -Encoding ASCII
+"@ | Out-File -FilePath $versionIss -Encoding ASCII
 Write-Result "Generated: $versionIss"
 
 # ---------------------------------------------------------------------------
@@ -333,7 +333,7 @@ if ($CertificateThumbprint) {
 Write-Step "Writing build artifacts"
 
 $hash = ((certutil -hashfile $InstallerPath SHA256 | Select-Object -Index 1).Trim() -replace '\s+', '')
-$hash | Set-Content -Path $HashPath -Encoding ASCII
+$hash | Out-File -FilePath $HashPath -Encoding ASCII
 
 $buildManifest = @{
     product = $ProductVersion
@@ -347,7 +347,7 @@ $buildManifest = @{
     source_commit = (git -C $RepoRoot rev-parse HEAD)
 } | ConvertTo-Json -Depth 3
 
-$buildManifest | Set-Content -Path $BuildManifest -Encoding UTF8
+$buildManifest | Out-File -FilePath $BuildManifest -Encoding UTF8
 
 Write-Result "Installer: $InstallerPath"
 Write-Result "SHA-256: $hash"
