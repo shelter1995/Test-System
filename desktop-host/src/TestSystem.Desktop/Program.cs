@@ -22,7 +22,6 @@ public static class Program
     /// <summary>
     ///  The main entry point for the application.
     /// </summary>
-    [STAThread]
     public static ApplicationStartupMode SelectStartupMode(string[] args)
     {
         if (args.Any(arg => string.Equals(arg, "--delete-data", StringComparison.OrdinalIgnoreCase)))
@@ -38,6 +37,7 @@ public static class Program
         return ApplicationStartupMode.MainApp;
     }
 
+    [STAThread]
     static int Main(string[] args)
     {
         try
