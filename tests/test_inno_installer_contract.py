@@ -53,6 +53,7 @@ def test_data_directory_page_defaults_to_local_app_data_and_persists_install_ide
     assert "{app}\\install-location.json" in text
     assert "{code:GetDataConfigPath}" in text
     assert "SaveUtf8Json" in text
+    assert "SaveStringsToUTF8FileWithoutBOM" in text
     assert re.search(r"ProbeWritableDirectory\s*\(", text)
     assert re.search(r"RenameFile\s*\(", text)
     assert re.search(r"DeleteFile\s*\(", text)
@@ -129,6 +130,11 @@ def test_upgrade_uses_app_mutex_and_preserves_recorded_data_dir():
     assert f"RegQueryStringValue(HKCU, '{REGISTRY_KEY}', 'DataDir'" in text
     assert "ExistingDataDir" in text
     assert "DataDirPage.Values[0] := ExistingDataDir" in text
+    assert "procedure RegisterPreviousData(PreviousDataKey: Integer)" in text
+    assert "SetPreviousData(PreviousDataKey, 'DataDir', SelectedDataDir)" in text
+    assert "SetPreviousData(PreviousDataKey, 'InstallId', CurrentInstallId)" in text
+    assert "SetPreviousData('DataDir'" not in text
+    assert "SetPreviousData('InstallId'" not in text
 
 
 def test_uninstall_keeps_data_by_default_and_deletes_only_after_explicit_confirmation():

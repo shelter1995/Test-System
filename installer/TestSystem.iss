@@ -57,6 +57,7 @@ begin
 end;
 
 var
+  SmartScreenPage: TOutputMsgWizardPage;
   DataDirPage: TInputDirWizardPage;
   ExistingDataDir: string;
   SelectedDataDir: string;
@@ -90,9 +91,13 @@ begin
 end;
 
 procedure SaveUtf8Json(FileName: string; Contents: string);
+var
+  Lines: TArrayOfString;
 begin
   ForceDirectories(ExtractFileDir(FileName));
-  if not SaveStringToFile(FileName, Contents, False) then
+  SetArrayLength(Lines, 1);
+  Lines[0] := Contents;
+  if not SaveStringsToUTF8FileWithoutBOM(FileName, Lines, False) then
     RaiseException('Failed to write: ' + FileName);
 end;
 
@@ -155,6 +160,18 @@ begin
   RegQueryStringValue(HKCU, 'Software\ZhiXueWorkbench', 'DataDir', ExistingDataDir);
   SelectedDataDir := NormalizeDir('{localappdata}\智学工作台\Data');
 
+  SmartScreenPage := CreateOutputMsgPage(
+    wpWelcome,
+    '安全提示',
+    '关于 Windows SmartScreen 安全警告',
+    '由于本程序尚未获得微软代码签名认证，首次运行时 Windows 可能会弹出' +
+    '"Windows 已保护你的电脑"的 SmartScreen 安全警告。' + #13#10 + #13#10 +
+    '这是 Windows 对所有未签名程序的正常提示，并不表示程序存在安全问题。' + #13#10 + #13#10 +
+    '如遇到此警告，请按以下步骤操作：' + #13#10 +
+    '  1. 点击"更多信息"' + #13#10 +
+    '  2. 点击"仍要运行"' + #13#10 + #13#10 +
+    '安装完成后，后续启动将不再出现此警告。');
+
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
     '选择智学工作台数据存储目录',
@@ -211,8 +228,12 @@ begin
   RegWriteStringValue(HKCU, 'Software\ZhiXueWorkbench', 'DataDir', SelectedDataDir);
   RegWriteStringValue(HKCU, 'Software\ZhiXueWorkbench', 'InstallId', CurrentInstallId);
   RegWriteStringValue(HKCU, 'Software\ZhiXueWorkbench', 'Version', '{#MyAppVersion}');
-  SetPreviousData('DataDir', SelectedDataDir, '');
-  SetPreviousData('InstallId', CurrentInstallId, '');
+end;
+
+procedure RegisterPreviousData(PreviousDataKey: Integer);
+begin
+  SetPreviousData(PreviousDataKey, 'DataDir', SelectedDataDir);
+  SetPreviousData(PreviousDataKey, 'InstallId', CurrentInstallId);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

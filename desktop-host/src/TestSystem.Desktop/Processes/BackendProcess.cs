@@ -39,6 +39,7 @@ public sealed class BackendProcess : IBackendProcess
         };
 
         processStartInfo.Environment.Clear();
+        CopyWindowsEnvironment(processStartInfo.Environment);
         foreach (var pair in startInfo.Environment)
         {
             processStartInfo.Environment[pair.Key] = pair.Value;
@@ -46,6 +47,35 @@ public sealed class BackendProcess : IBackendProcess
 
         return processStartInfo;
     }
+
+    private static void CopyWindowsEnvironment(IDictionary<string, string?> target)
+    {
+        foreach (var name in RequiredWindowsEnvironmentNames)
+        {
+            var value = Environment.GetEnvironmentVariable(name);
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                target[name] = value;
+            }
+        }
+    }
+
+    private static readonly string[] RequiredWindowsEnvironmentNames =
+    [
+        "SystemRoot",
+        "WINDIR",
+        "COMSPEC",
+        "TEMP",
+        "TMP",
+        "USERPROFILE",
+        "APPDATA",
+        "LOCALAPPDATA",
+        "PROGRAMDATA",
+        "PROCESSOR_ARCHITECTURE",
+        "PROCESSOR_IDENTIFIER",
+        "NUMBER_OF_PROCESSORS",
+        "OS",
+    ];
 
     public Task StartAsync(CancellationToken cancellationToken = default)
     {

@@ -1,6 +1,6 @@
 @echo off
 setlocal EnableExtensions
-chcp 65001 >nul
+%SystemRoot%\System32\chcp.com 65001 >nul 2>&1
 
 set "ROOT=%~dp0"
 set "PORTABLE_PYTHON=%ROOT%runtime\python\python.exe"

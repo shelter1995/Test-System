@@ -34,6 +34,10 @@ PACKAGING_FILES = (
     "requirements-portable-base.txt",
     "mineru-requirements.txt",
 )
+ROOT_SCRIPTS = (
+    "start_services.bat",
+    "install_mineru.bat",
+)
 EXCLUDED_PARTS = {
     ".git",
     ".venv",
@@ -173,7 +177,7 @@ def _allowed_source_destination(relative: Path) -> Path | None:
         return None
     if relative.parts[0] in SOURCE_DIRECTORIES:
         return relative
-    if len(relative.parts) == 1 and relative.name in (*USER_DOCUMENTS, "version.json"):
+    if len(relative.parts) == 1 and relative.name in (*USER_DOCUMENTS, *ROOT_SCRIPTS, "version.json"):
         return relative
     if (
         len(relative.parts) == 2

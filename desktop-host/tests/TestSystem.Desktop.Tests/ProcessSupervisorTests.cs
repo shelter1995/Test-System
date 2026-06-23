@@ -64,7 +64,7 @@ public sealed class ProcessSupervisorTests : IDisposable
     }
 
     [Fact]
-    public void BackendProcess_start_info_hides_console_redirects_output_and_replaces_environment()
+    public void BackendProcess_start_info_hides_console_redirects_output_and_preserves_required_windows_environment()
     {
         var info = new BackendProcessStartInfo(
             "RAG",
@@ -89,8 +89,14 @@ public sealed class ProcessSupervisorTests : IDisposable
         Assert.Equal(info.FileName, startInfo.FileName);
         Assert.Equal(info.Arguments, startInfo.Arguments);
         Assert.Equal(info.WorkingDirectory, startInfo.WorkingDirectory);
-        Assert.Equal(2, startInfo.Environment.Count);
         Assert.Equal(@"C:\Data", startInfo.Environment["TEST_SYSTEM_DATA_DIR"]);
+        Assert.Equal(@"C:\App\runtime\python", startInfo.Environment["PATH"]);
+
+        var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+        if (!string.IsNullOrWhiteSpace(systemRoot))
+        {
+            Assert.Equal(systemRoot, startInfo.Environment["SystemRoot"]);
+        }
     }
 
     [Fact]
