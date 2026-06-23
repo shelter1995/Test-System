@@ -23,6 +23,21 @@ $InstallerDir = Join-Path $RepoRoot "installer"
 $FinalDir = Join-Path $RepoRoot $OutputRoot
 
 $Python = Join-Path $RepoRoot ".venv\Scripts\python.exe"
+if (-not (Test-Path $Python -PathType Leaf)) {
+    # Worktree: try the main repo's venv
+    $mainRepoRoot = (git -C $RepoRoot rev-parse --path-format=absolute --git-common-dir 2>$null)
+    if ($mainRepoRoot) {
+        $mainRepoRoot = Split-Path $mainRepoRoot -Parent
+        $mainPython = Join-Path $mainRepoRoot ".venv\Scripts\python.exe"
+        if (Test-Path $mainPython -PathType Leaf) {
+            $Python = $mainPython
+            Write-Host "  Using main repo Python: $Python"
+        }
+    }
+}
+if (-not (Test-Path $Python -PathType Leaf)) {
+    throw "Python venv not found at $Python. Create a .venv in the repo root or set up a symlink."
+}
 $VersionModule = Join-Path $RepoRoot "packaging\product_version.py"
 $InstallerBuilder = Join-Path $RepoRoot "packaging\installer_builder.py"
 $Auditor = Join-Path $RepoRoot "packaging\verify_installer_artifact.py"
