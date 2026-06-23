@@ -89,7 +89,7 @@ public partial class MainForm : Form
 
     private async Task StartApplicationAsync()
     {
-        SetStatus("正在启动 Test-System…", showActions: false);
+        SetStatus("正在启动智学工作台…", showActions: false);
         _log.Write("桌面宿主启动。");
         var progress = new Progress<StartupPhase>(phase => SetStatus(ToChineseStatus(phase), showActions: false));
         var result = await _startupCoordinator.StartAsync(progress).ConfigureAwait(true);

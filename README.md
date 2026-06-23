@@ -1,4 +1,4 @@
-# Test-System
+# 智学工作台
 
 AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成：
 
@@ -188,7 +188,7 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
 ```
 
-产出：`dist-installer\Test-System-Setup-<版本>-x64.exe`
+产出：`dist-installer\智学工作台-Setup-<版本>-x64.exe`
 
 安装包特点：
 - 双击安装，可选择程序和数据路径

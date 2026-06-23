@@ -10,7 +10,7 @@ public sealed record InstallConfiguration(string InstallRoot, string DataDir, Gu
         var configPath = Path.Combine(normalizedInstallRoot, "install-location.json");
         if (!File.Exists(configPath))
         {
-            throw new InvalidOperationException("找不到安装配置文件，请重新安装 Test-System。");
+            throw new InvalidOperationException("找不到安装配置文件，请重新安装智学工作台。");
         }
 
         JsonDocument document;
@@ -20,7 +20,7 @@ public sealed record InstallConfiguration(string InstallRoot, string DataDir, Gu
         }
         catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            throw new InvalidOperationException("安装配置文件格式无效，请重新安装 Test-System。", ex);
+            throw new InvalidOperationException("安装配置文件格式无效，请重新安装智学工作台。", ex);
         }
 
         using (document)
@@ -28,27 +28,27 @@ public sealed record InstallConfiguration(string InstallRoot, string DataDir, Gu
             var root = document.RootElement;
             if (root.ValueKind != JsonValueKind.Object)
             {
-                throw new InvalidOperationException("安装配置文件格式无效，请重新安装 Test-System。");
+                throw new InvalidOperationException("安装配置文件格式无效，请重新安装智学工作台。");
             }
 
             if (!root.TryGetProperty("dataDir", out var dataDirElement)
                 || dataDirElement.ValueKind != JsonValueKind.String
                 || string.IsNullOrWhiteSpace(dataDirElement.GetString()))
             {
-                throw new InvalidOperationException("数据目录缺失或为空，请重新安装 Test-System。");
+                throw new InvalidOperationException("数据目录缺失或为空，请重新安装智学工作台。");
             }
 
             var dataDir = dataDirElement.GetString()!;
             if (!Path.IsPathFullyQualified(dataDir))
             {
-                throw new InvalidOperationException("数据目录必须是绝对路径，请重新安装 Test-System。");
+                throw new InvalidOperationException("数据目录必须是绝对路径，请重新安装智学工作台。");
             }
 
             if (!root.TryGetProperty("installId", out var installIdElement)
                 || installIdElement.ValueKind != JsonValueKind.String
                 || !Guid.TryParse(installIdElement.GetString(), out var installId))
             {
-                throw new InvalidOperationException("安装标识缺失或无效，请重新安装 Test-System。");
+                throw new InvalidOperationException("安装标识缺失或无效，请重新安装智学工作台。");
             }
 
             return new InstallConfiguration(

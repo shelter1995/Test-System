@@ -82,7 +82,7 @@ public static class Program
         }
         catch (Exception ex) when (ex is InvalidOperationException or IOException or UnauthorizedAccessException)
         {
-            MessageBox.Show(ex.Message, "Test-System 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(ex.Message, "智学工作台启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
             return 1;
         }
     }
@@ -125,7 +125,7 @@ public static class Program
     {
         try
         {
-            var logPath = Path.Combine(Path.GetTempPath(), "Test-System-delete-data.log");
+            var logPath = Path.Combine(Path.GetTempPath(), "ZhiXueWorkbench-delete-data.log");
             File.AppendAllText(
                 logPath,
                 $"[{DateTimeOffset.Now:O}] {ex}{Environment.NewLine}",

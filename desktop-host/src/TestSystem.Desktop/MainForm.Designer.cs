@@ -59,7 +59,7 @@ public partial class MainForm
         statusLabel.Name = "statusLabel";
         statusLabel.Size = new Size(600, 120);
         statusLabel.TabIndex = 0;
-        statusLabel.Text = "正在启动 Test-System…";
+        statusLabel.Text = "正在启动智学工作台…";
         statusLabel.TextAlign = ContentAlignment.MiddleCenter;
 
         retryButton.Anchor = AnchorStyles.None;
@@ -119,7 +119,7 @@ public partial class MainForm
         MinimumSize = new Size(960, 640);
         Name = "MainForm";
         StartPosition = FormStartPosition.CenterScreen;
-        Text = "Test-System";
+        Text = "智学工作台";
         ((System.ComponentModel.ISupportInitialize)webView).EndInit();
         statusPanel.ResumeLayout(false);
         mainMenu.ResumeLayout(false);

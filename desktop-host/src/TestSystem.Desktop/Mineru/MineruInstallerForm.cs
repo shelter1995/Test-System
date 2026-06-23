@@ -13,7 +13,7 @@ public sealed class MineruInstallerForm : Form
     private readonly Label _status = new() { Dock = DockStyle.Top, Height = 64, TextAlign = ContentAlignment.MiddleCenter };
     private readonly Button _cancel = new() { Dock = DockStyle.Bottom, Text = "取消" };
     private readonly Button _openLog = new() { Dock = DockStyle.Bottom, Text = "打开日志目录" };
-    private readonly Button _startApp = new() { Dock = DockStyle.Bottom, Text = "启动 Test-System", Visible = false };
+    private readonly Button _startApp = new() { Dock = DockStyle.Bottom, Text = "启动智学工作台", Visible = false };
     private readonly CancellationTokenSource _cancellation = new();
     private bool _completed;
     private bool _closing;

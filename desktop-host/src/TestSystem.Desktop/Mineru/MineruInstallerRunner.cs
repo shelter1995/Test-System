@@ -66,7 +66,7 @@ public sealed class MineruInstallerRunner
         Directory.CreateDirectory(_layout.LogsRoot);
         if (_mainAppMutexOwned())
         {
-            return MineruInstallResult.Fail("请先关闭 Test-System 主程序后再安装增强解析组件。", logPath);
+            return MineruInstallResult.Fail("请先关闭智学工作台主程序后再安装增强解析组件。", logPath);
         }
 
         using var process = _launcher.Start(BuildStartInfo(source, logPath));

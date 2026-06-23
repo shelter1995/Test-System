@@ -1,4 +1,4 @@
-# Test-System Windows Installer Release Runbook
+# 智学工作台 Windows Installer Release Runbook
 
 ## Prerequisites
 
@@ -17,8 +17,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
 
 This produces:
 ```
-dist-installer\Test-System-Setup-1.0.0-x64.exe
-dist-installer\Test-System-Setup-1.0.0-x64.exe.sha256
+dist-installer\智学工作台-Setup-1.0.0-x64.exe
+dist-installer\智学工作台-Setup-1.0.0-x64.exe.sha256
 dist-installer\build-manifest.json
 ```
 
@@ -81,14 +81,14 @@ Keep entries under `## Unreleased` during development. After acceptance testing 
 
 | File | Description |
 |------|-------------|
-| `Test-System-Setup-<version>-x64.exe` | Offline Windows installer |
-| `Test-System-Setup-<version>-x64.exe.sha256` | SHA-256 checksum |
+| `智学工作台-Setup-<version>-x64.exe` | Offline Windows installer |
+| `智学工作台-Setup-<version>-x64.exe.sha256` | SHA-256 checksum |
 | `dist-installer/build-manifest.json` | Build metadata (versions, commit, signatures) |
 
 ## SHA-256 Verification
 
 ```powershell
-Get-FileHash dist-installer\Test-System-Setup-1.0.0-x64.exe -Algorithm SHA256
+Get-FileHash dist-installer\智学工作台-Setup-1.0.0-x64.exe -Algorithm SHA256
 # Compare with the .sha256 file
 ```
 

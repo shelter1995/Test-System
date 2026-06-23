@@ -111,7 +111,7 @@ public sealed class StartupCoordinator
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                return await FailAsync("启动已取消", "用户取消了 Test-System 启动。").ConfigureAwait(false);
+                return await FailAsync("启动已取消", "用户取消了智学工作台启动。").ConfigureAwait(false);
             }
 
             return await FailAsync("启动超时", $"后端服务未能在 {_totalTimeout.TotalSeconds:0} 秒内启动完成。").ConfigureAwait(false);

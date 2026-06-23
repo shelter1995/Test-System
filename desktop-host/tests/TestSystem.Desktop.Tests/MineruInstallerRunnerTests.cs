@@ -137,7 +137,7 @@ public sealed class MineruInstallerRunnerTests : IDisposable
         var result = await runner.StartAsync(MineruModelSource.ModelScope);
 
         Assert.False(result.Success);
-        Assert.Contains("请先关闭 Test-System", result.Message);
+        Assert.Contains("请先关闭智学工作台", result.Message);
     }
 
     private RuntimeLayout CreateLayout()

@@ -1,4 +1,4 @@
-# Test-System Windows 便携包
+# 智学工作台 Windows 打包说明
 
 ## 构建
 
@@ -90,8 +90,8 @@ powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
 
 产物：
 ```text
-dist-installer\Test-System-Setup-<版本>-x64.exe
-dist-installer\Test-System-Setup-<版本>-x64.exe.sha256
+dist-installer\智学工作台-Setup-<版本>-x64.exe
+dist-installer\智学工作台-Setup-<版本>-x64.exe.sha256
 dist-installer\build-manifest.json
 ```
 

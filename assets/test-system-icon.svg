@@ -1,10 +1,28 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="智学工作台图标">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#2563eb"/>
-      <stop offset="100%" style="stop-color:#1d4ed8"/>
+    <linearGradient id="bg" x1="32" y1="24" x2="224" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2563eb"/>
+      <stop offset="0.55" stop-color="#4f46e5"/>
+      <stop offset="1" stop-color="#7c3aed"/>
     </linearGradient>
+    <linearGradient id="page" x1="62" y1="84" x2="194" y2="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#0f172a" flood-opacity="0.28"/>
+    </filter>
   </defs>
-  <rect width="256" height="256" rx="40" fill="url(#bg)"/>
-  <text x="128" y="160" font-family="Arial, sans-serif" font-size="120" font-weight="bold" fill="white" text-anchor="middle">TS</text>
+  <rect width="256" height="256" rx="52" fill="url(#bg)"/>
+  <circle cx="200" cy="58" r="8" fill="#a5f3fc" opacity="0.95"/>
+  <circle cx="54" cy="198" r="6" fill="#bfdbfe" opacity="0.9"/>
+  <path d="M54 82c0-11 9-20 20-20h45c18 0 32 7 41 20 9-13 23-20 41-20h11c11 0 20 9 20 20v90c0 11-9 20-20 20h-36c-14 0-26 4-35 13-3 3-8 3-11 0-9-9-21-13-35-13H74c-11 0-20-9-20-20V82z" fill="#0f172a" opacity="0.18" filter="url(#shadow)"/>
+  <path d="M48 74c0-9 7-16 16-16h47c17 0 31 7 39 20v122c-9-9-22-14-39-14H64c-9 0-16-7-16-16V74z" fill="url(#page)"/>
+  <path d="M208 58c9 0 16 7 16 16v96c0 9-7 16-16 16h-47c-17 0-30 5-39 14V78c8-13 22-20 39-20h47z" fill="#eff6ff"/>
+  <path d="M128 78v122" stroke="#60a5fa" stroke-width="5" stroke-linecap="round"/>
+  <path d="M72 96h35M72 118h35M72 140h28M156 96h36M156 118h36M156 140h28" stroke="#2563eb" stroke-width="7" stroke-linecap="round" opacity="0.9"/>
+  <rect x="91" y="106" width="74" height="74" rx="18" fill="#1e293b"/>
+  <rect x="103" y="118" width="50" height="50" rx="12" fill="#38bdf8"/>
+  <path d="M113 143h30M128 128v30" stroke="#0f172a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M91 128H75M91 158H75M181 128h-16M181 158h-16M113 106V90M143 106V90M113 196v-16M143 196v-16" stroke="#a5f3fc" stroke-width="7" stroke-linecap="round"/>
 </svg>

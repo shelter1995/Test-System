@@ -96,9 +96,10 @@ if ($ProductVersion -notmatch '^\d+\.\d+\.\d+$') {
     throw "version.json must contain MAJOR.MINOR.PATCH, got: $ProductVersion"
 }
 $FileVersion = "$ProductVersion.0"
-$InstallerName = "Test-System-Setup-$ProductVersion-x64.exe"
-$InstallerPath = Join-Path $FinalDir $InstallerName
-$HashPath = "$InstallerPath.sha256"
+$InstallerNamePattern = "*-Setup-$ProductVersion-x64.exe"
+$InstallerName = $null
+$InstallerPath = $null
+$HashPath = $null
 $BuildManifest = Join-Path $FinalDir "build-manifest.json"
 Write-Result "Version: $ProductVersion (file: $FileVersion)"
 
@@ -297,12 +298,20 @@ if (-not (Test-Path $isccExe -PathType Leaf)) {
     throw "Inno Setup 6 ISCC.exe not found. Install Inno Setup 6 or adjust PATH."
 }
 
+$compileStartedAt = Get-Date
 $isccResult = Invoke-Tool -Exe $isccExe -Arguments @($IssScript) -WorkingDir $RepoRoot
 Write-Result "Inno Setup compiled successfully"
 
-if (-not (Test-Path $InstallerPath -PathType Leaf)) {
-    throw "Inno Setup did not produce the expected output: $InstallerPath"
+$installerFile = Get-ChildItem -LiteralPath $FinalDir -File -Filter $InstallerNamePattern |
+    Where-Object { $_.LastWriteTime -ge $compileStartedAt.AddMinutes(-5) } |
+    Sort-Object LastWriteTime -Descending |
+    Select-Object -First 1
+if (-not $installerFile) {
+    throw "Inno Setup did not produce an installer matching: $InstallerNamePattern"
 }
+$InstallerPath = $installerFile.FullName
+$InstallerName = $installerFile.Name
+$HashPath = "$InstallerPath.sha256"
 Write-Result "Installer output: $InstallerPath"
 
 # ---------------------------------------------------------------------------
