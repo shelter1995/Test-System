@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Off
 
-$RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $PrereqDir = Join-Path $RepoRoot ".cache\prerequisites"
 $InstallerName = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
 $InstallerPath = Join-Path $PrereqDir $InstallerName
@@ -40,7 +40,10 @@ if ($Offline) {
 
     try {
         Write-Status "Downloading from Microsoft (this may take several minutes)..."
-        Invoke-WebRequest -Uri $DownloadUrl -OutFile $InstallerPath -UseBasicParsing -MaximumRetryCount 3 -RetryIntervalSec 5
+        $wc = New-Object System.Net.WebClient
+        $wc.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0")
+        $wc.DownloadFile($DownloadUrl, $InstallerPath)
+        $wc.Dispose()
     } catch {
         Write-Error "Failed to download WebView2 Runtime: $_"
         exit 1
