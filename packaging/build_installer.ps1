@@ -333,7 +333,7 @@ if ($CertificateThumbprint) {
 Write-Step "Writing build artifacts"
 
 $hash = ((certutil -hashfile $InstallerPath SHA256 | Select-Object -Index 1).Trim() -replace '\s+', '')
-$hash | Out-File -FilePath $HashPath -Encoding ASCII
+[System.IO.File]::WriteAllText($HashPath, $hash, [System.Text.Encoding]::ASCII)
 
 $buildManifest = @{
     product = $ProductVersion
@@ -347,7 +347,7 @@ $buildManifest = @{
     source_commit = (git -C $RepoRoot rev-parse HEAD)
 } | ConvertTo-Json -Depth 3
 
-$buildManifest | Out-File -FilePath $BuildManifest -Encoding UTF8
+[System.IO.File]::WriteAllText($BuildManifest, $buildManifest, [System.Text.Encoding]::UTF8)
 
 Write-Result "Installer: $InstallerPath"
 Write-Result "SHA-256: $hash"
