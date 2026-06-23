@@ -1,8 +1,9 @@
 using TestSystem.Desktop.Configuration;
+using TestSystem.Desktop.Startup;
 
 namespace TestSystem.Desktop.Processes;
 
-public sealed class BackendProcessSupervisor : IDisposable
+public sealed class BackendProcessSupervisor : IBackendSupervisor, IDisposable
 {
     public const int DefaultTutorPort = 8002;
     public const int DefaultRagPort = 8003;
