@@ -34,6 +34,12 @@ def test_data_directory_page_defaults_to_local_app_data_and_persists_install_ide
     text = _script()
 
     assert "CreateInputDirPage" in text
+    assert "CreateGUID(GeneratedGuid)" in text
+    assert "GetDateTimeString" not in re.search(
+        r"function CreateInstallId: string;.*?end;",
+        text,
+        flags=re.DOTALL,
+    ).group(0)
     assert "{localappdata}\\Test-System\\Data" in text
     assert "RegQueryStringValue(HKCU, 'Software\\Test-System', 'DataDir'" in text
     assert "RegWriteStringValue(HKCU, 'Software\\Test-System', 'DataDir'" in text
@@ -82,11 +88,31 @@ def test_bundles_files_and_runs_webview2_x64_standalone_silently():
 def test_finish_page_offers_main_app_and_optional_mineru_installer():
     text = _script()
 
-    assert r'Description: "Launch Test-System"' in text
+    assert r'Description: "启动 Test-System"' in text
     assert r'Filename: "{app}\TestSystem.exe"' in text
-    assert r'Description: "Install MinerU enhanced parsing components"' in text
+    assert r'Description: "安装 MinerU 增强解析组件"' in text
     assert r'Parameters: "--install-mineru"' in text
     assert "postinstall" in text
+
+
+def test_installer_visible_text_is_chinese():
+    text = _script()
+
+    assert 'Name: "chinesesimp"' in text
+    forbidden_visible_text = (
+        "Create a desktop shortcut",
+        "Additional shortcuts",
+        "Installing Microsoft Edge WebView2 Runtime",
+        "Please close Test-System",
+        "Choose Test-System data directory",
+        "Where should Test-System store runtime data",
+        "Please choose an absolute data directory path",
+        "The selected data directory is not writable",
+        "Do you also want to delete",
+        "Choose No to keep your data",
+    )
+    for phrase in forbidden_visible_text:
+        assert phrase not in text
 
 
 def test_upgrade_uses_app_mutex_and_preserves_recorded_data_dir():

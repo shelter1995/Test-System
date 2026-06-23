@@ -25,7 +25,7 @@ CloseApplications=no
 AppMutex={#MyAppId}
 
 [Languages]
-Name: "english"; MessagesFile: "compiler:Default.isl"
+Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Files]
 Source: "..\.build\installer\Test-System\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -36,17 +36,21 @@ Name: "{autoprograms}\Test-System"; Filename: "{app}\TestSystem.exe"; WorkingDir
 Name: "{autodesktop}\Test-System"; Filename: "{app}\TestSystem.exe"; WorkingDir: "{app}"; IconFilename: "{app}\assets\test-system.ico"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
+Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式："
 
 [Run]
-Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "Installing Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated
-Filename: "{app}\TestSystem.exe"; Description: "Launch Test-System"; Flags: nowait postinstall skipifsilent
-Filename: "{app}\TestSystem.exe"; Parameters: "--install-mineru"; Description: "Install MinerU enhanced parsing components"; Flags: nowait postinstall skipifsilent unchecked
+Filename: "{tmp}\MicrosoftEdgeWebView2RuntimeInstallerX64.exe"; Parameters: "/silent /install"; StatusMsg: "正在安装 Microsoft Edge WebView2 Runtime..."; Flags: waituntilterminated
+Filename: "{app}\TestSystem.exe"; Description: "启动 Test-System"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\TestSystem.exe"; Parameters: "--install-mineru"; Description: "安装 MinerU 增强解析组件"; Flags: nowait postinstall skipifsilent unchecked
 
 [Code]
 function CreateInstallId: string;
+var
+  GeneratedGuid: string;
 begin
-  Result := 'd1cf6b3d-77b3-4bfc-a2b1-' + GetDateTimeString('yyyymmddhhnnsszzz', '-', ':');
+  if not CreateGUID(GeneratedGuid) then
+    RaiseException('无法生成安装标识，请重新运行安装程序。');
+  Result := GeneratedGuid;
 end;
 
 var
@@ -150,9 +154,9 @@ begin
 
   DataDirPage := CreateInputDirPage(
     wpSelectDir,
-    'Choose Test-System data directory',
-    'Where should Test-System store runtime data?',
-    'Setup will preserve this directory during upgrades and safe uninstall keeps it by default.',
+    '选择 Test-System 数据存储目录',
+    'Test-System 应该把运行数据保存在哪里？',
+    '安装程序会在升级时保留此目录，卸载时默认也会保留。',
     False,
     '');
   DataDirPage.Add('');
@@ -178,14 +182,14 @@ begin
     Candidate := NormalizeDir(DataDirPage.Values[0]);
     if not IsAbsolutePath(Candidate) then
     begin
-      MsgBox('Please choose an absolute data directory path.', mbError, MB_OK);
+      MsgBox('请选择绝对路径作为数据存储目录。', mbError, MB_OK);
       Result := False;
       Exit;
     end;
 
     if not ProbeWritableDirectory(Candidate) then
     begin
-      MsgBox('The selected data directory is not writable.', mbError, MB_OK);
+      MsgBox('所选数据存储目录不可写，请选择其他目录。', mbError, MB_OK);
       Result := False;
       Exit;
     end;
@@ -227,9 +231,9 @@ begin
   begin
     DeleteDataOnUninstall :=
       MsgBox(
-        'Do you also want to delete the Test-System data directory?' + #13#10 + #13#10 +
+        '是否同时删除 Test-System 的用户数据目录？' + #13#10 + #13#10 +
         UninstallDataDir + #13#10 + #13#10 +
-        'Choose No to keep your data.',
+        '选择“否”将保留知识库、配置、生成文件和增强解析组件。',
         mbConfirmation,
         MB_YESNO or MB_DEFBUTTON2) = IDYES;
   end;
@@ -248,11 +252,11 @@ begin
       ewWaitUntilTerminated,
       ResultCode) then
     begin
-      MsgBox('Test-System could not start the safe data deletion helper. Your data was kept.', mbError, MB_OK);
+      MsgBox('无法启动 Test-System 安全数据删除程序，已保留数据目录。', mbError, MB_OK);
     end
     else if ResultCode <> 0 then
     begin
-      MsgBox('Test-System refused to delete the data directory. Your data was kept.', mbError, MB_OK);
+      MsgBox('Test-System 拒绝删除该数据目录，已保留数据。', mbError, MB_OK);
     end;
   end;
 end;
