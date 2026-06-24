@@ -96,6 +96,31 @@ def test_parse_with_mineru_returns_parsed_document_on_success(monkeypatch, tmp_p
     assert "--output-dir" not in captured_cmd
 
 
+def test_parse_with_mineru_uses_pipeline_backend_for_pdfs(monkeypatch, tmp_path: Path):
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"%PDF")
+    captured_cmd = []
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        out_dir = Path(cmd[cmd.index("-o") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "result.md").write_text("PDF OCR 文本", encoding="utf-8")
+        return _Result()
+
+    monkeypatch.setattr("rag_engines.traditional.document_parsers.mineru_parser.subprocess.run", _fake_run)
+
+    parsed = parse_with_mineru(source, output_root=tmp_path / "output", mineru_path="mineru")
+
+    assert "PDF OCR 文本" in parsed.text
+    assert captured_cmd[captured_cmd.index("-b") + 1] == "pipeline"
+
+
 def test_parse_with_mineru_accepts_python_module_command(monkeypatch, tmp_path: Path):
     source = tmp_path / "a.pdf"
     source.write_bytes(b"%PDF")

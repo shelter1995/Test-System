@@ -57,6 +57,8 @@ def parse_with_mineru(
     ]
     if source_path.suffix.lower() in MINERU_IMAGE_EXTENSIONS:
         cmd.extend(["-m", "ocr", "-b", "pipeline"])
+    else:
+        cmd.extend(["-b", "pipeline"])
 
     try:
         result = subprocess.run(
