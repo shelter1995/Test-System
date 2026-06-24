@@ -141,6 +141,35 @@ def _load_with_mineru(file_path: Path) -> LoadedDocument:
     )
 
 
+def _is_mineru_unavailable(exc: Exception) -> bool:
+    if isinstance(exc, ParserUnavailable):
+        return True
+    text = str(exc).lower()
+    return "mineru cli not configured" in text or "mineru cli not found" in text
+
+
+def _mineru_dependency_message(file_name: str) -> str:
+    return (
+        f"{file_name} 解析失败：该文件需要增强解析组件（MinerU）才能获得完整内容。"
+        "请在桌面应用菜单中安装/修复增强解析组件后重试。"
+    )
+
+
+def _media_dependency_message(file_name: str, extension: str, exc: Exception) -> str:
+    text = str(exc).lower()
+    if extension in VIDEO_EXTENSIONS and "ffmpeg" in text:
+        return (
+            f"{file_name} 解析失败：视频解析需要 FFmpeg。"
+            "请在桌面应用菜单中安装/修复增强解析组件后重试。"
+        )
+    if "whisper" in text:
+        return (
+            f"{file_name} 解析失败：音视频转写需要 Whisper 语音识别组件。"
+            "当前基础版未安装该组件，请安装增强解析组件后重试。"
+        )
+    return f"{file_name} 解析失败：{exc}"
+
+
 def load_document_text(path: str | Path) -> LoadedDocument:
     file_path = Path(path)
     extension = file_path.suffix.lower()
@@ -157,6 +186,20 @@ def load_document_text(path: str | Path) -> LoadedDocument:
             try:
                 return _load_with_mineru(file_path)
             except (ParserUnavailable, DocumentParsingError) as exc:
+                if _is_mineru_unavailable(exc) and str(pdf_text or "").strip():
+                    text = pdf_text
+                    return LoadedDocument(
+                        text=text.strip(),
+                        metadata={
+                            "file_name": file_path.name,
+                            "extension": extension,
+                            "path": str(file_path),
+                            "parser": "pypdf_fallback",
+                            "warning": "增强解析组件（MinerU）不可用，已使用基础 PDF 文本解析结果。",
+                        },
+                    )
+                if _is_mineru_unavailable(exc):
+                    raise UnsupportedDocumentType(_mineru_dependency_message(file_path.name)) from exc
                 raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
         text = pdf_text
     elif extension == ".docx":
@@ -179,13 +222,15 @@ def load_document_text(path: str | Path) -> LoadedDocument:
         try:
             return _load_with_mineru(file_path)
         except (ParserUnavailable, DocumentParsingError) as exc:
+            if _is_mineru_unavailable(exc):
+                raise UnsupportedDocumentType(_mineru_dependency_message(file_path.name)) from exc
             raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
     elif extension in AUDIO_EXTENSIONS:
         try:
             _ffmpeg_path, whisper_available, _output_root = _resolve_media_runtime_config()
             text = transcribe_audio(file_path, whisper_available=whisper_available)
         except (ParserUnavailable, DocumentParsingError) as exc:
-            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+            raise UnsupportedDocumentType(_media_dependency_message(file_path.name, extension, exc)) from exc
     elif extension in VIDEO_EXTENSIONS:
         try:
             ffmpeg_path, whisper_available, output_root = _resolve_media_runtime_config()
@@ -196,7 +241,7 @@ def load_document_text(path: str | Path) -> LoadedDocument:
                 whisper_available=whisper_available,
             )
         except (ParserUnavailable, DocumentParsingError) as exc:
-            raise UnsupportedDocumentType(f"{file_path.name} 解析失败：{exc}") from exc
+            raise UnsupportedDocumentType(_media_dependency_message(file_path.name, extension, exc)) from exc
     else:
         raise UnsupportedDocumentType(f"{file_path.name} 不支持传统 RAG 直接处理，请使用 RAG-Anything 高级解析。")
 

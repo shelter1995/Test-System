@@ -137,6 +137,8 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "huggingface"), environment["HF_HOME"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "modelscope"), environment["MODELSCOPE_CACHE"]);
         Assert.Equal(layout.MineruModels, environment["MINERU_MODEL_DIR"]);
+        Assert.Equal(layout.PythonExe, environment["MINERU_PYTHON"]);
+        Assert.Equal(Path.Combine(layout.MineruModels, "mineru.json"), environment["MINERU_TOOLS_CONFIG_JSON"]);
         Assert.StartsWith(Path.GetDirectoryName(layout.PythonExe)!, environment["PATH"], StringComparison.OrdinalIgnoreCase);
     }
 

@@ -34,6 +34,8 @@ public static class RuntimeEnvironment
             ["TRANSFORMERS_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "huggingface"),
             ["MODELSCOPE_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "modelscope"),
             ["MINERU_MODEL_DIR"] = layout.MineruModels,
+            ["MINERU_PYTHON"] = layout.PythonExe,
+            ["MINERU_TOOLS_CONFIG_JSON"] = Path.Combine(layout.MineruModels, "mineru.json"),
             ["PATH"] = BuildPath(layout),
         };
 

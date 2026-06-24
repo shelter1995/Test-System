@@ -49,6 +49,22 @@ def test_mineru_python_without_installed_module_is_reported_unavailable(monkeypa
     assert result["mineru"] == {"available": False, "path": ""}
 
 
+def test_detect_ffmpeg_from_imageio_ffmpeg_when_binary_is_not_on_path(monkeypatch):
+    from rag_engines.traditional import dependencies
+
+    class FakeImageioFfmpeg:
+        @staticmethod
+        def get_ffmpeg_exe():
+            return "C:/optional/imageio_ffmpeg/ffmpeg.exe"
+
+    monkeypatch.setattr(dependencies.shutil, "which", lambda name: None)
+    monkeypatch.setattr(dependencies, "_import_module", lambda name: FakeImageioFfmpeg if name == "imageio_ffmpeg" else None)
+
+    result = dependencies.detect_traditional_parser_dependencies()
+
+    assert result["ffmpeg"] == {"available": True, "path": "C:/optional/imageio_ffmpeg/ffmpeg.exe"}
+
+
 def test_config_exposes_traditional_parser_and_kb_query_settings(monkeypatch):
     monkeypatch.setenv("LIBREOFFICE_PATH", "C:/custom/soffice.exe")
     monkeypatch.setenv("MINERU_CLI_PATH", "C:/custom/mineru.exe")

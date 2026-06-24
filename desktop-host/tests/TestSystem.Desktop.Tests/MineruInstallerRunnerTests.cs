@@ -65,8 +65,8 @@ public sealed class MineruInstallerRunnerTests : IDisposable
         {
             OutputLines =
             [
-                """{"stage":"dependencies","percent":10,"message":"正在安装 MinerU 依赖"}""",
-                """{"stage":"complete","percent":100,"message":"增强解析组件安装完成"}""",
+                """{"stage":"dependencies","percent":10,"message":"正在安装增强解析依赖（MinerU / FFmpeg / Whisper）"}""",
+                """{"stage":"complete","percent":100,"message":"增强解析组件安装完成（MinerU / FFmpeg / Whisper）"}""",
             ],
         };
         var runner = new MineruInstallerRunner(layout, new FakeLauncher(process), mainAppMutexOwned: () => false);
@@ -77,7 +77,7 @@ public sealed class MineruInstallerRunnerTests : IDisposable
         Assert.True(result.Success);
         Assert.Equal("dependencies", progress[0].Stage);
         Assert.Equal(10, progress[0].Percent);
-        Assert.Equal("增强解析组件安装完成", progress[^1].Message);
+        Assert.Equal("增强解析组件安装完成（MinerU / FFmpeg / Whisper）", progress[^1].Message);
     }
 
     [Fact]

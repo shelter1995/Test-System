@@ -134,10 +134,52 @@ def test_successful_verification_requires_version_cli_downloader_help_and_model_
         assert kwargs["env"]["PYTHONPATH"].split(os.pathsep)[0] == str(paths.installing_target)
         if command[-1] == "--help":
             return subprocess.CompletedProcess(command, 0, stdout="usage", stderr="")
+        code = command[-1] if command[:2] == [str(paths.python_exe), "-c"] else ""
+        if "import whisper" in code:
+            return subprocess.CompletedProcess(command, 0, stdout="media-deps-ok", stderr="")
         return subprocess.CompletedProcess(command, 0, stdout="3.3.1\nclient-main-ok", stderr="")
 
     assert manager.verify_installation(paths, run=fake_run) is True
     assert any(call[-1] == "--help" for call in calls)
+
+
+def test_verification_requires_media_dependencies(tmp_path: Path):
+    manager = _load_manager()
+    package_root, data_root = _make_layout(tmp_path)
+    paths = manager.MineruPaths(package_root, data_root)
+    (paths.models_root / "modelscope").mkdir(parents=True)
+    (paths.models_root / "modelscope" / "weights.bin").write_bytes(b"model")
+    snippets = []
+
+    def fake_run(command, **kwargs):
+        code = command[-1] if command[:2] == [str(paths.python_exe), "-c"] else ""
+        snippets.append(code)
+        if command[-1] == "--help":
+            return subprocess.CompletedProcess(command, 0, stdout="usage", stderr="")
+        if "import whisper" in code:
+            return subprocess.CompletedProcess(command, 0, stdout="media-deps-ok", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="3.3.1\nclient-main-ok", stderr="")
+
+    assert manager.verify_installation(paths, run=fake_run) is True
+    assert any("imageio_ffmpeg" in snippet for snippet in snippets)
+    assert any("import whisper" in snippet for snippet in snippets)
+
+
+def test_verification_rejects_missing_media_dependencies(tmp_path: Path):
+    manager = _load_manager()
+    package_root, data_root = _make_layout(tmp_path)
+    paths = manager.MineruPaths(package_root, data_root)
+    (paths.models_root / "weights.bin").write_bytes(b"model")
+
+    def fake_run(command, **kwargs):
+        if command[-1] == "--help":
+            return subprocess.CompletedProcess(command, 0, stdout="usage", stderr="")
+        code = command[-1] if command[:2] == [str(paths.python_exe), "-c"] else ""
+        if "import whisper" in code:
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="missing")
+        return subprocess.CompletedProcess(command, 0, stdout="3.3.1\nclient-main-ok", stderr="")
+
+    assert manager.verify_installation(paths, run=fake_run) is False
 
 
 def test_verification_rejects_wrong_distribution_version_even_with_models(tmp_path: Path):
@@ -282,9 +324,9 @@ def test_cli_install_prints_newline_delimited_json_progress(monkeypatch, capsys,
         manager,
         "install_mineru",
         lambda package_root, data_root, source, status_json, emit_progress=print, **kwargs: (
-            emit_progress({"stage": "dependencies", "percent": 10, "message": "正在安装 MinerU 依赖"}),
+            emit_progress({"stage": "dependencies", "percent": 10, "message": "正在安装增强解析依赖（MinerU / FFmpeg / Whisper）"}),
             emit_progress({"stage": "models", "percent": 60, "message": "正在下载 MinerU 模型"}),
-            emit_progress({"stage": "complete", "percent": 100, "message": "增强解析组件安装完成"}),
+            emit_progress({"stage": "complete", "percent": 100, "message": "增强解析组件安装完成（MinerU / FFmpeg / Whisper）"}),
             {"status": "success", "stage": "complete"},
         )[-1],
     )
@@ -306,7 +348,7 @@ def test_cli_install_prints_newline_delimited_json_progress(monkeypatch, capsys,
     assert exit_code == 0
     records = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
     assert records == [
-        {"stage": "dependencies", "percent": 10, "message": "正在安装 MinerU 依赖"},
+        {"stage": "dependencies", "percent": 10, "message": "正在安装增强解析依赖（MinerU / FFmpeg / Whisper）"},
         {"stage": "models", "percent": 60, "message": "正在下载 MinerU 模型"},
-        {"stage": "complete", "percent": 100, "message": "增强解析组件安装完成"},
+        {"stage": "complete", "percent": 100, "message": "增强解析组件安装完成（MinerU / FFmpeg / Whisper）"},
     ]

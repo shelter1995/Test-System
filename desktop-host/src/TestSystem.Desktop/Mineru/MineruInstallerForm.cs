@@ -39,7 +39,7 @@ public sealed class MineruInstallerForm : Form
         StartPosition = FormStartPosition.CenterScreen;
         _sourceSelector.Items.AddRange(["ModelScope（推荐）", "Hugging Face"]);
         _sourceSelector.SelectedIndex = 0;
-        _warning.Text = "将联网下载 MinerU 依赖和 Pipeline 模型，并占用额外磁盘空间。网络不稳定时可稍后重试。";
+        _warning.Text = "将联网下载 MinerU、Pipeline 模型、FFmpeg 和 Whisper，用于增强文档/OCR/音视频解析，并占用额外磁盘空间。网络不稳定时可稍后重试。";
         Controls.Add(BuildLayout());
         _cancel.Click += (_, _) =>
         {

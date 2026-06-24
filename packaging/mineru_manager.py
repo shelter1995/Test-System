@@ -216,7 +216,27 @@ def verify_installation(
         check=False,
         env=env,
     )
-    return help_result.returncode == 0 and _models_ready(paths.models_root)
+    if help_result.returncode != 0 or not _models_ready(paths.models_root):
+        return False
+
+    media_result = run(
+        [
+            str(paths.python_exe),
+            "-c",
+            (
+                "import imageio_ffmpeg\n"
+                "import whisper\n"
+                "ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()\n"
+                "assert ffmpeg\n"
+                "print('media-deps-ok')\n"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return media_result.returncode == 0 and "media-deps-ok" in (media_result.stdout or "")
 
 
 def _write_status(path: str | Path, payload: dict[str, object]) -> None:
@@ -313,14 +333,14 @@ def install_mineru(
         paths.installing_target.mkdir(parents=True, exist_ok=True)
         env = build_install_environment(paths, use_installing=True)
 
-        emit_progress(_progress_record("dependencies", 10, "正在安装 MinerU 依赖"))
+        emit_progress(_progress_record("dependencies", 10, "正在安装增强解析依赖（MinerU / FFmpeg / Whisper）"))
         pip_command = build_pip_install_command(paths)
         pip_result = run(pip_command, capture_output=True, text=True, check=False, env=env)
         if pip_result.returncode != 0:
             shutil.rmtree(paths.installing_target, ignore_errors=True)
             return _failure(
                 stage="pip",
-                message="MinerU 依赖安装失败",
+                message="增强解析依赖安装失败",
                 status_json=status_json,
                 returncode=pip_result.returncode,
                 stdout=pip_result.stdout or "",
@@ -353,12 +373,12 @@ def install_mineru(
         result: dict[str, object] = {
             "status": "success",
             "stage": "complete",
-            "message": "增强解析组件安装完成",
+            "message": "增强解析组件安装完成（MinerU / FFmpeg / Whisper）",
             "optional_site_packages": str(paths.current_target),
             "models": str(paths.models_root),
         }
         _write_status(status_json, result)
-        emit_progress(_progress_record("complete", 100, "增强解析组件安装完成"))
+        emit_progress(_progress_record("complete", 100, "增强解析组件安装完成（MinerU / FFmpeg / Whisper）"))
         return result
 
 

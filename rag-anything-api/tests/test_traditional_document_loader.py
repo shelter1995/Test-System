@@ -69,6 +69,47 @@ def test_pdf_keeps_pypdf_when_text_is_sufficient(monkeypatch, tmp_path: Path):
     assert "parser" not in result.metadata
 
 
+def test_pdf_falls_back_to_pypdf_text_when_mineru_unavailable(monkeypatch, tmp_path: Path):
+    path = tmp_path / "brochure.pdf"
+    path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader._read_pdf",
+        lambda p: ("宣传册基础文本", 2),
+    )
+    monkeypatch.setattr("rag_engines.traditional.document_loader.should_use_mineru_for_pdf", lambda text, page_count: True)
+
+    def _raise(**kwargs):
+        raise ParserUnavailable("MinerU CLI not configured.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.parse_with_mineru", _raise)
+
+    result = load_document_text(path)
+
+    assert result.text == "宣传册基础文本"
+    assert result.metadata["parser"] == "pypdf_fallback"
+    assert "增强解析组件" in result.metadata["warning"]
+
+
+def test_empty_scanned_pdf_without_mineru_reports_chinese_dependency_hint(monkeypatch, tmp_path: Path):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader._read_pdf", lambda p: ("", 1))
+    monkeypatch.setattr("rag_engines.traditional.document_loader.should_use_mineru_for_pdf", lambda text, page_count: True)
+
+    def _raise(**kwargs):
+        raise ParserUnavailable("MinerU CLI not configured.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.parse_with_mineru", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    assert "增强解析组件" in str(exc.value)
+    assert "MinerU CLI not configured" not in str(exc.value)
+
+
 def test_image_routes_to_mineru(monkeypatch, tmp_path: Path):
     path = tmp_path / "page.png"
     path.write_bytes(b"image")
@@ -233,3 +274,21 @@ def test_media_parser_unavailable_maps_to_unsupported(monkeypatch, tmp_path: Pat
         load_document_text(path)
 
     assert "Whisper" in str(exc.value)
+
+
+def test_video_missing_ffmpeg_reports_chinese_dependency_hint(monkeypatch, tmp_path: Path):
+    path = tmp_path / "demo.mp4"
+    path.write_bytes(b"video")
+
+    def _raise(*_args, **_kwargs):
+        raise ParserUnavailable("ffmpeg is not available.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.transcribe_video", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    message = str(exc.value)
+    assert "视频解析需要 FFmpeg" in message
+    assert "增强解析组件" in message
+    assert "ffmpeg is not available" not in message
