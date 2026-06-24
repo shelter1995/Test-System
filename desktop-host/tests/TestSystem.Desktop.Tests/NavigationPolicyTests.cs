@@ -13,8 +13,18 @@ public sealed class NavigationPolicyTests
     }
 
     [Theory]
-    [InlineData("http://localhost:8002/workspace")]
+    [InlineData("http://localhost:8002/generation/artifacts/download?path=generation_output%2Freport.md")]
+    [InlineData("http://[::1]:8002/generation/artifacts/download?path=generation_output%2Freport.md")]
+    public void Localhost_download_links_on_tutor_port_are_internal(string uri)
+    {
+        var decision = NavigationPolicy.Classify(uri);
+
+        Assert.Equal(NavigationAction.AllowInternal, decision.Action);
+    }
+
+    [Theory]
     [InlineData("http://127.0.0.1:8003/workspace")]
+    [InlineData("http://localhost:8003/workspace")]
     [InlineData("http://user:pass@127.0.0.1:8002/workspace")]
     [InlineData("https://127.0.0.1:8002/workspace")]
     [InlineData("http://example.com/workspace")]

@@ -37,6 +37,7 @@ public sealed class MineruInstallerForm : Form
         MinimumSize = new Size(640, 520);
         Size = new Size(720, 560);
         StartPosition = FormStartPosition.CenterScreen;
+        _logPath = Path.Combine(_layout.LogsRoot, "mineru-installer.log");
         _sourceSelector.Items.AddRange(["ModelScope（推荐）", "Hugging Face"]);
         _sourceSelector.SelectedIndex = 0;
         _warning.Text = "将联网下载 MinerU、Pipeline 模型、FFmpeg 和 Whisper，用于增强文档/OCR/音视频解析，并占用额外磁盘空间。网络不稳定时可稍后重试。";
@@ -63,13 +64,22 @@ public sealed class MineruInstallerForm : Form
         };
         _openLog.Click += (_, _) =>
         {
-            if (_logPath is not null)
+            try
             {
+                Directory.CreateDirectory(_layout.LogsRoot);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
                 {
-                    FileName = Path.GetDirectoryName(_logPath)!,
+                    FileName = Path.GetDirectoryName(_logPath!) ?? _layout.LogsRoot,
                     UseShellExecute = true,
                 });
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException or UnauthorizedAccessException)
+            {
+                MessageBox.Show(
+                    "无法打开日志目录：\r\n" + _layout.LogsRoot + "\r\n\r\n" + ex.Message,
+                    "打开日志目录失败",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
             }
         };
     }

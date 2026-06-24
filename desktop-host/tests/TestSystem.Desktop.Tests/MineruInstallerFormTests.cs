@@ -40,6 +40,20 @@ public sealed class MineruInstallerFormTests : IDisposable
         });
     }
 
+    [Fact]
+    public void Open_log_button_has_log_path_before_installation_finishes()
+    {
+        RunSta(() =>
+        {
+            var layout = CreateLayout();
+            using var form = new MineruInstallerForm(layout, mainAppMutexOwned: () => true);
+            var logPathField = typeof(MineruInstallerForm).GetField("_logPath", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+
+            Assert.NotNull(logPathField);
+            Assert.Equal(Path.Combine(layout.LogsRoot, "mineru-installer.log"), logPathField!.GetValue(form));
+        });
+    }
+
     private RuntimeLayout CreateLayout()
     {
         var installRoot = Path.Combine(_root, "install");

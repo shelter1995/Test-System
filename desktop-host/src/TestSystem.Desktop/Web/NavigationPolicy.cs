@@ -80,7 +80,7 @@ public static class NavigationPolicy
     private static bool IsInternal(Uri uri)
     {
         return string.Equals(uri.Scheme, Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase)
-            && string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            && IsLocalHost(uri)
             && uri.Port == InternalTutorPort
             && string.IsNullOrEmpty(uri.UserInfo);
     }
@@ -88,6 +88,7 @@ public static class NavigationPolicy
     private static bool IsLocalHost(Uri uri)
     {
         return string.Equals(uri.Host, "127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Host, "[::1]", StringComparison.OrdinalIgnoreCase)
             || string.Equals(uri.Host, "::1", StringComparison.OrdinalIgnoreCase)
             || string.Equals(uri.Host, "localhost", StringComparison.OrdinalIgnoreCase);
     }
