@@ -33,6 +33,8 @@ public static class RuntimeEnvironment
             ["HF_HOME"] = Path.Combine(layout.RuntimeRoot, "model-cache", "huggingface"),
             ["TRANSFORMERS_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "huggingface"),
             ["MODELSCOPE_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "modelscope"),
+            ["TORCH_HOME"] = Path.Combine(layout.RuntimeRoot, "model-cache", "torch"),
+            ["TORCHINDUCTOR_CACHE_DIR"] = Path.Combine(layout.RuntimeRoot, "torch-inductor-cache"),
             ["MINERU_MODEL_DIR"] = layout.MineruModels,
             ["MINERU_PYTHON"] = layout.PythonExe,
             ["MINERU_TOOLS_CONFIG_JSON"] = Path.Combine(layout.MineruModels, "mineru.json"),

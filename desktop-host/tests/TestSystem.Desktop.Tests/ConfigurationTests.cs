@@ -136,6 +136,8 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "pip-cache"), environment["PIP_CACHE_DIR"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "huggingface"), environment["HF_HOME"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "modelscope"), environment["MODELSCOPE_CACHE"]);
+        Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "torch"), environment["TORCH_HOME"]);
+        Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "torch-inductor-cache"), environment["TORCHINDUCTOR_CACHE_DIR"]);
         Assert.Equal(layout.MineruModels, environment["MINERU_MODEL_DIR"]);
         Assert.Equal(layout.PythonExe, environment["MINERU_PYTHON"]);
         Assert.Equal(Path.Combine(layout.MineruModels, "mineru.json"), environment["MINERU_TOOLS_CONFIG_JSON"]);

@@ -66,36 +66,46 @@ public sealed class ProcessSupervisorTests : IDisposable
     [Fact]
     public void BackendProcess_start_info_hides_console_redirects_output_and_preserves_required_windows_environment()
     {
-        var info = new BackendProcessStartInfo(
-            "RAG",
-            @"C:\App\runtime\python\python.exe",
-            "start.py",
-            @"C:\App\rag-anything-api",
-            @"C:\Data\logs\rag.log",
-            new Dictionary<string, string>
-            {
-                ["PATH"] = @"C:\App\runtime\python",
-                ["TEST_SYSTEM_DATA_DIR"] = @"C:\Data",
-            },
-            new Uri("http://127.0.0.1:8003/__desktop/shutdown"),
-            8003);
-
-        var startInfo = BackendProcess.CreateProcessStartInfo(info);
-
-        Assert.False(startInfo.UseShellExecute);
-        Assert.True(startInfo.CreateNoWindow);
-        Assert.True(startInfo.RedirectStandardOutput);
-        Assert.True(startInfo.RedirectStandardError);
-        Assert.Equal(info.FileName, startInfo.FileName);
-        Assert.Equal(info.Arguments, startInfo.Arguments);
-        Assert.Equal(info.WorkingDirectory, startInfo.WorkingDirectory);
-        Assert.Equal(@"C:\Data", startInfo.Environment["TEST_SYSTEM_DATA_DIR"]);
-        Assert.Equal(@"C:\App\runtime\python", startInfo.Environment["PATH"]);
-
-        var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
-        if (!string.IsNullOrWhiteSpace(systemRoot))
+        var originalUsername = Environment.GetEnvironmentVariable("USERNAME");
+        Environment.SetEnvironmentVariable("USERNAME", "test-system-user");
+        try
         {
-            Assert.Equal(systemRoot, startInfo.Environment["SystemRoot"]);
+            var info = new BackendProcessStartInfo(
+                "RAG",
+                @"C:\App\runtime\python\python.exe",
+                "start.py",
+                @"C:\App\rag-anything-api",
+                @"C:\Data\logs\rag.log",
+                new Dictionary<string, string>
+                {
+                    ["PATH"] = @"C:\App\runtime\python",
+                    ["TEST_SYSTEM_DATA_DIR"] = @"C:\Data",
+                },
+                new Uri("http://127.0.0.1:8003/__desktop/shutdown"),
+                8003);
+
+            var startInfo = BackendProcess.CreateProcessStartInfo(info);
+
+            Assert.False(startInfo.UseShellExecute);
+            Assert.True(startInfo.CreateNoWindow);
+            Assert.True(startInfo.RedirectStandardOutput);
+            Assert.True(startInfo.RedirectStandardError);
+            Assert.Equal(info.FileName, startInfo.FileName);
+            Assert.Equal(info.Arguments, startInfo.Arguments);
+            Assert.Equal(info.WorkingDirectory, startInfo.WorkingDirectory);
+            Assert.Equal(@"C:\Data", startInfo.Environment["TEST_SYSTEM_DATA_DIR"]);
+            Assert.Equal(@"C:\App\runtime\python", startInfo.Environment["PATH"]);
+            Assert.Equal("test-system-user", startInfo.Environment["USERNAME"]);
+
+            var systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+            if (!string.IsNullOrWhiteSpace(systemRoot))
+            {
+                Assert.Equal(systemRoot, startInfo.Environment["SystemRoot"]);
+            }
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("USERNAME", originalUsername);
         }
     }
 
