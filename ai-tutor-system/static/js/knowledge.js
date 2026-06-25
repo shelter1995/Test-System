@@ -840,6 +840,7 @@ function _renderFileRow(item, isUploading) {
     const stageMap = {
         'queued': '排队中',
         'uploaded': '已上传',
+        'retrying': '重试解析中',
         'indexing': '索引构建中',
         'rag_ingest': '解析并索引中',
         'graph_enrichment': '解析并索引中',
