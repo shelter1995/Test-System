@@ -10,6 +10,10 @@ const tutorSource = fs.readFileSync(
     path.join(__dirname, '..', 'static', 'js', 'app_with_health_check.js'),
     'utf8'
 );
+const overviewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'static', 'js', 'overview.js'),
+    'utf8'
+);
 
 assert.match(
     generationSource,
@@ -25,6 +29,16 @@ assert.match(
     generationSource,
     /artifact-delete-btn/,
     'artifact rows should render a delete button'
+);
+assert.doesNotMatch(
+    generationSource,
+    /<a href="' \+ downloadUrl \+ '" target="_blank"/,
+    'artifact download links should not open a new browser tab in the desktop shell'
+);
+assert.doesNotMatch(
+    overviewSource,
+    /<a class="overview-mini-btn" href="' \+ downloadUrl \+ '" target="_blank"/,
+    'overview artifact download links should not open a new browser tab in the desktop shell'
 );
 
 assert.match(

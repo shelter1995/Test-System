@@ -29,10 +29,11 @@ class FakeRegistry:
 
 
 class FakeService:
-    def __init__(self, storage_root, output_root, registry):
+    def __init__(self, storage_root, output_root, registry, settings_provider=None):
         self.storage_root = storage_root
         self.output_root = output_root
         self.registry = registry
+        self.settings_provider = settings_provider
 
 
 def test_lifespan_initializes_registry_and_service(monkeypatch, tmp_path):
@@ -54,6 +55,7 @@ def test_lifespan_initializes_registry_and_service(monkeypatch, tmp_path):
     assert response.json()["engine"] == "ready"
     assert rag_api.startup_error is None
     assert isinstance(rag_api.rag_service, FakeService)
+    assert rag_api.rag_service.settings_provider is rag_api._runtime_model_settings
 
 
 def test_fresh_registry_does_not_seed_legacy_default_database(monkeypatch, tmp_path):

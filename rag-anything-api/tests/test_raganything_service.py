@@ -2,6 +2,7 @@ import asyncio
 from pathlib import Path
 
 from database_registry import DatabaseRegistry
+import raganything_service as service_module
 from raganything_service import RAGAnythingService
 
 
@@ -61,6 +62,110 @@ def test_query_wraps_result(tmp_path: Path):
     assert result["database"] == "商务彩铃"
     assert result["results"][0]["metadata"]["source"] == "raganything"
     assert "资费回答" in result["results"][0]["text"]
+
+
+def test_legacy_raganything_service_uses_runtime_frontend_model_settings(tmp_path: Path, monkeypatch):
+    settings = {
+        "llm": {
+            "provider": "openai-compatible",
+            "base_url": "http://llm.local/v1",
+            "api_key": "llm-key",
+            "model": "qwen-runtime",
+            "timeout": 37,
+        },
+        "embedding": {
+            "provider": "openai-compatible",
+            "base_url": "http://embed.local/v1",
+            "api_key": "embed-key",
+            "model": "bge-runtime",
+            "dimension": 1024,
+        },
+        "rerank": {
+            "enabled": True,
+            "provider": "openai-compatible",
+            "base_url": "http://rerank.local/v1",
+            "api_key": "rerank-key",
+            "model": "rerank-runtime",
+            "top_n": 3,
+            "timeout": 19,
+        },
+    }
+    registry = DatabaseRegistry(tmp_path / "databases.json")
+    captured = {}
+
+    async def fake_complete(model, prompt, **kwargs):
+        captured["llm"] = {"model": model, "prompt": prompt, **kwargs}
+        return "runtime answer"
+
+    async def fake_embed_func(**kwargs):
+        captured["embedding"] = kwargs
+        return [[0.1] * settings["embedding"]["dimension"]]
+
+    class FakeEmbeddingFunc:
+        def __init__(self, embedding_dim, max_token_size, func):
+            captured["embedding_func"] = {
+                "embedding_dim": embedding_dim,
+                "max_token_size": max_token_size,
+                "func": func,
+            }
+
+    class FakeRAGAnything:
+        def __init__(self, **kwargs):
+            captured["rag"] = kwargs
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"results": [{"index": 0, "relevance_score": 0.9}]}
+
+    class FakeAsyncClient:
+        def __init__(self, timeout):
+            captured["rerank_timeout"] = timeout
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return None
+
+        async def post(self, url, headers, json):
+            captured["rerank"] = {"url": url, "headers": headers, "json": json}
+            return FakeResponse()
+
+    monkeypatch.setattr(service_module, "openai_complete_if_cache", fake_complete)
+    monkeypatch.setattr(service_module.openai_embed, "func", fake_embed_func)
+    monkeypatch.setattr(service_module, "EmbeddingFunc", FakeEmbeddingFunc)
+    monkeypatch.setattr(service_module, "RAGAnything", FakeRAGAnything)
+    monkeypatch.setattr(service_module.httpx, "AsyncClient", FakeAsyncClient)
+
+    service = RAGAnythingService(
+        storage_root=tmp_path / "raganything",
+        output_root=tmp_path / "output",
+        registry=registry,
+        settings_provider=lambda: settings,
+    )
+
+    assert asyncio.run(service._call_llm("问题", system_prompt="系统")) == "runtime answer"
+    service._create_rag("kb", tmp_path / "work")
+    embedding_func = captured["embedding_func"]["func"]
+    rerank_func = captured["rag"]["lightrag_kwargs"]["rerank_model_func"]
+    asyncio.run(embedding_func(["hello"]))
+    asyncio.run(rerank_func("query", ["doc1", "doc2"], top_k=5))
+
+    assert captured["llm"]["model"] == "qwen-runtime"
+    assert captured["llm"]["api_key"] == "llm-key"
+    assert captured["llm"]["base_url"] == "http://llm.local/v1"
+    assert captured["embedding"]["model"] == "bge-runtime"
+    assert captured["embedding"]["api_key"] == "embed-key"
+    assert captured["embedding"]["base_url"] == "http://embed.local/v1"
+    assert captured["embedding_func"]["embedding_dim"] == 1024
+    assert captured["rerank_timeout"] == 19
+    assert captured["rerank"]["url"] == "http://rerank.local/v1/rerank"
+    assert captured["rerank"]["headers"]["Authorization"] == "Bearer rerank-key"
+    assert captured["rerank"]["json"]["model"] == "rerank-runtime"
+    assert captured["rerank"]["json"]["top_n"] == 2
 
 
 def test_ingest_registers_document(tmp_path: Path):

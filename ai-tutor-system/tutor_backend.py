@@ -27,6 +27,7 @@ from tutor_services import (
     get_ai_service,
 )
 from tutor_streaming import StreamingPipeline
+from runtime_control import install_shutdown_route
 
 # 配置日志
 logging.basicConfig(level=config.LOG_LEVEL, format=config.LOG_FORMAT)
@@ -41,6 +42,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+install_shutdown_route(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -758,9 +760,12 @@ if __name__ == "__main__":
     print()
     print("启动中...")
 
-    uvicorn.run(
+    server_config = uvicorn.Config(
         app,
         host=config.TUTOR_SERVICE_HOST,
         port=config.TUTOR_SERVICE_PORT,
         log_level="info",
     )
+    server = uvicorn.Server(server_config)
+    app.state.uvicorn_server = server
+    server.run()

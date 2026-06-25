@@ -3,13 +3,37 @@ AI话术陪练系统配置文件
 """
 
 # 从.env文件加载环境变量
+import importlib.util
+import hashlib
 import os
-from dotenv import load_dotenv
+import sys
+from pathlib import Path
 
-# 尝试加载.env文件
-env_path = os.path.join(os.path.dirname(__file__), ".env")
-if os.path.exists(env_path):
-    load_dotenv(env_path)
+def _load_runtime_paths_module():
+    module_path = Path(__file__).resolve().with_name("runtime_paths.py")
+    identity = os.path.normcase(str(module_path))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    module_name = f"_test_system_tutor_runtime_paths_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+runtime_paths_module = _load_runtime_paths_module()
+get_runtime_paths = runtime_paths_module.get_runtime_paths
+
+# 安装版优先从外置数据目录加载配置，源码模式仍使用本地 .env。
+ENV_PATH = runtime_paths_module.load_runtime_env()
+if ENV_PATH.exists():
     print(f"[INFO] 已加载.env配置文件")
 
 # ==================== 历史兼容配置 ====================
@@ -27,11 +51,11 @@ TUTOR_SERVICE_HOST = os.getenv("TUTOR_SERVICE_HOST", "0.0.0.0")
 TUTOR_SERVICE_PORT = int(os.getenv("TUTOR_SERVICE_PORT", "8002"))
 
 # ==================== 数据存储 ====================
-import os
-DATA_DIR = os.path.join(os.path.dirname(__file__), "tutor_data")
-SCENARIOS_FILE = os.path.join(DATA_DIR, "scenarios.json")
-SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
-HISTORY_DIR = os.path.join(DATA_DIR, "history")
+RUNTIME_PATHS = get_runtime_paths()
+DATA_DIR = str(RUNTIME_PATHS.tutor_data)
+SCENARIOS_FILE = str(RUNTIME_PATHS.tutor_data / "scenarios.json")
+SESSIONS_DIR = str(RUNTIME_PATHS.tutor_data / "sessions")
+HISTORY_DIR = str(RUNTIME_PATHS.tutor_data / "history")
 
 # 确保目录存在
 os.makedirs(DATA_DIR, exist_ok=True)

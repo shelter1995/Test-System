@@ -10,6 +10,7 @@ from rag_engines.traditional.document_parsers import (
     parse_with_mineru,
     should_use_mineru_for_pdf,
 )
+from rag_engines.traditional.document_parsers.mineru_parser import _build_mineru_subprocess_env
 
 
 def test_should_use_mineru_for_pdf_when_text_is_too_short():
@@ -70,6 +71,7 @@ def test_parse_with_mineru_returns_parsed_document_on_success(monkeypatch, tmp_p
     source = tmp_path / "a.pdf"
     source.write_bytes(b"%PDF")
     captured_cmd = []
+    captured_env = {}
 
     class _Result:
         returncode = 0
@@ -78,6 +80,7 @@ def test_parse_with_mineru_returns_parsed_document_on_success(monkeypatch, tmp_p
 
     def _fake_run(cmd, **kwargs):
         captured_cmd.extend(cmd)
+        captured_env.update(kwargs.get("env") or {})
         out_idx = cmd.index("-o") + 1
         out_dir = Path(cmd[out_idx])
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +97,56 @@ def test_parse_with_mineru_returns_parsed_document_on_success(monkeypatch, tmp_p
     assert captured_cmd[:5] == ["mineru", "-p", str(source), "-o", str(tmp_path / "output" / "a_mineru")]
     assert "--input" not in captured_cmd
     assert "--output-dir" not in captured_cmd
+    assert "FAST_LANGDETECT_RESOURCE_CACHE" in captured_env
+    assert captured_env["HF_ENDPOINT"] == "https://hf-mirror.com"
+    assert "rag-anything-api" in captured_env["PYTHONPATH"].replace("\\", "/")
+
+
+def test_mineru_subprocess_env_replaces_empty_or_relative_hf_endpoint(monkeypatch):
+    monkeypatch.setenv("HF_ENDPOINT", "")
+
+    empty_endpoint_env = _build_mineru_subprocess_env()
+
+    assert empty_endpoint_env["HF_ENDPOINT"] == "https://hf-mirror.com"
+
+    monkeypatch.setenv("HF_ENDPOINT", "/api")
+
+    relative_endpoint_env = _build_mineru_subprocess_env()
+
+    assert relative_endpoint_env["HF_ENDPOINT"] == "https://hf-mirror.com"
+
+
+def test_mineru_subprocess_env_preserves_explicit_http_hf_endpoint(monkeypatch):
+    monkeypatch.setenv("HF_ENDPOINT", "https://hf-mirror.com/")
+
+    env = _build_mineru_subprocess_env()
+
+    assert env["HF_ENDPOINT"] == "https://hf-mirror.com"
+
+
+def test_parse_with_mineru_uses_pipeline_backend_for_pdfs(monkeypatch, tmp_path: Path):
+    source = tmp_path / "scan.pdf"
+    source.write_bytes(b"%PDF")
+    captured_cmd = []
+
+    class _Result:
+        returncode = 0
+        stdout = ""
+        stderr = ""
+
+    def _fake_run(cmd, **kwargs):
+        captured_cmd.extend(cmd)
+        out_dir = Path(cmd[cmd.index("-o") + 1])
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "result.md").write_text("PDF OCR 文本", encoding="utf-8")
+        return _Result()
+
+    monkeypatch.setattr("rag_engines.traditional.document_parsers.mineru_parser.subprocess.run", _fake_run)
+
+    parsed = parse_with_mineru(source, output_root=tmp_path / "output", mineru_path="mineru")
+
+    assert "PDF OCR 文本" in parsed.text
+    assert captured_cmd[captured_cmd.index("-b") + 1] == "pipeline"
 
 
 def test_parse_with_mineru_accepts_python_module_command(monkeypatch, tmp_path: Path):

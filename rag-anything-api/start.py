@@ -81,8 +81,7 @@ def main() -> None:
         sys.exit(1)
 
     if not Path(".env").exists():
-        print("[WARN] .env 文件不存在，请复制 .env.example 并填写 API 密钥")
-        sys.exit(1)
+        print("[WARN] .env 文件不存在，将使用环境变量或安装版数据目录中的配置")
 
     print("[OK] 依赖检查通过")
     print(f"[INFO] Python: {sys.version.split()[0]}")
@@ -92,14 +91,18 @@ def main() -> None:
 
     import uvicorn
     import config
+    from app import app
 
-    uvicorn.run(
-        "app:app",
+    server_config = uvicorn.Config(
+        app,
         host=config.RAG_SERVICE_HOST,
         port=config.RAG_SERVICE_PORT,
         log_level="info",
         reload=False,
     )
+    server = uvicorn.Server(server_config)
+    app.state.uvicorn_server = server
+    server.run()
 
 
 if __name__ == "__main__":

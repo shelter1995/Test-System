@@ -4,6 +4,8 @@
 """
 
 import json
+import importlib.util
+import hashlib
 import os
 import shutil
 import sys
@@ -13,6 +15,30 @@ from importlib.util import find_spec
 
 from dotenv import load_dotenv
 from rag_engines.traditional.dependencies import detect_traditional_parser_dependencies
+
+
+
+def _load_runtime_paths_module():
+    module_path = Path(__file__).resolve().with_name("runtime_paths.py")
+    identity = os.path.normcase(str(module_path))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    module_name = f"_test_system_rag_runtime_paths_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+runtime_paths_module = _load_runtime_paths_module()
+absolute_env_path = runtime_paths_module.absolute_env_path
 
 
 def _normalize_base_url(base_url: str, suffix: str) -> str:
@@ -88,16 +114,21 @@ def _ensure_python_scripts_on_path(executable: str | None = None) -> str:
     return _prepend_path(scripts_dir)
 
 
-# 加载 .env
-ENV_PATH = Path(__file__).resolve().parent / ".env"
+# 路径配置必须先于 dotenv，以便安装版从外置数据目录读取配置。
+BASE_DIR = Path(__file__).resolve().parent
+data_dir_value = os.getenv("TEST_SYSTEM_DATA_DIR", "").strip()
+data_dir = Path(data_dir_value) if data_dir_value else None
+if data_dir is not None and data_dir.is_absolute():
+    ENV_PATH = (data_dir / "config" / "rag.env").resolve()
+else:
+    ENV_PATH = (BASE_DIR / ".env").resolve()
 if ENV_PATH.exists():
-    load_dotenv(ENV_PATH)
+    load_dotenv(ENV_PATH, override=False)
 
 PYTHON_SCRIPTS_DIR = _ensure_python_scripts_on_path()
 
-# 路径配置
-BASE_DIR = Path(__file__).resolve().parent
-STORAGE_ROOT = BASE_DIR / "storage"
+# 可变数据目录：源码模式沿用原路径，安装版通过绝对环境变量外置。
+STORAGE_ROOT = absolute_env_path("TEST_SYSTEM_RAG_STORAGE_DIR", BASE_DIR / "storage")
 STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 LEGACY_LIGHTRAG_DIR = STORAGE_ROOT / "lightrag"
@@ -107,7 +138,7 @@ STORAGE_DIR = str(LEGACY_LIGHTRAG_DIR)  # 向后兼容：旧字段
 RAGANYTHING_STORAGE_ROOT = STORAGE_ROOT / "raganything"
 RAGANYTHING_STORAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
-RAGANYTHING_OUTPUT_ROOT = BASE_DIR / "output"
+RAGANYTHING_OUTPUT_ROOT = absolute_env_path("TEST_SYSTEM_RAG_OUTPUT_DIR", BASE_DIR / "output")
 RAGANYTHING_OUTPUT_ROOT.mkdir(parents=True, exist_ok=True)
 
 DATABASE_REGISTRY_FILE = STORAGE_ROOT / "databases.json"

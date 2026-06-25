@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -9,6 +10,7 @@ from .common import DocumentParsingError, ParsedDocument, ParserUnavailable
 
 MINERU_PARSE_TIMEOUT_SECONDS = 30 * 60
 MINERU_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
+DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 
 
 def should_use_mineru_for_pdf(text: str, page_count: int) -> bool:
@@ -57,6 +59,8 @@ def parse_with_mineru(
     ]
     if source_path.suffix.lower() in MINERU_IMAGE_EXTENSIONS:
         cmd.extend(["-m", "ocr", "-b", "pipeline"])
+    else:
+        cmd.extend(["-b", "pipeline"])
 
     try:
         result = subprocess.run(
@@ -65,6 +69,7 @@ def parse_with_mineru(
             text=True,
             check=False,
             timeout=MINERU_PARSE_TIMEOUT_SECONDS,
+            env=_build_mineru_subprocess_env(),
         )
     except FileNotFoundError as exc:
         raise ParserUnavailable(f"MinerU CLI not found: {' '.join(command_prefix)}") from exc
@@ -91,6 +96,36 @@ def parse_with_mineru(
             "source_path": str(source_path),
         },
     )
+
+
+def _build_mineru_subprocess_env() -> dict[str, str]:
+    env = dict(os.environ)
+    api_root = Path(__file__).resolve().parents[3]
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    pythonpath_entries = [str(api_root)]
+    if existing_pythonpath:
+        pythonpath_entries.append(existing_pythonpath)
+    env["PYTHONPATH"] = os.pathsep.join(pythonpath_entries)
+    env["HF_ENDPOINT"] = _normalize_hf_endpoint(env.get("HF_ENDPOINT"))
+    env.setdefault("FAST_LANGDETECT_RESOURCE_CACHE", _default_fast_langdetect_resource_cache())
+    return env
+
+
+def _normalize_hf_endpoint(value: str | None) -> str:
+    endpoint = (value or "").strip().rstrip("/")
+    if endpoint.startswith(("http://", "https://")):
+        return endpoint
+    return DEFAULT_HF_ENDPOINT
+
+
+def _default_fast_langdetect_resource_cache() -> str:
+    override = os.getenv("FAST_LANGDETECT_RESOURCE_CACHE", "").strip()
+    if override:
+        return override
+    if os.name == "nt":
+        program_data = os.getenv("PROGRAMDATA", r"C:\ProgramData")
+        return str(Path(program_data) / "TestSystem" / "fast-langdetect")
+    return str(Path(os.getenv("TMPDIR", "/tmp")) / "test-system" / "fast-langdetect")
 
 
 def _read_mineru_text_output(output_dir: Path, stdout_text: str) -> str:

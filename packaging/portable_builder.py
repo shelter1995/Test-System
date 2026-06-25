@@ -3,14 +3,26 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
+import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
 
 PACKAGE_NAME = "Test-System-Portable"
 REQUIRED_PYTHON_VERSION = "3.13.10"
+REQUIRED_PYTHON_MACHINE = "AMD64"
+REQUIRED_PYTHON_BITS = "64bit"
+
+
+@dataclass(frozen=True)
+class PythonRuntimeInfo:
+    version: str
+    machine: str
+    bits: str
 
 INCLUDE_ITEMS = (
     "ai-tutor-system",
@@ -81,22 +93,46 @@ def validate_python_runtime(
     python_home: Path,
     *,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
-) -> str:
+) -> PythonRuntimeInfo:
     python_exe = python_home / "python.exe"
     if not python_exe.exists():
         raise FileNotFoundError(f"Python executable not found: {python_exe}")
     result = run(
-        [str(python_exe), "-c", "import platform; print(platform.python_version())"],
+        [
+            str(python_exe),
+            "-c",
+            (
+                "import json, platform; "
+                "print(json.dumps({'version': platform.python_version(), "
+                "'machine': platform.machine(), 'bits': platform.architecture()[0]}))"
+            ),
+        ],
         capture_output=True,
         text=True,
         check=False,
     )
     if result.returncode != 0:
         raise RuntimeError(f"Unable to execute portable Python: {result.stderr}")
-    version = (result.stdout or "").strip()
-    if version != REQUIRED_PYTHON_VERSION:
-        raise ValueError(f"Portable Python must be {REQUIRED_PYTHON_VERSION}, got {version}")
-    return version
+    try:
+        payload = json.loads((result.stdout or "").strip())
+        info = PythonRuntimeInfo(
+            version=str(payload["version"]),
+            machine=str(payload["machine"]),
+            bits=str(payload["bits"]),
+        )
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        raise ValueError(f"Portable Python returned invalid runtime JSON: {result.stdout!r}") from exc
+
+    normalized_machine = info.machine.upper()
+    checks = (
+        ("version", REQUIRED_PYTHON_VERSION, info.version),
+        ("machine", REQUIRED_PYTHON_MACHINE, normalized_machine),
+        ("bits", REQUIRED_PYTHON_BITS, info.bits),
+    )
+    for field, expected, actual in checks:
+        if actual != expected:
+            raise ValueError(f"Portable Python {field}: expected {expected}, actual {getattr(info, field)}")
+    return PythonRuntimeInfo(info.version, REQUIRED_PYTHON_MACHINE, info.bits)
 
 
 def build_base_install_command(
@@ -136,24 +172,41 @@ def _install_base_dependencies(
     package_dir: Path,
     *,
     run: Callable[..., subprocess.CompletedProcess] = subprocess.run,
+    uv_executable: str | None = None,
+    log_path: Path | None = None,
 ) -> None:
     python_exe = package_dir / "runtime" / "python" / "python.exe"
     requirements = package_dir / "packaging" / "requirements-portable-base.txt"
     target = package_dir / "runtime" / "site-packages"
     target.mkdir(parents=True, exist_ok=True)
-    uv_executable = shutil.which("uv")
+    uv_executable = uv_executable or shutil.which("uv")
     if not uv_executable:
-        raise RuntimeError("uv is required on the build machine to install portable dependencies.")
+        raise RuntimeError("uv executable was not found; install uv or pass uv_executable.")
     command = build_base_install_command(uv_executable, python_exe, requirements, target)
     result = run(command, capture_output=True, text=True, check=False)
-    log_path = package_dir / "runtime" / "logs" / "bootstrap.log"
+    log_path = log_path or package_dir / "runtime" / "logs" / "bootstrap.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_text = f"$ {' '.join(command)}\n\nSTDOUT\n{result.stdout or ''}\n\nSTDERR\n{result.stderr or ''}\n"
-    package_text = str(package_dir)
-    log_text = log_text.replace(uv_executable, "uv").replace(package_text, "%PACKAGE_ROOT%").replace(
-        package_text.replace("\\", "/"),
-        "%PACKAGE_ROOT%",
+    log_text = re.sub(
+        r"([A-Za-z][A-Za-z0-9+.-]*://)[^/@\s]+@",
+        r"\1<redacted>@",
+        log_text,
     )
+    sensitive_paths = (
+        (str(package_dir), "%PACKAGE_ROOT%"),
+        (str(python_exe.parent), "%PYTHON_HOME%"),
+        (str(uv_executable), "%UV_EXECUTABLE%"),
+        (str(Path.home()), "%USER_HOME%"),
+        (tempfile.gettempdir(), "%TEMP%"),
+    )
+    replacements: list[tuple[str, str]] = []
+    for value, replacement in sensitive_paths:
+        if value:
+            replacements.extend(
+                ((value, replacement), (value.replace("\\", "/"), replacement))
+            )
+    for value, replacement in sorted(set(replacements), key=lambda item: len(item[0]), reverse=True):
+        log_text = log_text.replace(value, replacement)
     log_path.write_text(log_text, encoding="utf-8")
     if result.returncode != 0:
         raise RuntimeError(f"Base dependency installation failed. See {log_path}")
@@ -202,14 +255,16 @@ def _copy_libreoffice(package_dir: Path, candidate: str | None) -> bool:
 def write_manifest(
     manifest_path: Path,
     *,
-    python_version: str,
+    python_info: PythonRuntimeInfo,
     ffmpeg_available: bool,
     libreoffice_available: bool,
 ) -> None:
     payload = {
         "package": PACKAGE_NAME,
         "python": {
-            "version": python_version,
+            "version": python_info.version,
+            "machine": python_info.machine,
+            "bits": python_info.bits,
             "path": "runtime/python/python.exe",
         },
         "base_site_packages": {
@@ -239,7 +294,7 @@ def build_package(
 ) -> Path:
     root = root.resolve()
     python_home = python_home.resolve()
-    python_version = validate_python_runtime(python_home)
+    python_info = validate_python_runtime(python_home)
     out_dir = (root / output_root).resolve() if not output_root.is_absolute() else output_root.resolve()
     package_dir = out_dir / PACKAGE_NAME
     if package_dir.exists():
@@ -267,7 +322,7 @@ def build_package(
     libreoffice_available = _copy_libreoffice(package_dir, libreoffice_path)
     write_manifest(
         package_dir / "runtime" / "portable-manifest.json",
-        python_version=python_version,
+        python_info=python_info,
         ffmpeg_available=ffmpeg_available,
         libreoffice_available=libreoffice_available,
     )

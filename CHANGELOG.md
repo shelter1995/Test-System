@@ -1,5 +1,25 @@
 # Change Log
 
+## Unreleased
+
+### Windows 桌面安装包
+
+- 建立产品版本合约 (`version.json`, `packaging/product_version.py`)
+- 实现运行时路径分离：通过 `TEST_SYSTEM_*` 环境变量将数据目录与程序文件分离
+- 为两个服务添加认证的 localhost 关闭端点 (`/__desktop/shutdown`)
+- 创建 Windows 安装镜像构建器 (`packaging/installer_builder.py`)
+- 搭建 .NET 8 WinForms 桌面宿主，使用 WebView2 嵌入前端
+- 实现后端进程生命周期管理：Windows Job Object 确保进程随桌面宿主退出
+- 添加启动协调、单实例激活和健康探测
+- 实现 WebView2 安全导航策略和文件保存下载协调
+- 构建可选的 MinerU 增强解析组件安装管理器
+- 创建 Inno Setup 安装脚本，支持自定义数据目录和保留数据的卸载
+- 实现安全的用户数据删除守卫
+- 添加 WebView2 前提条件获取脚本和签名验证
+- 构建一键发布流水线 (`packaging/build_installer.ps1`)
+- 实现安装包产物的自动审计 (`packaging/verify_installer_artifact.py`)
+- 添加 Windows 发布维护者手册 (`docs/releasing-windows.md`)
+
 ## 2026-05-26
 
 ### 统一 LLM 客户端

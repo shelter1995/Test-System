@@ -35,6 +35,7 @@ from raganything_service import RAGAnythingService
 from kb_answer import build_context_fallback_answer, build_kb_answer_prompt, extract_source_summaries
 from model_settings import ModelSettingsStore
 from rag_engines.traditional.model_clients import ModelEndpoint, OpenAICompatibleClient
+from runtime_control import install_shutdown_route
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ async def initialize_service() -> None:
             storage_root=config.RAGANYTHING_STORAGE_ROOT,
             output_root=config.RAGANYTHING_OUTPUT_ROOT,
             registry=registry,
+            settings_provider=_runtime_model_settings,
         )
         _recover_interrupted_processing_documents(rag_service)
         traditional_service = create_traditional_engine()
@@ -94,6 +96,7 @@ app = FastAPI(
     default_response_class=UTF8JSONResponse,
     lifespan=lifespan,
 )
+install_shutdown_route(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -1166,6 +1169,7 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
             service.registry.update_document_progress(db_id, sha256, stage="done")
             return {"status": "success", "message": "传统 RAG 文档已重新索引", "result": result}
         except Exception as exc:
+            logger.exception("传统 RAG 文档重试失败 [%s/%s]: %s", db_id, sha256, exc)
             service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
             service.registry.update_document_progress(db_id, sha256, stage="error")
             raise HTTPException(status_code=500, detail=str(exc))
@@ -1174,6 +1178,8 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
         raise HTTPException(status_code=400, detail="仅支持 markdown_segments")
 
     file_path = Path(doc["file_path"])
+    service.registry.update_document_status(db_id, sha256, status="processing", error="")
+    service.registry.update_document_progress(db_id, sha256, stage="retrying")
     try:
         return await asyncio.to_thread(
             service.recover_from_mineru_markdown,
@@ -1198,6 +1204,7 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
         service.registry.update_document_progress(db_id, sha256, stage="done")
         return {"status": "success", "message": "RAG-Anything 文档已重新处理", "result": result}
     except Exception as exc:
+        logger.exception("RAG-Anything 文档完整重试失败 [%s/%s]: %s", db_id, sha256, exc)
         service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
         service.registry.update_document_progress(db_id, sha256, stage="error")
         raise HTTPException(status_code=500, detail=str(exc))
@@ -1881,9 +1888,12 @@ if __name__ == "__main__":
     print(f"  API文档: http://{config.RAG_SERVICE_HOST}:{config.RAG_SERVICE_PORT}/docs")
     print()
 
-    uvicorn.run(
+    server_config = uvicorn.Config(
         app,
         host=config.RAG_SERVICE_HOST,
         port=config.RAG_SERVICE_PORT,
         log_level="info",
     )
+    server = uvicorn.Server(server_config)
+    app.state.uvicorn_server = server
+    server.run()

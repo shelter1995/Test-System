@@ -1,4 +1,4 @@
-# Test-System Windows 便携包
+# 智学工作台 Windows 打包说明
 
 ## 构建
 
@@ -48,7 +48,7 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1 `
 - 选择安装：使用包内 Python 联网安装固定版本 `mineru[core]==3.3.1`；
 - 暂不安装：两个服务继续启动，文本、Office 和文本型 PDF 使用基础解析；
 - 首次解析扫描 PDF 或图片时，MinerU 自动下载模型；
-- 模型缓存保存在 `runtime/models/mineru/`，不会写入系统 Python 目录。
+- 模型缓存保存在用户数据目录下 `models/mineru/`，不会写入系统 Python 目录。
 
 也可以双击 `install_mineru.bat` 重新安装。
 
@@ -66,3 +66,49 @@ runtime/logs/bootstrap.log
 runtime/logs/runtime-check.json
 runtime/logs/mineru-install.log
 ```
+
+## Windows 安装包
+
+构建 Windows 原生安装包（相比便携包增加 WebView2 桌面宿主和 Inno Setup 安装器）：
+
+### 获取 WebView2 运行时前提条件
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\prerequisites.ps1
+```
+
+离线模式（仅验证已缓存文件）：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\prerequisites.ps1 -Offline
+```
+
+### 一键构建安装包
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
+```
+
+产物：
+```text
+dist-installer\智学工作台-Setup-<版本>-x64.exe
+dist-installer\智学工作台-Setup-<版本>-x64.exe.sha256
+dist-installer\build-manifest.json
+```
+
+### 构建选项
+
+跳过测试（仅本地诊断，正式发布不得跳过）：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1 -SkipTests
+```
+
+指定自定义路径或代码签名：
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1 `
+  -PythonHome "C:\cpython-3.13.10" `
+  -FfmpegBin "D:\tools\ffmpeg\bin" `
+  -LibreOfficePath "C:\Program Files\LibreOffice\program\soffice.exe" `
+  -CertificateThumbprint "YOUR_THUMBPRINT"
+```
+
+详细发布流程见 [docs/releasing-windows.md](../docs/releasing-windows.md)。

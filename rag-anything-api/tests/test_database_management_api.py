@@ -656,6 +656,35 @@ class TestRetryDocument:
         assert response.json()["status"] == "partial_success"
         assert calls == [("kb", "book.pdf", "abc")]
 
+    def test_retry_document_records_retry_stage_before_long_processing(self, monkeypatch, tmp_path):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("kb")
+        service.registry.register_document(
+            "kb",
+            file_name="video.mp4",
+            file_path=str(tmp_path / "video.mp4"),
+            sha256="abc",
+            status="error",
+            error="ffmpeg was unavailable",
+        )
+        observed_stage = {}
+
+        def recover(database_id, file_path, sha256, max_chars=12000):
+            doc = service.registry.list_documents(database_id)[0]
+            observed_stage["status"] = doc.get("status")
+            observed_stage["stage"] = doc.get("stage")
+            return {"status": "partial_success"}
+
+        service.recover_from_mineru_markdown = recover
+
+        response = client.post(
+            "/db/kb/documents/abc/retry",
+            json={"strategy": "markdown_segments"},
+        )
+
+        assert response.status_code == 200
+        assert observed_stage == {"status": "processing", "stage": "retrying"}
+
     def test_retry_document_runs_recover_off_event_loop(self, monkeypatch, tmp_path):
         client, service = _make_client(monkeypatch)
         service.registry.register_database("kb")
@@ -715,6 +744,35 @@ class TestRetryDocument:
 
         assert response.status_code == 409
         assert "正在处理中" in response.json()["detail"]
+
+    def test_retry_traditional_document_logs_failure_detail(self, monkeypatch, tmp_path, caplog):
+        client, service = _make_client(monkeypatch)
+        service.registry.register_database("video", engine="traditional")
+        source = tmp_path / "clip.mp4"
+        source.write_bytes(b"video")
+        service.registry.register_document(
+            "video",
+            file_name="clip.mp4",
+            file_path=str(source),
+            sha256="abc",
+            status="error",
+            error="previous request failed",
+        )
+
+        class FakeTraditionalEngine:
+            async def ingest_file(self, database_id, file_path):
+                raise RuntimeError("whisper import failed: missing dependency")
+
+        monkeypatch.setattr(rag_api, "traditional_service", FakeTraditionalEngine())
+
+        with caplog.at_level("ERROR"):
+            response = client.post(
+                "/db/video/documents/abc/retry",
+                json={"strategy": "markdown_segments"},
+            )
+
+        assert response.status_code == 500
+        assert "whisper import failed" in caplog.text
 
 
 # ── POST /ingest/upload ──────────────────────────────────────────────────

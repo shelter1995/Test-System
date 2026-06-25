@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
+from importlib import import_module
 from importlib.util import find_spec
 
 
@@ -18,6 +20,26 @@ def _module_available(name: str) -> bool:
         return find_spec(name) is not None
     except (ImportError, ModuleNotFoundError):
         return False
+
+
+def _import_module(name: str):
+    try:
+        return import_module(name)
+    except (ImportError, ModuleNotFoundError):
+        return None
+
+
+def _resolve_ffmpeg_path() -> str:
+    cli_path = _normalize_path(shutil.which("ffmpeg"))
+    if cli_path:
+        return cli_path
+    imageio_ffmpeg = _import_module("imageio_ffmpeg")
+    if imageio_ffmpeg is None:
+        return ""
+    try:
+        return _normalize_path(imageio_ffmpeg.get_ffmpeg_exe())
+    except Exception:
+        return ""
 
 
 def _resolve_libreoffice_path() -> str:
@@ -52,7 +74,9 @@ def _build_dependency_entry(path: str) -> DependencyInfo:
 
 
 def detect_traditional_parser_dependencies() -> DependencyMap:
-    ffmpeg_path = _normalize_path(shutil.which("ffmpeg"))
+    importlib.invalidate_caches()
+
+    ffmpeg_path = _resolve_ffmpeg_path()
     libreoffice_path = _resolve_libreoffice_path()
     mineru_path = _resolve_mineru_path()
     whisper_path = _detect_whisper_cli_path()

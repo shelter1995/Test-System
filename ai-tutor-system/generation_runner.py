@@ -7,9 +7,12 @@
 """
 
 import json
+import importlib.util
+import hashlib
 import logging
 import os
 import re
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -17,16 +20,46 @@ from pathlib import Path
 
 from unified_llm_client import create_unified_llm_client
 
+
+
+def _load_runtime_paths_module():
+    module_path = Path(__file__).resolve().with_name("runtime_paths.py")
+    identity = os.path.normcase(str(module_path))
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    module_name = f"_test_system_tutor_runtime_paths_{digest}"
+    if module_name in sys.modules:
+        return sys.modules[module_name]
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    try:
+        spec.loader.exec_module(module)
+    except BaseException:
+        if sys.modules.get(module_name) is module:
+            sys.modules.pop(module_name, None)
+        raise
+    return module
+
+
+runtime_paths_module = _load_runtime_paths_module()
+get_runtime_paths = runtime_paths_module.get_runtime_paths
+
 logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).parent.parent
-JOBS_DIR = ROOT / "ai-tutor-system" / "tutor_data" / "generation_jobs"
+RUNTIME_PATHS = get_runtime_paths()
+JOBS_DIR = RUNTIME_PATHS.tutor_data / "generation_jobs"
 JOBS_DIR.mkdir(parents=True, exist_ok=True)
 
-OUTPUT_DIR = ROOT / "generation_output"
+OUTPUT_DIR = RUNTIME_PATHS.generation_output
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 ARTIFACT_DIRS = ["generation_output"]
+
+
+def _artifact_public_path(path: Path) -> str:
+    relative = path.resolve().relative_to(OUTPUT_DIR.resolve())
+    return (Path("generation_output") / relative).as_posix()
 
 MAX_RUNNING_JOBS = int(os.getenv("GENERATION_MAX_RUNNING_JOBS", "1"))
 RUNNING_JOB_STALE_SECONDS = int(os.getenv("GENERATION_RUNNING_JOB_STALE_SECONDS", "1800"))
@@ -761,12 +794,12 @@ def _run_job(job_id: str) -> None:
         if gen_type == "solution":
             fp = OUTPUT_DIR / output["filename"]
             fp.write_text(output["content"], encoding="utf-8")
-            saved_files.append({"filename": output["filename"], "path": str(fp.relative_to(ROOT)), "size": fp.stat().st_size})
+            saved_files.append({"filename": output["filename"], "path": _artifact_public_path(fp), "size": fp.stat().st_size})
         elif gen_type == "training":
             for f in output.get("files", []):
                 fp = OUTPUT_DIR / f["filename"]
                 fp.write_text(f["content"], encoding="utf-8")
-                saved_files.append({"filename": f["filename"], "path": str(fp.relative_to(ROOT)), "size": fp.stat().st_size})
+                saved_files.append({"filename": f["filename"], "path": _artifact_public_path(fp), "size": fp.stat().st_size})
 
         job["status"] = "completed"
         job["stage"] = "done"
@@ -818,13 +851,11 @@ def get_job(job_id: str) -> dict | None:
 
 def list_artifacts() -> list[dict]:
     artifacts = []
-    for d in ARTIFACT_DIRS:
-        dp = ROOT / d
-        if dp.exists():
-            for f in sorted(dp.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
-                artifacts.append({
-                    "name": f.name, "path": str(f.relative_to(ROOT)),
-                    "size": f.stat().st_size,
-                    "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
-                })
+    if OUTPUT_DIR.exists():
+        for f in sorted(OUTPUT_DIR.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+            artifacts.append({
+                "name": f.name, "path": _artifact_public_path(f),
+                "size": f.stat().st_size,
+                "modified": datetime.fromtimestamp(f.stat().st_mtime, tz=timezone.utc).isoformat(),
+            })
     return artifacts

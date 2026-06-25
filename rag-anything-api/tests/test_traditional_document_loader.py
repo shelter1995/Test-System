@@ -6,6 +6,7 @@ import pytest
 
 from rag_engines.traditional.document_loader import (
     UnsupportedDocumentType,
+    _resolve_media_runtime_config,
     _resolve_mineru_runtime_config,
     load_document_text,
 )
@@ -69,6 +70,47 @@ def test_pdf_keeps_pypdf_when_text_is_sufficient(monkeypatch, tmp_path: Path):
     assert "parser" not in result.metadata
 
 
+def test_pdf_falls_back_to_pypdf_text_when_mineru_unavailable(monkeypatch, tmp_path: Path):
+    path = tmp_path / "brochure.pdf"
+    path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader._read_pdf",
+        lambda p: ("宣传册基础文本", 2),
+    )
+    monkeypatch.setattr("rag_engines.traditional.document_loader.should_use_mineru_for_pdf", lambda text, page_count: True)
+
+    def _raise(**kwargs):
+        raise ParserUnavailable("MinerU CLI not configured.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.parse_with_mineru", _raise)
+
+    result = load_document_text(path)
+
+    assert result.text == "宣传册基础文本"
+    assert result.metadata["parser"] == "pypdf_fallback"
+    assert "增强解析组件" in result.metadata["warning"]
+
+
+def test_empty_scanned_pdf_without_mineru_reports_chinese_dependency_hint(monkeypatch, tmp_path: Path):
+    path = tmp_path / "scan.pdf"
+    path.write_bytes(b"%PDF")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader._read_pdf", lambda p: ("", 1))
+    monkeypatch.setattr("rag_engines.traditional.document_loader.should_use_mineru_for_pdf", lambda text, page_count: True)
+
+    def _raise(**kwargs):
+        raise ParserUnavailable("MinerU CLI not configured.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.parse_with_mineru", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    assert "增强解析组件" in str(exc.value)
+    assert "MinerU CLI not configured" not in str(exc.value)
+
+
 def test_image_routes_to_mineru(monkeypatch, tmp_path: Path):
     path = tmp_path / "page.png"
     path.write_bytes(b"image")
@@ -100,6 +142,56 @@ def test_mineru_runtime_config_prefers_python_module_command(monkeypatch, tmp_pa
 
     assert output_root == tmp_path / "output" / "traditional_parser"
     assert resolved == command
+
+
+def test_media_runtime_config_redetects_whisper_after_optional_install(monkeypatch, tmp_path: Path):
+    fake_config = SimpleNamespace(
+        FFMPEG_PATH="C:/tools/ffmpeg.exe",
+        WHISPER_AVAILABLE=False,
+        TRADITIONAL_PARSER_DEPENDENCIES={
+            "ffmpeg": {"available": True, "path": "C:/tools/ffmpeg.exe"},
+            "whisper": {"available": False, "path": ""},
+        },
+        RAGANYTHING_OUTPUT_ROOT=tmp_path,
+    )
+    monkeypatch.setitem(sys.modules, "config", fake_config)
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader.detect_traditional_parser_dependencies",
+        lambda: {
+            "ffmpeg": {"available": True, "path": "C:/tools/ffmpeg.exe"},
+            "libreoffice": {"available": False, "path": ""},
+            "mineru": {"available": False, "path": ""},
+            "whisper": {"available": True, "path": "C:/Data/runtime/optional-site-packages/whisper/__init__.py"},
+        },
+    )
+
+    ffmpeg_path, whisper_available, output_root = _resolve_media_runtime_config()
+
+    assert ffmpeg_path == "C:/tools/ffmpeg.exe"
+    assert whisper_available is True
+    assert output_root == tmp_path / "traditional_parser" / "media"
+
+
+def test_video_transcription_runtime_error_is_not_misreported_as_missing_whisper(monkeypatch, tmp_path: Path):
+    path = tmp_path / "clip.mp4"
+    path.write_bytes(b"video")
+
+    monkeypatch.setattr(
+        "rag_engines.traditional.document_loader._resolve_media_runtime_config",
+        lambda: ("C:/tools/ffmpeg.exe", True, tmp_path / "media"),
+    )
+
+    def _raise(*args, **kwargs):
+        raise DocumentParsingError("Whisper transcription failed: Failed to load audio")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.transcribe_video", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    message = str(exc.value)
+    assert "Whisper transcription failed" in message
+    assert "当前基础版未安装" not in message
 
 
 def test_parser_errors_are_mapped_to_unsupported_type(monkeypatch, tmp_path: Path):
@@ -193,16 +285,22 @@ def test_legacy_office_missing_libreoffice_maps_to_unsupported(monkeypatch, tmp_
 def test_audio_routes_to_whisper_transcription(monkeypatch, tmp_path: Path):
     path = tmp_path / "call.mp3"
     path.write_bytes(b"audio")
+    captured: dict[str, str] = {}
+
+    def _fake_transcribe_audio(file_path, whisper_available, ffmpeg_path=None):
+        captured["ffmpeg_path"] = str(ffmpeg_path)
+        return "音频转写结果"
 
     monkeypatch.setattr(
         "rag_engines.traditional.document_loader.transcribe_audio",
-        lambda file_path, whisper_available: "音频转写结果",
+        _fake_transcribe_audio,
     )
 
     result = load_document_text(path)
 
     assert result.text == "音频转写结果"
     assert result.metadata["extension"] == ".mp3"
+    assert "ffmpeg_path" in captured
 
 
 def test_video_routes_to_ffmpeg_then_whisper(monkeypatch, tmp_path: Path):
@@ -233,3 +331,21 @@ def test_media_parser_unavailable_maps_to_unsupported(monkeypatch, tmp_path: Pat
         load_document_text(path)
 
     assert "Whisper" in str(exc.value)
+
+
+def test_video_missing_ffmpeg_reports_chinese_dependency_hint(monkeypatch, tmp_path: Path):
+    path = tmp_path / "demo.mp4"
+    path.write_bytes(b"video")
+
+    def _raise(*_args, **_kwargs):
+        raise ParserUnavailable("ffmpeg is not available.")
+
+    monkeypatch.setattr("rag_engines.traditional.document_loader.transcribe_video", _raise)
+
+    with pytest.raises(UnsupportedDocumentType) as exc:
+        load_document_text(path)
+
+    message = str(exc.value)
+    assert "视频解析需要 FFmpeg" in message
+    assert "增强解析组件" in message
+    assert "ffmpeg is not available" not in message

@@ -1,4 +1,4 @@
-# Test-System
+# 智学工作台
 
 AI 销售话术陪练与 RAG 知识库系统。项目由两个本地服务组成：
 
@@ -176,9 +176,29 @@ powershell -ExecutionPolicy Bypass -File packaging\package_windows.ps1
 
 便携包包含独立 CPython 3.13.10 和基础依赖，不复制开发环境 `.venv`，目标电脑无需安装 Python、pip 或 uv。解压后双击 `start_services.bat` 即可启动。
 
-为控制压缩包大小，MinerU 及模型不预先打包。首次启动会询问是否联网安装 MinerU；用户可以暂不安装并使用基础文档解析。首次解析扫描 PDF 或图片时，MinerU 模型会下载到包内 `runtime/models/mineru/`。
+为控制压缩包大小，MinerU 及模型不预先打包。首次启动会询问是否联网安装 MinerU；用户可以暂不安装并使用基础文档解析。首次解析扫描 PDF 或图片时，MinerU 模型会下载到用户选择的数据目录下 `models/mineru/`。
 
 用户仍需在模型设置中配置统一 LLM、嵌入和重排模型的 API Key。详细说明见 [packaging/README.md](packaging/README.md)。
+
+## Windows 桌面安装包
+
+面向最终用户的 Windows 原生安装体验：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File packaging\build_installer.ps1
+```
+
+产出：`dist-installer\智学工作台-Setup-<版本>-x64.exe`
+
+安装包特点：
+- 双击安装，可选择程序和数据路径
+- 使用 WebView2 嵌入浏览器，无需单独打开浏览器
+- 关闭窗口会自动停止后端服务
+- 升级安装保留数据目录
+- 卸载默认保留数据（可选删除）
+- 可选安装 MinerU 增强解析组件
+
+面向开发者的详细发布流程见 [docs/releasing-windows.md](docs/releasing-windows.md)。普通用户使用便携包即可（见上文便携打包章节）。
 
 ## 文档
 

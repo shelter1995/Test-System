@@ -286,3 +286,48 @@ def test_training_job_saves_stage_outputs(monkeypatch, tmp_path):
     assert any(name.endswith("_培训讲义.md") or "_培训讲义_" in name for name in filenames)
     assert any("_测试题_" in name for name in filenames)
     assert any("_使用说明_" in name for name in filenames)
+
+
+def test_completed_job_exposes_public_generation_output_path(monkeypatch, tmp_path):
+    program_root = tmp_path / "program"
+    jobs_dir = tmp_path / "data" / "jobs"
+    output_dir = tmp_path / "data" / "generated"
+    jobs_dir.mkdir(parents=True)
+    output_dir.mkdir(parents=True)
+    monkeypatch.setattr(generation_runner, "ROOT", program_root)
+    monkeypatch.setattr(generation_runner, "JOBS_DIR", jobs_dir)
+    monkeypatch.setattr(generation_runner, "OUTPUT_DIR", output_dir)
+    monkeypatch.setattr(
+        generation_runner,
+        "_GENERATORS",
+        {"solution": lambda request, job_id=None: {"content": "generated", "filename": "report.md"}},
+    )
+    generation_runner._save_job(
+        {
+            "job_id": "cccccccccccc",
+            "status": "running",
+            "stage": "init",
+            "request": {"type": "solution"},
+            "result": None,
+            "error": None,
+        }
+    )
+
+    generation_runner._run_job("cccccccccccc")
+
+    job = generation_runner.get_job("cccccccccccc")
+    assert job["status"] == "completed"
+    assert job["result"]["files"][0]["path"] == "generation_output/report.md"
+
+
+def test_list_artifacts_reads_external_output_and_keeps_public_paths(monkeypatch, tmp_path):
+    output_dir = tmp_path / "external-output"
+    output_dir.mkdir()
+    artifact = output_dir / "report.md"
+    artifact.write_text("# Report\n", encoding="utf-8")
+    monkeypatch.setattr(generation_runner, "OUTPUT_DIR", output_dir)
+
+    artifacts = generation_runner.list_artifacts()
+
+    assert artifacts[0]["name"] == "report.md"
+    assert artifacts[0]["path"] == "generation_output/report.md"

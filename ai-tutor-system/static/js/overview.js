@@ -227,7 +227,7 @@
                             '<strong title="' + html(item.path || '') + '">' + html(item.name || '未命名文件') + '</strong>' +
                             '<span>' + html(formatDate(item.modified, true)) + ' · ' + html(formatFileSize(item.size)) + '</span>' +
                         '</div>' +
-                        '<a class="overview-mini-btn" href="' + downloadUrl + '" target="_blank" rel="noopener">下载</a>' +
+                        '<a class="overview-mini-btn" href="' + downloadUrl + '">下载</a>' +
                     '</div>'
                 );
             }).join('');
