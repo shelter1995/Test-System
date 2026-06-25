@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import os
 import shutil
 from importlib import import_module
@@ -73,6 +74,8 @@ def _build_dependency_entry(path: str) -> DependencyInfo:
 
 
 def detect_traditional_parser_dependencies() -> DependencyMap:
+    importlib.invalidate_caches()
+
     ffmpeg_path = _resolve_ffmpeg_path()
     libreoffice_path = _resolve_libreoffice_path()
     mineru_path = _resolve_mineru_path()

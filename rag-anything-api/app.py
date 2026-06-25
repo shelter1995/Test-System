@@ -1169,6 +1169,7 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
             service.registry.update_document_progress(db_id, sha256, stage="done")
             return {"status": "success", "message": "传统 RAG 文档已重新索引", "result": result}
         except Exception as exc:
+            logger.exception("传统 RAG 文档重试失败 [%s/%s]: %s", db_id, sha256, exc)
             service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
             service.registry.update_document_progress(db_id, sha256, stage="error")
             raise HTTPException(status_code=500, detail=str(exc))
@@ -1177,6 +1178,8 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
         raise HTTPException(status_code=400, detail="仅支持 markdown_segments")
 
     file_path = Path(doc["file_path"])
+    service.registry.update_document_status(db_id, sha256, status="processing", error="")
+    service.registry.update_document_progress(db_id, sha256, stage="retrying")
     try:
         return await asyncio.to_thread(
             service.recover_from_mineru_markdown,
@@ -1201,6 +1204,7 @@ async def retry_document(db_id: str, sha256: str, request: RetryDocumentRequest)
         service.registry.update_document_progress(db_id, sha256, stage="done")
         return {"status": "success", "message": "RAG-Anything 文档已重新处理", "result": result}
     except Exception as exc:
+        logger.exception("RAG-Anything 文档完整重试失败 [%s/%s]: %s", db_id, sha256, exc)
         service.registry.update_document_status(db_id, sha256, status="error", error=str(exc))
         service.registry.update_document_progress(db_id, sha256, stage="error")
         raise HTTPException(status_code=500, detail=str(exc))
