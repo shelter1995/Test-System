@@ -9,6 +9,7 @@ venv/
 dist/
 dist-portable/
 dist-installer/
+dist-installer-*/
 build/
 .build/
 .cache/prerequisites/
