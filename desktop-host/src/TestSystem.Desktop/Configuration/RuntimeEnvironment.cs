@@ -30,6 +30,7 @@ public static class RuntimeEnvironment
             ["PYTHONUTF8"] = "1",
             ["PYTHONIOENCODING"] = "utf-8",
             ["PIP_CACHE_DIR"] = Path.Combine(layout.RuntimeRoot, "pip-cache"),
+            ["HF_ENDPOINT"] = ResolveHfEndpoint(),
             ["HF_HOME"] = Path.Combine(layout.RuntimeRoot, "model-cache", "huggingface"),
             ["TRANSFORMERS_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "huggingface"),
             ["MODELSCOPE_CACHE"] = Path.Combine(layout.RuntimeRoot, "model-cache", "modelscope"),
@@ -38,6 +39,8 @@ public static class RuntimeEnvironment
             ["MINERU_MODEL_DIR"] = layout.MineruModels,
             ["MINERU_PYTHON"] = layout.PythonExe,
             ["MINERU_TOOLS_CONFIG_JSON"] = Path.Combine(layout.MineruModels, "mineru.json"),
+            ["WHISPER_CACHE_DIR"] = Path.Combine(layout.DataRoot, "models", "whisper"),
+            ["WHISPER_MODEL"] = "base",
             ["PATH"] = BuildPath(layout),
         };
 
@@ -53,6 +56,18 @@ public static class RuntimeEnvironment
                 layout.OptionalSitePackages,
                 Path.Combine(layout.InstallRoot, "runtime", "site-packages"),
             });
+    }
+
+    private static string ResolveHfEndpoint()
+    {
+        var existing = Environment.GetEnvironmentVariable("HF_ENDPOINT");
+        if (!string.IsNullOrWhiteSpace(existing) &&
+            (existing.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+             existing.StartsWith("https://", StringComparison.OrdinalIgnoreCase)))
+        {
+            return existing.TrimEnd('/');
+        }
+        return "https://hf-mirror.com";
     }
 
     private static string BuildPath(RuntimeLayout layout)

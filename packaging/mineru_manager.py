@@ -12,6 +12,7 @@ from typing import Callable, MutableMapping
 
 EXPECTED_MINERU_VERSION = "3.3.1"
 CONFIG_MODEL_FILENAMES = {"mineru.json", ".gitkeep"}
+DEFAULT_HF_ENDPOINT = "https://hf-mirror.com"
 
 
 class MineruPaths:
@@ -28,6 +29,7 @@ class MineruPaths:
         self.installing_target = self.data_runtime / "optional-site-packages.installing"
         self.previous_target = self.data_runtime / "optional-site-packages.previous"
         self.models_root = self.data_root / "models" / "mineru"
+        self.whisper_models_root = self.data_root / "models" / "whisper"
         self.lock_path = self.data_runtime / "mineru-install.lock"
 
 
@@ -126,6 +128,21 @@ def build_model_download_command(paths: MineruPaths, source: str) -> list[str]:
     ]
 
 
+def build_whisper_model_download_command(paths: MineruPaths) -> list[str]:
+    return [
+        str(paths.python_exe),
+        "-c",
+        (
+            "import os\n"
+            "import whisper\n"
+            "model = os.environ.get('WHISPER_MODEL', 'base')\n"
+            "download_root = os.environ['WHISPER_CACHE_DIR']\n"
+            "whisper.load_model(model, download_root=download_root)\n"
+            "print('whisper-model-ok')\n"
+        ),
+    ]
+
+
 def build_install_environment(
     paths: MineruPaths,
     *,
@@ -154,11 +171,31 @@ def build_install_environment(
     existing_path = [item for item in env.get("PATH", "").split(os.pathsep) if item]
     env["PATH"] = os.pathsep.join([str(paths.python_exe.parent), *existing_path])
     env["PYTHONUTF8"] = "1"
+    env["HF_ENDPOINT"] = _normalize_hf_endpoint(env.get("HF_ENDPOINT"))
     env["HF_HOME"] = str(paths.models_root / "huggingface")
     env["HUGGINGFACE_HUB_CACHE"] = str(paths.models_root / "huggingface" / "hub")
     env["MODELSCOPE_CACHE"] = str(paths.models_root / "modelscope")
     env["MINERU_TOOLS_CONFIG_JSON"] = str(paths.models_root / "mineru.json")
+    env["WHISPER_CACHE_DIR"] = str(paths.whisper_models_root)
+    env.setdefault("WHISPER_MODEL", "base")
+    env.setdefault("FAST_LANGDETECT_RESOURCE_CACHE", _default_fast_langdetect_resource_cache())
     return env
+
+
+def _normalize_hf_endpoint(value: str | None) -> str:
+    endpoint = (value or "").strip().rstrip("/")
+    if endpoint.startswith(("http://", "https://")):
+        return endpoint
+    return DEFAULT_HF_ENDPOINT
+
+
+def _default_fast_langdetect_resource_cache() -> str:
+    override = os.getenv("FAST_LANGDETECT_RESOURCE_CACHE", "").strip()
+    if override:
+        return override
+    if os.name == "nt":
+        return str(Path(os.getenv("PROGRAMDATA", r"C:\ProgramData")) / "TestSystem" / "fast-langdetect")
+    return str(Path(os.getenv("TMPDIR", "/tmp")) / "test-system" / "fast-langdetect")
 
 
 def _path_matches_any_root(path: Path, roots: set[Path]) -> bool:
@@ -236,7 +273,25 @@ def verify_installation(
         check=False,
         env=env,
     )
-    return media_result.returncode == 0 and "media-deps-ok" in (media_result.stdout or "")
+    if media_result.returncode != 0 or "media-deps-ok" not in (media_result.stdout or ""):
+        return False
+
+    language_result = run(
+        [
+            str(paths.python_exe),
+            "-c",
+            (
+                "from fast_langdetect.ft_detect import detect_language\n"
+                "assert detect_language('商务视频彩铃产品形态')\n"
+                "print('fast-langdetect-ok')\n"
+            ),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    return language_result.returncode == 0 and "fast-langdetect-ok" in (language_result.stdout or "")
 
 
 def _write_status(path: str | Path, payload: dict[str, object]) -> None:
@@ -282,6 +337,7 @@ def _prepare_directories(paths: MineruPaths) -> None:
         paths.data_runtime,
         paths.current_target,
         paths.models_root,
+        paths.whisper_models_root,
     ):
         directory.mkdir(parents=True, exist_ok=True)
 
@@ -332,6 +388,7 @@ def install_mineru(
         shutil.rmtree(paths.installing_target, ignore_errors=True)
         paths.installing_target.mkdir(parents=True, exist_ok=True)
         env = build_install_environment(paths, use_installing=True)
+        warnings: list[str] = []
 
         emit_progress(_progress_record("dependencies", 10, "正在安装增强解析依赖（MinerU / FFmpeg / Whisper）"))
         pip_command = build_pip_install_command(paths)
@@ -361,6 +418,23 @@ def install_mineru(
                 stderr=model_result.stderr or "",
             )
 
+        emit_progress(_progress_record("whisper_models", 82, "正在下载 Whisper 语音识别模型"))
+        whisper_model_command = build_whisper_model_download_command(paths)
+        whisper_model_result = run(whisper_model_command, capture_output=True, text=True, check=False, env=env)
+        if whisper_model_result.returncode != 0:
+            detail = (whisper_model_result.stderr or whisper_model_result.stdout or "").strip()
+            warning = "Whisper 语音识别模型预下载失败，安装将继续；首次解析音视频时可能重新下载模型。"
+            if detail:
+                warning = f"{warning} 原因：{detail}"
+            warnings.append(warning)
+            emit_progress(
+                _progress_record(
+                    "whisper_models_warning",
+                    88,
+                    warning,
+                )
+            )
+
         if not verify(paths, run=run):
             shutil.rmtree(paths.installing_target, ignore_errors=True)
             return _failure(
@@ -377,6 +451,8 @@ def install_mineru(
             "optional_site_packages": str(paths.current_target),
             "models": str(paths.models_root),
         }
+        if warnings:
+            result["warnings"] = warnings
         _write_status(status_json, result)
         emit_progress(_progress_record("complete", 100, "增强解析组件安装完成（MinerU / FFmpeg / Whisper）"))
         return result
@@ -403,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
             status_json=args.status_json,
             emit_progress=_json_progress,
         )
+        if result.get("status") != "success":
+            _json_progress(result)
         return 0 if result.get("status") == "success" else 1
     return 2
 

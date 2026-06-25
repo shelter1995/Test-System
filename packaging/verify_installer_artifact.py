@@ -143,6 +143,10 @@ def _check_required_files(
     if not python_file.is_file():
         failures.append(f"Python executable missing: {python_path}")
 
+    sitecustomize = stage / "rag-anything-api" / "sitecustomize.py"
+    if not sitecustomize.is_file():
+        failures.append("RAG runtime patch missing: rag-anything-api/sitecustomize.py")
+
     webview2_found = False
     if webview_manifest is not None and webview_manifest.is_file():
         try:

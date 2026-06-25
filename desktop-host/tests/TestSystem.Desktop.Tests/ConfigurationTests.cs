@@ -134,6 +134,7 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal("1", environment["PYTHONUTF8"]);
         Assert.Equal("utf-8", environment["PYTHONIOENCODING"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "pip-cache"), environment["PIP_CACHE_DIR"]);
+        Assert.Equal("https://hf-mirror.com", environment["HF_ENDPOINT"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "huggingface"), environment["HF_HOME"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "modelscope"), environment["MODELSCOPE_CACHE"]);
         Assert.Equal(Path.Combine(layout.DataRoot, "runtime", "model-cache", "torch"), environment["TORCH_HOME"]);
@@ -141,7 +142,47 @@ public sealed class ConfigurationTests : IDisposable
         Assert.Equal(layout.MineruModels, environment["MINERU_MODEL_DIR"]);
         Assert.Equal(layout.PythonExe, environment["MINERU_PYTHON"]);
         Assert.Equal(Path.Combine(layout.MineruModels, "mineru.json"), environment["MINERU_TOOLS_CONFIG_JSON"]);
+        Assert.Equal(Path.Combine(layout.DataRoot, "models", "whisper"), environment["WHISPER_CACHE_DIR"]);
+        Assert.Equal("base", environment["WHISPER_MODEL"]);
         Assert.StartsWith(Path.GetDirectoryName(layout.PythonExe)!, environment["PATH"], StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Build_respects_user_HF_ENDPOINT_mirror()
+    {
+        var previous = Environment.GetEnvironmentVariable("HF_ENDPOINT");
+        try
+        {
+            Environment.SetEnvironmentVariable("HF_ENDPOINT", "https://hf-mirror.com");
+            var installRoot = CreateDirectory("install-hf");
+            var dataRoot = CreateDirectory("data-hf");
+            var layout = RuntimeLayout.Create(installRoot, dataRoot);
+            var environment = RuntimeEnvironment.Build(layout, "tok");
+            Assert.Equal("https://hf-mirror.com", environment["HF_ENDPOINT"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HF_ENDPOINT", previous);
+        }
+    }
+
+    [Fact]
+    public void Build_normalizes_HF_ENDPOINT_trailing_slash()
+    {
+        var previous = Environment.GetEnvironmentVariable("HF_ENDPOINT");
+        try
+        {
+            Environment.SetEnvironmentVariable("HF_ENDPOINT", "https://hf-mirror.com/");
+            var installRoot = CreateDirectory("install-hf2");
+            var dataRoot = CreateDirectory("data-hf2");
+            var layout = RuntimeLayout.Create(installRoot, dataRoot);
+            var environment = RuntimeEnvironment.Build(layout, "tok");
+            Assert.Equal("https://hf-mirror.com", environment["HF_ENDPOINT"]);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("HF_ENDPOINT", previous);
+        }
     }
 
     [Fact]
