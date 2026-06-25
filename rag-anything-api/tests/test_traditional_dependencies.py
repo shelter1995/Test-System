@@ -30,6 +30,21 @@ def test_detect_traditional_parser_dependencies_reports_all_keys(monkeypatch):
     assert result["whisper"] == {"available": True, "path": "/tools/whisper.exe"}
 
 
+def test_detect_traditional_parser_dependencies_invalidates_import_caches(monkeypatch):
+    from rag_engines.traditional import dependencies
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(dependencies.importlib, "invalidate_caches", lambda: calls.append("invalidate"))
+    monkeypatch.setattr(dependencies.shutil, "which", lambda name: None)
+    monkeypatch.setattr(dependencies, "_import_module", lambda name: None)
+    monkeypatch.setattr(dependencies, "find_spec", lambda name: None)
+
+    dependencies.detect_traditional_parser_dependencies()
+
+    assert calls == ["invalidate"]
+
+
 def test_mineru_python_without_installed_module_is_reported_unavailable(monkeypatch):
     from rag_engines.traditional import dependencies
 

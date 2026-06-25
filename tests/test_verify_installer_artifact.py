@@ -260,6 +260,23 @@ class TestArtifactAuditorRejects:
         with pytest.raises(verifier.AuditError, match=r"\.env"):
             verifier.audit_install_image(stage)
 
+    def test_rejects_missing_rag_sitecustomize_runtime_patch(self, tmp_path: Path):
+        stage = _stage_tree(tmp_path / "stage", {
+            "runtime/install-manifest.json": json.dumps(_make_manifest()),
+            "version.json": json.dumps({"version": "1.0.0"}),
+            "TestSystem.exe": "fake-exe",
+            "runtime/python/python.exe": "fake-python",
+            ".cache/prerequisites/MicrosoftEdgeWebView2RuntimeInstallerX64.exe": "fake-webview2",
+            "packaging/requirements-portable-base.txt": "pinned==1.0",
+            "rag-anything-api/app.py": "# rag app",
+            "rag-anything-api/start.py": 'print("[WARN] .env 文件不存在，将使用环境变量或安装版数据目录中的配置")',
+            "ai-tutor-system/tutor_backend.py": "# tutor backend",
+        })
+
+        verifier = _load_verifier()
+        with pytest.raises(verifier.AuditError, match="sitecustomize"):
+            verifier.audit_install_image(stage)
+
 
 class TestArtifactAuditorAccepts:
     """Tests that the auditor passes a valid stage and produces a JSON report."""
@@ -274,6 +291,7 @@ class TestArtifactAuditorAccepts:
             "packaging/requirements-portable-base.txt": "pinned==1.0",
             "rag-anything-api/app.py": "# rag app",
             "rag-anything-api/start.py": 'print("[WARN] .env 文件不存在，将使用环境变量或安装版数据目录中的配置")',
+            "rag-anything-api/sitecustomize.py": "# runtime patch",
             "ai-tutor-system/tutor_backend.py": "# tutor backend",
         })
 
